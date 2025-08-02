@@ -410,9 +410,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             purchase_id = int(parts[3])
             user_telegram_id = int(parts[4])
             execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
-        elif data.startswith("admin_set_support_type_"):
+        if data.startswith("admin_set_support_type_"):
             support_type = data.split('_')[-1]
-            set_support_type(admin_id, message, support_type)
+            # --- THE FIX IS HERE ---
+            # Pass the entire 'call' object, not just 'message'
+            set_support_type(admin_id, call, support_type)
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id, user_telegram_id = int(parts[3]), int(parts[4])
@@ -1113,12 +1115,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         markup = inline_keyboards.get_support_management_menu(support_type)
         _show_menu(admin_id, text, markup, message)
 
-    def set_support_type(admin_id, message, support_type):
+    def set_support_type(admin_id, call, support_type):
         """Sets the support type (admin chat or link)."""
         _db_manager.update_setting('support_type', support_type)
-        _bot.answer_callback_query(message.id, messages.SUPPORT_TYPE_SET_SUCCESS)
-        # Refresh the menu to show the changes
-        show_support_management_menu(admin_id, message)
+        
+        # --- THE FIX IS HERE ---
+        # Use call.id to answer the query, and call.message to edit the message
+        _bot.answer_callback_query(call.id, messages.SUPPORT_TYPE_SET_SUCCESS)
+        show_support_management_menu(admin_id, call.message)
 
     def start_edit_support_link_flow(admin_id, message):
         """Starts the process for setting/editing the support link."""
