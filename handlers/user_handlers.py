@@ -168,9 +168,18 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         _bot.clear_step_handler_by_chat_id(chat_id=user_id)
 
     def _show_user_main_menu(user_id, message_to_edit=None):
+        """ --- REWRITTEN: Fetches support settings and creates a dynamic menu --- """
         _clear_user_state(user_id)
         menu_text = messages.USER_MAIN_MENU_TEXT
-        menu_markup = inline_keyboards.get_user_main_inline_menu()
+        
+        # Fetch current support settings from the database
+        support_type = _db_manager.get_setting('support_type') or 'admin' # Default to 'admin' if not set
+        support_link = _db_manager.get_setting('support_link')
+        first_admin_id = ADMIN_IDS[0] if ADMIN_IDS else None
+
+        # Pass the settings to the keyboard function
+        menu_markup = inline_keyboards.get_user_main_inline_menu(support_type, support_link, first_admin_id)
+        
         if message_to_edit:
             try:
                 _bot.edit_message_text(menu_text, user_id, message_to_edit.message_id, reply_markup=menu_markup)

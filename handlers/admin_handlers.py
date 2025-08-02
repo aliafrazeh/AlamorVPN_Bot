@@ -256,6 +256,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         elif state == 'waiting_for_new_plan_price':
             process_edit_plan_price(admin_id, message)
+        elif state == 'waiting_for_support_link':
+            process_support_link(admin_id, message)
+     
+
     # =============================================================================
     # SECTION: Process Starters and Callback Handlers
     # =============================================================================
@@ -346,6 +350,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_support_management": show_support_management_menu, 
+            "admin_edit_support_link": start_edit_support_link_flow,
             "admin_tutorial_management": show_tutorial_management_menu, 
             "admin_add_tutorial": start_add_tutorial_flow,             
             "admin_list_tutorials": list_tutorials,  
@@ -404,6 +410,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             purchase_id = int(parts[3])
             user_telegram_id = int(parts[4])
             execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
+        elif data.startswith("admin_set_support_type_"):
+            support_type = data.split('_')[-1]
+            set_support_type(admin_id, message, support_type)
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id, user_telegram_id = int(parts[3]), int(parts[4])
@@ -1092,3 +1101,41 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         _clear_admin_state(admin_id)
         show_tutorial_management_menu(admin_id)
+        
+        
+    def show_support_management_menu(admin_id, message):
+        """Displays the main menu for support management."""
+        support_type = _db_manager.get_setting('support_type') or 'admin' # Default to admin
+        support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
+        
+        status = f"چت مستقیم با ادمین" if support_type == 'admin' else f"لینک به: {support_link}"
+        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(status=status)
+        markup = inline_keyboards.get_support_management_menu(support_type)
+        _show_menu(admin_id, text, markup, message)
+
+    def set_support_type(admin_id, message, support_type):
+        """Sets the support type (admin chat or link)."""
+        _db_manager.update_setting('support_type', support_type)
+        _bot.answer_callback_query(message.id, messages.SUPPORT_TYPE_SET_SUCCESS)
+        # Refresh the menu to show the changes
+        show_support_management_menu(admin_id, message)
+
+    def start_edit_support_link_flow(admin_id, message):
+        """Starts the process for setting/editing the support link."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.SET_SUPPORT_LINK_PROMPT, inline_keyboards.get_back_button("admin_support_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_support_link', 'prompt_message_id': prompt.message_id}
+
+    def process_support_link(admin_id, message):
+        """Saves the support link provided by the admin."""
+        state_info = _admin_states.get(admin_id, {})
+        support_link = message.text.strip()
+
+        if not support_link.lower().startswith(('http://', 'https://')):
+            _bot.send_message(admin_id, "لینک وارد شده نامعتبر است. لطفاً لینک کامل را وارد کنید.")
+            return
+            
+        _db_manager.update_setting('support_link', support_link)
+        _bot.edit_message_text(messages.SUPPORT_LINK_SET_SUCCESS, admin_id, state_info['prompt_message_id'])
+        _clear_admin_state(admin_id)
+        show_support_management_menu(admin_id)

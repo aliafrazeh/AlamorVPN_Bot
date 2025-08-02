@@ -17,6 +17,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("🔗 مدیریت قفل کانال", callback_data="admin_channel_lock_management"),
         types.InlineKeyboardButton("📊 داشبورد", callback_data="admin_dashboard"),
         types.InlineKeyboardButton("💡 مدیریت آموزش‌ها", callback_data="admin_tutorial_management"),
+        types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"), 
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -114,16 +115,29 @@ def get_confirmation_menu(confirm_callback: str, cancel_callback: str, confirm_t
 
 # --- توابع کیبورد کاربر ---
 
-def get_user_main_inline_menu():
-    """ --- MODIFIED: Added 'How to Connect' button --- """
+def get_user_main_inline_menu(support_type: str, support_link: str, first_admin_id: int):
+    """ --- REWRITTEN: Creates a fully dynamic user menu --- """
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("🛒 خرید سرویس", callback_data="user_buy_service"),
         types.InlineKeyboardButton("🎁 اکانت تست رایگان", callback_data="user_free_test"),
         types.InlineKeyboardButton("🗂️ سرویس‌های من", callback_data="user_my_services"),
-        types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect"), # <-- NEW
-        types.InlineKeyboardButton("📞 پشتیبانی", callback_data="user_support")
+        types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect")
     )
+
+    # --- NEW LOGIC for the support button ---
+    support_button = None
+    if support_type == 'admin' and first_admin_id:
+        # Direct link to the first admin's chat
+        support_url = f"tg://user?id={first_admin_id}"
+        support_button = types.InlineKeyboardButton("📞 پشتیبانی", url=support_url)
+    elif support_type == 'link' and support_link and support_link.startswith('http'):
+        # Link to the support channel/group
+        support_button = types.InlineKeyboardButton("📞 پشتیبانی", url=support_link)
+    
+    if support_button:
+        markup.add(support_button)
+        
     return markup
     
 def get_back_button(callback_data: str, text: str = "🔙 بازگشت"):
@@ -306,4 +320,22 @@ def get_apps_for_platform_menu(tutorials: list, platform: str):
     for t in tutorials:
         markup.add(types.InlineKeyboardButton(t['app_name'], callback_data=f"user_select_tutorial_{t['id']}"))
     markup.add(types.InlineKeyboardButton("🔙 بازگشت به پلتفرم‌ها", callback_data="user_how_to_connect"))
+    return markup
+
+
+
+def get_support_management_menu(support_type: str):
+    """Creates the menu for managing support settings."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    admin_emoji = "✅" if support_type == 'admin' else "⬜️"
+    link_emoji = "✅" if support_type == 'link' else "⬜️"
+
+    markup.add(types.InlineKeyboardButton(f"{admin_emoji} چت مستقیم با ادمین", callback_data="admin_set_support_type_admin"))
+    markup.add(types.InlineKeyboardButton(f"{link_emoji} لینک کانال/گروه", callback_data="admin_set_support_type_link"))
+    
+    if support_type == 'link':
+        markup.add(types.InlineKeyboardButton("✏️ ویرایش لینک پشتیبانی", callback_data="admin_edit_support_link"))
+
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup
