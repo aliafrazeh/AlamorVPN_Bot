@@ -16,6 +16,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("👥 مدیریت کاربران", callback_data="admin_user_management"),
         types.InlineKeyboardButton("🔗 مدیریت قفل کانال", callback_data="admin_channel_lock_management"),
         types.InlineKeyboardButton("📊 داشبورد", callback_data="admin_dashboard"),
+        types.InlineKeyboardButton("💡 مدیریت آموزش‌ها", callback_data="admin_tutorial_management"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -267,4 +268,42 @@ def get_join_channel_keyboard(channel_link: str):
     markup.add(types.InlineKeyboardButton("🚀 عضویت در کانال", url=channel_link))
     # Button to check membership status again
     markup.add(types.InlineKeyboardButton("✅ عضو شدم و بررسی مجدد", callback_data="user_check_join_status"))
+    return markup
+
+
+
+def get_tutorial_management_menu():
+    """Creates the menu for managing tutorials."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("➕ افزودن آموزش", callback_data="admin_add_tutorial"))
+    markup.add(types.InlineKeyboardButton("📝 لیست و حذف آموزش‌ها", callback_data="admin_list_tutorials"))
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
+
+def get_tutorials_list_menu(tutorials: list):
+    """Displays a list of tutorials with delete buttons."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if not tutorials:
+        markup.add(types.InlineKeyboardButton("هیچ آموزشی ثبت نشده است", callback_data="no_action"))
+    else:
+        for t in tutorials:
+            btn_text = f"❌ حذف: {t['platform']} - {t['app_name']}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_delete_tutorial_{t['id']}"))
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_tutorial_management"))
+    return markup
+
+def get_platforms_menu(platforms: list):
+    """Creates a menu for users to select a platform."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = [types.InlineKeyboardButton(p, callback_data=f"user_select_platform_{p}") for p in platforms]
+    markup.add(*buttons)
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="user_main_menu"))
+    return markup
+
+def get_apps_for_platform_menu(tutorials: list, platform: str):
+    """Creates a menu for users to select an app for a specific platform."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for t in tutorials:
+        markup.add(types.InlineKeyboardButton(t['app_name'], callback_data=f"user_select_tutorial_{t['id']}"))
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به پلتفرم‌ها", callback_data="user_how_to_connect"))
     return markup

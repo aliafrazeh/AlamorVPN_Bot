@@ -30,7 +30,16 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tutorials (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    platform TEXT NOT NULL,
+                    app_name TEXT NOT NULL,
+                    forward_chat_id BIGINT NOT NULL,
+                    forward_message_id BIGINT NOT NULL,
+                    UNIQUE (platform, app_name)
+                )
+            ''')
             # جدول کاربران
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -848,3 +857,76 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"Error deleting purchase {purchase_id}: {e}")
             return False
+        
+        
+    def add_tutorial(self, platform: str, app_name: str, chat_id: int, message_id: int):
+        """Adds a new tutorial to the database."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO tutorials (platform, app_name, forward_chat_id, forward_message_id) VALUES (?, ?, ?, ?)",
+                (platform, app_name, chat_id, message_id)
+            )
+            conn.commit()
+            conn.close()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            logger.warning(f"Tutorial for {platform} - {app_name} already exists.")
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Error adding tutorial: {e}")
+            return None
+
+    def get_all_tutorials(self):
+        """Gets all tutorials from the database."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tutorials ORDER BY platform, app_name")
+        tutorials = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return tutorials
+
+    def delete_tutorial(self, tutorial_id: int) -> bool:
+        """Deletes a tutorial by its ID."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tutorials WHERE id = ?", (tutorial_id,))
+            conn.commit()
+            conn.close()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting tutorial {tutorial_id}: {e}")
+            return False
+
+    def get_distinct_platforms(self):
+        """Gets a list of unique platforms from the tutorials table."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT platform FROM tutorials ORDER BY platform")
+        platforms = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return platforms
+
+    def get_tutorials_by_platform(self, platform: str):
+        """Gets all tutorials for a specific platform."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tutorials WHERE platform = ? ORDER BY app_name", (platform,))
+        tutorials = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return tutorials
+    
+    
+    def get_tutorial_by_id(self, tutorial_id: int):
+        """Gets a single tutorial by its primary key ID."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tutorials WHERE id = ?", (tutorial_id,))
+        tutorial = cursor.fetchone()
+        conn.close()
+        return dict(tutorial) if tutorial else None

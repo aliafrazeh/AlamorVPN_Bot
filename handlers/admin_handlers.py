@@ -198,8 +198,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif state == 'waiting_for_gb_plan_duration':
             if not text.isdigit(): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION_GB}", admin_id, prompt_id); return
             data['duration_days'] = int(text); execute_add_plan(admin_id, data)
+        elif state == 'waiting_for_tutorial_platform':
+            process_tutorial_platform(admin_id, message)
         elif state == 'waiting_for_plan_id_to_toggle':
             execute_toggle_plan_status(admin_id, text)
+        elif state == 'waiting_for_tutorial_app_name':
+            process_tutorial_app_name(admin_id, message)
+        elif state == 'waiting_for_tutorial_forward':
+            process_tutorial_forward(admin_id , message)
         elif state == 'waiting_for_user_id_to_search':
             process_user_search(admin_id, text)
         elif state == 'waiting_for_channel_id':
@@ -340,6 +346,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_tutorial_management": show_tutorial_management_menu, 
+            "admin_add_tutorial": start_add_tutorial_flow,             
+            "admin_list_tutorials": list_tutorials,  
             "admin_channel_lock_management": show_channel_lock_menu,
             "admin_set_channel_lock": start_set_channel_lock_flow,
             "admin_remove_channel_lock": execute_remove_channel_lock,
@@ -374,6 +383,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- هندل کردن موارد پیچیده‌تر ---
         if data.startswith("gateway_type_"):
             handle_gateway_type_selection(admin_id, call.message, data.replace('gateway_type_', ''))
+        elif data.startswith("admin_delete_tutorial_"): # <-- NEW
+            tutorial_id = int(data.split('_')[-1])
+            execute_delete_tutorial(admin_id, message, tutorial_id)
         elif data.startswith("plan_type_"):
             get_plan_details_from_callback(admin_id, message, data.replace('plan_type_', ''))
         elif data.startswith("confirm_delete_server_"):
@@ -1023,3 +1035,60 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _db_manager.update_setting('required_channel_link', '')
         _bot.answer_callback_query(message.id, messages.CHANNEL_LOCK_REMOVED)
         show_channel_lock_menu(admin_id, message)
+        
+    def show_tutorial_management_menu(admin_id, message):
+        """Displays the main menu for tutorial management."""
+        _show_menu(admin_id, "💡 مدیریت آموزش‌ها", inline_keyboards.get_tutorial_management_menu(), message)
+
+    def list_tutorials(admin_id, message):
+        """Lists all saved tutorials with delete buttons."""
+        all_tutorials = _db_manager.get_all_tutorials()
+        markup = inline_keyboards.get_tutorials_list_menu(all_tutorials)
+        _show_menu(admin_id, "برای حذف یک آموزش، روی آن کلیک کنید:", markup, message)
+
+    def execute_delete_tutorial(admin_id, message, tutorial_id):
+        """Deletes a tutorial and refreshes the list."""
+        if _db_manager.delete_tutorial(tutorial_id):
+            _bot.answer_callback_query(message.id, "✅ آموزش با موفقیت حذف شد.")
+            list_tutorials(admin_id, message) # Refresh the list
+        else:
+            _bot.answer_callback_query(message.id, "❌ در حذف آموزش خطایی رخ داد.", show_alert=True)
+
+    def start_add_tutorial_flow(admin_id, message):
+        """Starts the multi-step process for adding a new tutorial."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً پلتفرم آموزش را وارد کنید (مثلا: اندروید، ویندوز، آیفون):", inline_keyboards.get_back_button("admin_tutorial_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_tutorial_platform', 'data': {}, 'prompt_message_id': prompt.message_id}
+
+    def process_tutorial_platform(admin_id, message):
+        state_info = _admin_states[admin_id]
+        state_info['data']['platform'] = message.text.strip()
+        state_info['state'] = 'waiting_for_tutorial_app_name'
+        _bot.edit_message_text("نام اپلیکیشن را وارد کنید (مثلا: V2RayNG):", admin_id, state_info['prompt_message_id'])
+
+    def process_tutorial_app_name(admin_id, message):
+        state_info = _admin_states[admin_id]
+        state_info['data']['app_name'] = message.text.strip()
+        state_info['state'] = 'waiting_for_tutorial_forward'
+        _bot.edit_message_text("عالی. حالا پست آموزش را از کانال مورد نظر اینجا فوروارد کنید.", admin_id, state_info['prompt_message_id'])
+
+    def process_tutorial_forward(admin_id, message):
+        state_info = _admin_states.get(admin_id, {})
+        # Check if the message is forwarded
+        if not message.forward_from_chat:
+            _bot.send_message(admin_id, "پیام ارسال شده فورواردی نیست. لطفاً یک پست را فوروارد کنید.")
+            return
+
+        data = state_info['data']
+        platform = data['platform']
+        app_name = data['app_name']
+        forward_chat_id = message.forward_from_chat.id
+        forward_message_id = message.forward_from_message_id
+
+        if _db_manager.add_tutorial(platform, app_name, forward_chat_id, forward_message_id):
+            _bot.edit_message_text("✅ آموزش با موفقیت ثبت شد.", admin_id, state_info['prompt_message_id'])
+        else:
+            _bot.edit_message_text("❌ خطایی در ثبت آموزش رخ داد.", admin_id, state_info['prompt_message_id'])
+        
+        _clear_admin_state(admin_id)
+    show_tutorial_management_menu(admin_id)

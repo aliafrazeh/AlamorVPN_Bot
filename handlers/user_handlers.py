@@ -76,6 +76,14 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             send_single_configs(user_id, purchase_id)
         elif data == "user_how_to_connect": # <-- NEW
             show_how_to_connect(user_id, call.message)
+        elif data == "user_how_to_connect":
+            show_platform_selection(user_id, call.message)
+        elif data.startswith("user_select_platform_"):
+            platform = data.replace("user_select_platform_", "")
+            show_apps_for_platform(user_id, platform, call.message)
+        elif data.startswith("user_select_tutorial_"):
+            tutorial_id = int(data.replace("user_select_tutorial_", ""))
+            send_tutorial_to_user(user_id, tutorial_id, call.message)
         elif data == "user_check_join_status":
             required_channel_id_str = _db_manager.get_setting('required_channel_id')
             if required_channel_id_str:
@@ -679,3 +687,37 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         send_subscription_info(user_id, sub_link) # Corrected call to send_subscription_info
         
         _clear_user_state(user_id)
+        
+        
+    def show_platform_selection(user_id, message):
+        """Shows the platform selection menu to the user."""
+        platforms = _db_manager.get_distinct_platforms()
+        if not platforms:
+            _bot.edit_message_text("در حال حاضر هیچ آموزشی ثبت نشده است.", user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
+            return
+        markup = inline_keyboards.get_platforms_menu(platforms)
+        _bot.edit_message_text("لطفاً پلتفرم خود را انتخاب کنید:", user_id, message.message_id, reply_markup=markup)
+
+    def show_apps_for_platform(user_id, platform, message):
+        """Shows the list of apps for the selected platform."""
+        tutorials = _db_manager.get_tutorials_by_platform(platform)
+        markup = inline_keyboards.get_apps_for_platform_menu(tutorials, platform)
+        _bot.edit_message_text(f"آموزش کدام اپلیکیشن برای {platform} را می‌خواهید؟", user_id, message.message_id, reply_markup=markup)
+
+    def send_tutorial_to_user(user_id, tutorial_id, message):
+        """Forwards the selected tutorial message to the user."""
+        tutorial = _db_manager.get_tutorial_by_id(tutorial_id) # You need to create this function in db_manager
+        if not tutorial:
+            _bot.answer_callback_query(message.id, "آموزش یافت نشد.", show_alert=True)
+            return
+        
+        try:
+            _bot.forward_message(
+                chat_id=user_id,
+                from_chat_id=tutorial['forward_chat_id'],
+                message_id=tutorial['forward_message_id']
+            )
+            _bot.answer_callback_query(message.id)
+        except Exception as e:
+            logger.error(f"Failed to forward tutorial {tutorial_id} to user {user_id}: {e}")
+            _bot.answer_callback_query(message.id, "خطا در ارسال آموزش. لطفاً به ادمین اطلاع دهید.", show_alert=True)
