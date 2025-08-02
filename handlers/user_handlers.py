@@ -74,8 +74,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("user_get_single_configs_"):
             purchase_id = int(data.replace("user_get_single_configs_", ""))
             send_single_configs(user_id, purchase_id)
-        elif data == "user_how_to_connect": # <-- NEW
-            show_how_to_connect(user_id, call.message)
         elif data == "user_how_to_connect":
             show_platform_selection(user_id, call.message)
         elif data.startswith("user_select_platform_"):
