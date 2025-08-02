@@ -316,18 +316,9 @@ def get_apps_for_platform_menu(tutorials: list, platform: str):
 
 
 
-def get_support_management_menu(support_type: str):
-    """Creates the menu for managing support settings."""
+def get_support_management_menu(): # The 'support_type' argument has been removed
+    """--- SIMPLIFIED: Creates a simple menu for setting the support link ---"""
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
-    admin_emoji = "✅" if support_type == 'admin' else "⬜️"
-    link_emoji = "✅" if support_type == 'link' else "⬜️"
-
-    markup.add(types.InlineKeyboardButton(f"{admin_emoji} چت مستقیم با ادمین", callback_data="admin_set_support_type_admin"))
-    markup.add(types.InlineKeyboardButton(f"{link_emoji} لینک کانال/گروه", callback_data="admin_set_support_type_link"))
-    
-    if support_type == 'link':
-        markup.add(types.InlineKeyboardButton("✏️ ویرایش لینک پشتیبانی", callback_data="admin_edit_support_link"))
-
+    markup.add(types.InlineKeyboardButton("✏️ ثبت/ویرایش لینک پشتیبانی", callback_data="admin_edit_support_link"))
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup
