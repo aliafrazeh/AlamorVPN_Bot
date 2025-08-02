@@ -852,9 +852,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         plan_id = int(message.text)
         confirm_text = messages.DELETE_PLAN_CONFIRM.format(
-        plan_name=helpers.escape_markdown_v1(plan['name']),
-        plan_id=plan_id
-)
+            plan_name=helpers.escape_markdown_v1(plan['name']), 
+            plan_id=plan_id
+        )
         markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_plan_{plan_id}", "admin_plan_management")
         _bot.edit_message_text(confirm_text, admin_id, state_info['prompt_message_id'], reply_markup=markup, parse_mode='Markdown')
         _clear_admin_state(admin_id) # State is cleared, waiting for callback
