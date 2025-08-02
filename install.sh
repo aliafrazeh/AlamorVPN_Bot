@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v6.0 (with PostgreSQL)
+# AlamorVPN Bot Professional Installer & Manager v8.0 (Menu-Driven)
 # ==============================================================================
 
-# --- Color Codes for better UI ---
+# --- Color Codes ---
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -13,16 +13,18 @@ NC='\033[0m'
 
 # --- Variables ---
 REPO_URL="https://github.com/AlamorNetwork/AlamorVPN_Bot.git"
-PROJECT_NAME="AlamorVPN_Bot"
 INSTALL_DIR="/var/www/alamorvpn_bot"
 BOT_SERVICE_NAME="alamorbot.service"
 WEBHOOK_SERVICE_NAME="alamor_webhook.service"
+SCRIPT_PATH_IN_INSTALL_DIR="/var/www/alamorvpn_bot/install.sh"
+COMMAND_PATH="/usr/local/bin/alamorbot"
 
 # --- Helper Functions ---
 print_success() { echo -e "\n${GREEN}✅ $1${NC}\n"; }
 print_error() { echo -e "\n${RED}❌ ERROR: $1${NC}\n"; }
-print_info() { echo -e "\n${BLUE}ℹ️ $1${NC}\n"; }
-print_warning() { echo -e "\n${YELLOW}⚠️ WARNING: $1${NC}"; }
+print_info() { echo -e "\n${BLUE}ℹ️  $1${NC}\n"; }
+print_warning() { echo -e "\n${YELLOW}⚠️  $1${NC}"; }
+pause() { read -p "Press [Enter] key to continue..."; }
 
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -98,7 +100,16 @@ install_bot() {
     print_info "Step 7: Setting up persistent services..."
     setup_services
     
-    print_success "Installation complete!"
+    print_info "Step 8: Creating the 'alamorbot' management command..."
+    # Make the script executable
+    sudo chmod +x "$SCRIPT_PATH_IN_INSTALL_DIR"
+    # Create a symbolic link in /usr/local/bin
+    if [ -f "$COMMAND_PATH" ]; then
+        sudo rm "$COMMAND_PATH"
+    fi
+    sudo ln -s "$SCRIPT_PATH_IN_INSTALL_DIR" "$COMMAND_PATH"
+    
+    print_success "Installation complete! You can now manage the bot by typing 'alamorbot' in the terminal."
 }
 setup_env_file() {
     local PYTHON_EXEC="$INSTALL_DIR/.venv/bin/python3"
@@ -232,14 +243,16 @@ EOL
 }
 
 update_bot() {
-    check_root
     print_info "Updating the bot from the 'main' branch on GitHub..."
     sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
     git pull origin main
-    if [ $? -ne 0 ]; then print_error "Failed to pull updates from GitHub. Aborting."; exit 1; fi
-    $INSTALL_DIR/.venv/bin/python3 -m pip install -r requirements.txt
+    if [ $? -ne 0 ]; then print_error "Failed to pull updates. Aborting."; pause; return; fi
+    
+    print_info "Installing/Updating Python dependencies..."
+    $INSTALL_DIR/.venv/bin/pip install -r requirements.txt
+    
+    print_info "Restarting services..."
     sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
-    sudo 
     print_success "Bot updated and restarted successfully."
 }
 
@@ -292,46 +305,96 @@ create_backup() {
     fi
 }
 
-show_help() {
-    echo -e "${BLUE}======= AlamorVPN Bot Manager =======${NC}"
-    echo "Usage: sudo ./install.sh [command]"
-    echo "-----------------------------------"
-    echo "Commands:"
-    echo -e "  ${GREEN}install${NC}   Full installation and initial setup of the bot."
-    echo -e "  ${GREEN}update${NC}    Update the bot to the latest version from GitHub."
-    echo -e "  ${GREEN}remove${NC}    Completely remove the bot and its services."
-    echo -e "  ${YELLOW}start${NC}     Start the bot and webhook services."
-    echo -e "  ${YELLOW}stop${NC}      Stop the bot and webhook services."
-    echo -e "  ${YELLOW}restart${NC}   Restart the bot and webhook services."
-    echo -e "  ${YELLOW}status${NC}    Show the status of the services."
-    echo -e "  ${YELLOW}logs${NC}      View the live logs of the main bot."
-    echo -e "  ${YELLOW}backup${NC}    Create a backup of the database and settings."
+# ==============================================================================
+# SECTION: Menu System
+# ==============================================================================
+
+show_main_menu() {
+    clear
+    echo -e "${BLUE}=====================================${NC}"
+    echo -e "${GREEN}      AlamorVPN Bot Manager        ${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    echo " 1. Show Services Status (نمایش وضعیت سرویس‌ها)"
+    echo " 2. View Live Logs (مشاهده لاگ‌های زنده ربات)"
+    echo " 3. Restart Services (راه‌اندازی مجدد سرویس‌ها)"
+    echo " 4. Stop Services (متوقف کردن سرویس‌ها)"
+    echo "-------------------------------------"
+    echo " 5. Update Bot (آپدیت ربات از گیت‌هاب)"
+    echo " 6. Create Backup (ایجاد فایل پشتیبان)"
+    echo -e "${RED} 7. Remove Bot (حذف کامل ربات)${NC}"
+    echo "-------------------------------------"
+    echo " 0. Exit (خروج)"
     echo -e "${BLUE}=====================================${NC}"
 }
 
-# --- Main Script Logic ---
+handle_menu_choice() {
+    read -p "Please enter your choice [0-7]: " choice
+    case $choice in
+        1)
+            print_info "Main Bot Service Status:"
+            sudo systemctl --no-pager status $BOT_SERVICE_NAME
+            print_info "\nWebhook Service Status:"
+            sudo systemctl --no-pager status $WEBHOOK_SERVICE_NAME
+            pause
+            ;;
+        2)
+            sudo journalctl -u $BOT_SERVICE_NAME -f --no-pager
+            pause
+            ;;
+        3)
+            sudo systemctl restart $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
+            print_success "Services restarted."
+            pause
+            ;;
+        4)
+            sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
+            print_success "Services stopped."
+            pause
+            ;;
+        5)
+            update_bot
+            pause
+            ;;
+        6)
+            create_backup
+            pause
+            ;;
+        7)
+            remove_bot
+            # Exits after removal
+            ;;
+        0)
+            echo "Exiting."
+            exit 0
+            ;;
+        *)
+            print_error "Invalid option. Please try again."
+            pause
+            ;;
+    esac
+}
+
+# ==============================================================================
+# SECTION: Main Script Logic
+# ==============================================================================
+
+# If the script is run with "install" argument, start the installation process.
 if [[ "$1" == "install" ]]; then
     install_bot
     exit 0
 fi
 
-if [ ! -f "main.py" ]; then
-    if [ -d "$INSTALL_DIR" ]; then
-        cd "$INSTALL_DIR"
-    else
-        print_error "Project directory not found. Please run with 'install' command first or run this script from the project root."
-        show_help; exit 1
-    fi
+# If run without arguments, ensure we are in the correct directory and show the menu.
+check_root
+if [ ! -d "$INSTALL_DIR" ]; then
+    print_error "Bot is not installed. Please run the script with the 'install' argument first:"
+    echo "bash <(curl -sL ...) install"
+    exit 1
 fi
+cd "$INSTALL_DIR"
 
-case "$1" in
-    update) update_bot ;;
-    remove) remove_bot ;;
-    backup) create_backup ;;
-    start) check_root; sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services started." ;;
-    stop) check_root; sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services stopped." ;;
-    restart) check_root; sudo systemctl restart $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services restarted." ;;
-    status) check_root; print_info "Main Bot Service Status:"; sudo systemctl --no-pager status $BOT_SERVICE_NAME; print_info "\nWebhook Service Status:"; sudo systemctl --no-pager status $WEBHOOK_SERVICE_NAME ;;
-    logs) sudo journalctl -u $BOT_SERVICE_NAME -f ;;
-    *) show_help ;;
-esac
+# Loop to show the menu
+while true; do
+    show_main_menu
+    handle_menu_choice
+done
