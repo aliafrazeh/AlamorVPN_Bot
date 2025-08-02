@@ -1091,4 +1091,4 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text("❌ خطایی در ثبت آموزش رخ داد.", admin_id, state_info['prompt_message_id'])
         
         _clear_admin_state(admin_id)
-    show_tutorial_management_menu(admin_id)
+        show_tutorial_management_menu(admin_id)
