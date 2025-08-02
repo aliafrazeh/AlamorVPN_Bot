@@ -657,6 +657,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         # --- Send the final subscription info to the user ---
         _bot.delete_message(user_id, prompt_id)
         _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
-        send_subscription_info(_bot, user_id, sub_link) # Corrected call to send_subscription_info
+        send_subscription_info(user_id, sub_link) # Corrected call to send_subscription_info
         
         _clear_user_state(user_id)
