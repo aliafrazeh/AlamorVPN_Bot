@@ -256,3 +256,15 @@ def get_user_subscriptions_management_menu(db_manager, purchases: list, user_tel
             
     markup.add(types.InlineKeyboardButton("🔙 بازگشت به مدیریت کاربران", callback_data="admin_user_management"))
     return markup
+
+
+def get_join_channel_keyboard(channel_link: str):
+    """
+    --- NEW: Creates the keyboard for the channel lock message ---
+    """
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Button to join the channel (as a URL)
+    markup.add(types.InlineKeyboardButton("🚀 عضویت در کانال", url=channel_link))
+    # Button to check membership status again
+    markup.add(types.InlineKeyboardButton("✅ عضو شدم و بررسی مجدد", callback_data="user_check_join_status"))
+    return markup

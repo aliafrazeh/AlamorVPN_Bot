@@ -16,6 +16,7 @@ from utils.config_generator import ConfigGenerator
 from utils.helpers import is_float_or_int , escape_markdown_v1
 from utils.bot_helpers import send_subscription_info # این ایمپورت جدید است
 from config import ZARINPAL_MERCHANT_ID, WEBHOOK_DOMAIN , ZARINPAL_SANDBOX
+from main import send_welcome
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,24 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             send_single_configs(user_id, purchase_id)
         elif data == "user_how_to_connect": # <-- NEW
             show_how_to_connect(user_id, call.message)
+        elif data == "user_check_join_status":
+            required_channel_id_str = _db_manager.get_setting('required_channel_id')
+            if required_channel_id_str:
+                required_channel_id = int(required_channel_id_str)
+                if helpers.is_user_member_of_channel(_bot, required_channel_id, call.from_user.id):
+                    # User has joined, delete the message and show the main menu
+                    _bot.delete_message(call.message.chat.id, call.message.message_id)
+                    # We call the /start logic again, which will now succeed
+                    from main import send_welcome 
+                    send_welcome(call.message)
+                else:
+                    # User has not joined yet, show an alert
+                    _bot.answer_callback_query(call.id, "❌ شما هنوز در کانال عضو نشده‌اید.", show_alert=True)
+            else:
+                # Channel lock is not set, just show the main menu
+                _bot.delete_message(call.message.chat.id, call.message.message_id)
+                from main import send_welcome 
+                send_welcome(call.message)
     @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_')))
     def handle_purchase_callbacks(call):
         """هندل کردن دکمه‌های فرآیند خرید"""

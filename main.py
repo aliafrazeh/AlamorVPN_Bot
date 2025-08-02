@@ -37,22 +37,27 @@ def send_welcome(message):
     first_name = message.from_user.first_name
     logger.info(f"Received /start from user ID: {user_id} ({first_name})")
 
-
+    # --- MODIFIED: Now uses the new inline keyboard for channel lock ---
     required_channel_id_str = db_manager.get_setting('required_channel_id')
     
     if required_channel_id_str:
         try:
             required_channel_id = int(required_channel_id_str)
-            # Admins are exempt from the channel lock
             if not helpers.is_admin(user_id) and not helpers.is_user_member_of_channel(bot, required_channel_id, user_id):
-                channel_link = db_manager.get_setting('required_channel_link') or "کانال ادمین"
-                bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT.format(channel_link=channel_link))
+                channel_link = db_manager.get_setting('required_channel_link') or "https://t.me/Alamor_Network" # Fallback link
+                
+                # Create the new keyboard
+                markup = inline_keyboards.get_join_channel_keyboard(channel_link)
+                
+                # Send the message with the keyboard
+                bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT, reply_markup=markup)
                 logger.info(f"User {user_id} blocked by channel lock.")
                 return
         except (ValueError, TypeError):
             logger.error(f"Invalid required_channel_id in database: {required_channel_id_str}")
+    # --- END MODIFIED ---
 
-
+    # The rest of the function remains the same
     db_manager.add_or_update_user(
         telegram_id=user_id,
         first_name=first_name,
@@ -65,7 +70,6 @@ def send_welcome(message):
     else:
         welcome_text = messages.START_WELCOME.format(first_name=helpers.escape_markdown_v1(first_name))
         bot.send_message(user_id, welcome_text, parse_mode='Markdown', reply_markup=inline_keyboards.get_user_main_inline_menu())
-
 @bot.message_handler(commands=['myid'])
 def send_user_id(message):
     user_id = message.from_user.id
