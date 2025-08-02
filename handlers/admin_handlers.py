@@ -42,17 +42,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if admin_id in _admin_states:
             del _admin_states[admin_id]
 
-    def _show_menu(user_id, text, markup, message=None):
+    def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
+        """
+        --- CORRECTED VERSION ---
+        This version correctly accepts the 'parse_mode' argument.
+        """
         try:
             if message:
-                return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode='Markdown')
+                return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
             else:
-                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode='Markdown')
+                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
         except telebot.apihelper.ApiTelegramException as e:
-            if 'message to edit not found' in e.description:
-                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode='Markdown')
-            elif 'message is not modified' not in e.description:
-                logger.warning(f"Error handling menu for {user_id}: {e}")
+            if 'message to edit not found' in str(e):
+                # If the original message is gone, send a new one
+                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
+            elif 'message is not modified' not in str(e):
+                # Log other errors but don't crash
+                logger.warning(f"Menu error for {user_id}: {e}")
         return message
 
     def _show_admin_main_menu(admin_id, message=None): _show_menu(admin_id, messages.ADMIN_WELCOME, inline_keyboards.get_admin_main_inline_menu(), message)
