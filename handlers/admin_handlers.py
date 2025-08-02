@@ -1125,15 +1125,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def show_support_management_menu(admin_id, message):
-        """--- SIMPLIFIED: Displays the simple support management menu ---"""
+        """Displays the simple support management menu as plain text to avoid errors."""
         support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
         
-        # Escape the link to prevent Markdown errors
-        safe_link = helpers.escape_markdown_v1(support_link)
-        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(link=safe_link)
+        # We don't need to escape the link anymore because we are not using Markdown
+        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(link=support_link)
         
         markup = inline_keyboards.get_support_management_menu()
-        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')
+        
+        # --- THE FINAL FIX IS HERE ---
+        # We explicitly tell the bot to send this specific menu as plain text.
+        _show_menu(admin_id, text, markup, message, parse_mode=None)
 
     def set_support_type(admin_id, call, support_type):
         """Sets the support type (admin chat or link)."""
