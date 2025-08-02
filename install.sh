@@ -136,7 +136,21 @@ EOL
 }
 
 # در فایل install.sh
-
+create_system_command() {
+    print_info "Setting up the 'alamorbot' system command..."
+    if [ ! -f "$SCRIPT_PATH_IN_INSTALL_DIR" ]; then
+        print_error "install.sh not found in $INSTALL_DIR. Please run the full installation first."
+        return 1
+    fi
+    # Make the script executable
+    sudo chmod +x "$SCRIPT_PATH_IN_INSTALL_DIR"
+    # Create a symbolic link in /usr/local/bin
+    if [ -L "$COMMAND_PATH" ]; then
+        sudo rm "$COMMAND_PATH"
+    fi
+    sudo ln -s "$SCRIPT_PATH_IN_INSTALL_DIR" "$COMMAND_PATH"
+    print_success "Command 'alamorbot' is now available system-wide."
+}
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
     read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
@@ -314,16 +328,16 @@ show_main_menu() {
     echo -e "${BLUE}=====================================${NC}"
     echo -e "${GREEN}      AlamorVPN Bot Manager        ${NC}"
     echo -e "${BLUE}=====================================${NC}"
-    echo " 1. Show Services Status (نمایش وضعیت سرویس‌ها)"
-    echo " 2. View Live Logs (مشاهده لاگ‌های زنده ربات)"
-    echo " 3. Restart Services (راه‌اندازی مجدد سرویس‌ها)"
-    echo " 4. Stop Services (متوقف کردن سرویس‌ها)"
+    echo " 1. Show Service Status"
+    echo " 2. View Live Logs"
+    echo " 3. Restart Service"
+    echo " 4. Stop Service"
     echo "-------------------------------------"
-    echo " 5. Update Bot (آپدیت ربات از گیت‌هاب)"
-    echo " 6. Create Backup (ایجاد فایل پشتیبان)"
-    echo -e "${RED} 7. Remove Bot (حذف کامل ربات)${NC}"
+    echo " 5. Update Bot"
+    echo " 6. Create Backup"
+    echo -e "${RED} 7. Remove Bot (H DANGER H)${NC}"
     echo "-------------------------------------"
-    echo " 0. Exit (خروج)"
+    echo " 0. Exit"
     echo -e "${BLUE}=====================================${NC}"
 }
 
@@ -331,24 +345,20 @@ handle_menu_choice() {
     read -p "Please enter your choice [0-7]: " choice
     case $choice in
         1)
-            print_info "Main Bot Service Status:"
             sudo systemctl --no-pager status $BOT_SERVICE_NAME
-            print_info "\nWebhook Service Status:"
-            sudo systemctl --no-pager status $WEBHOOK_SERVICE_NAME
             pause
             ;;
         2)
             sudo journalctl -u $BOT_SERVICE_NAME -f --no-pager
-            pause
             ;;
         3)
-            sudo systemctl restart $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
-            print_success "Services restarted."
+            sudo systemctl restart $BOT_SERVICE_NAME 2>/dev/null
+            print_success "Service restarted."
             pause
             ;;
         4)
-            sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
-            print_success "Services stopped."
+            sudo systemctl stop $BOT_SERVICE_NAME 2>/dev/null
+            print_success "Service stopped."
             pause
             ;;
         5)
@@ -360,15 +370,22 @@ handle_menu_choice() {
             pause
             ;;
         7)
-            remove_bot
-            # Exits after removal
+            read -p "$(print_warning 'This is a destructive action. Are you sure? (y/n): ')" confirm
+            if [[ "$confirm" == "y" ]]; then
+                remove_bot
+                echo "Exiting now."
+                exit 0
+            else
+                print_info "Removal canceled."
+                pause
+            fi
             ;;
         0)
             echo "Exiting."
             exit 0
             ;;
         *)
-            print_error "Invalid option. Please try again."
+            print_error "Invalid option."
             pause
             ;;
     esac
@@ -378,22 +395,24 @@ handle_menu_choice() {
 # SECTION: Main Script Logic
 # ==============================================================================
 
-# If the script is run with "install" argument, start the installation process.
 if [[ "$1" == "install" ]]; then
     install_bot
     exit 0
 fi
 
-# If run without arguments, ensure we are in the correct directory and show the menu.
+if [[ "$1" == "setup_command" ]]; then
+    check_root
+    create_system_command
+    exit 0
+fi
+
 check_root
 if [ ! -d "$INSTALL_DIR" ]; then
-    print_error "Bot is not installed. Please run the script with the 'install' argument first:"
-    echo "bash <(curl -sL ...) install"
+    print_error "Bot is not installed. Run with 'install' argument."
     exit 1
 fi
 cd "$INSTALL_DIR"
 
-# Loop to show the menu
 while true; do
     show_main_menu
     handle_menu_choice
