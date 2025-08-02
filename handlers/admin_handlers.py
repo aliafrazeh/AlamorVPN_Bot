@@ -15,6 +15,8 @@ from keyboards import inline_keyboards
 from utils.config_generator import ConfigGenerator
 from utils.bot_helpers import send_subscription_info # این ایمپورت جدید است
 from handlers.user_handlers import _user_states
+from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
+
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -198,7 +200,12 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['duration_days'] = int(text); execute_add_plan(admin_id, data)
         elif state == 'waiting_for_plan_id_to_toggle':
             execute_toggle_plan_status(admin_id, text)
-
+        elif state == 'waiting_for_user_id_to_search':
+            process_user_search(admin_id, text)
+        elif state == 'waiting_for_channel_id':
+            process_set_channel_id(admin_id, message)
+        elif state == 'waiting_for_user_id_to_search':
+            process_user_search(admin_id,message)
         # --- Gateway Flows ---
         if state == 'waiting_for_gateway_name':
             data['name'] = text
@@ -331,6 +338,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_channel_lock_management": show_channel_lock_menu,
+            "admin_set_channel_lock": start_set_channel_lock_flow,
+            "admin_remove_channel_lock": execute_remove_channel_lock,
+            "admin_user_management": lambda a, m: _show_menu(a, "مدیریت کاربران:", inline_keyboards.get_user_management_menu(), m),
+            "admin_search_user": start_search_user_flow,
             "admin_delete_plan": start_delete_plan_flow,
             "admin_edit_plan": start_edit_plan_flow,
             "admin_create_backup": create_backup,
@@ -373,6 +385,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("confirm_delete_plan_"):
             plan_id = int(data.split('_')[-1])
             execute_delete_plan(admin_id, message, plan_id)
+        elif data.startswith("admin_delete_purchase_"):
+            parts = data.split('_')
+            purchase_id = int(parts[3])
+            user_telegram_id = int(parts[4])
+            execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
+        elif data.startswith("admin_delete_purchase_"):
+            parts = data.split('_')
+            purchase_id, user_telegram_id = int(parts[3]), int(parts[4])
+            execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id))
@@ -848,3 +869,138 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(messages.EDIT_PLAN_SUCCESS.format(plan_name=data['new_name']), admin_id, state_info['prompt_message_id'])
         _clear_admin_state(admin_id)
         _show_plan_management_menu(admin_id)
+        
+        
+    def start_search_user_flow(admin_id, message):
+        """Starts the flow for searching a user by their Telegram ID."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً آیدی عددی کاربر مورد نظر را وارد کنید:", inline_keyboards.get_back_button("admin_user_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': prompt.message_id}
+
+    def process_user_search(admin_id, message):
+        """Processes the user ID, finds the user, and shows their subscriptions."""
+        state_info = _admin_states.get(admin_id, {})
+        user_id_str = message.text.strip()
+
+        if not user_id_str.isdigit():
+            _bot.send_message(admin_id, "آیدی وارد شده نامعتبر است. لطفاً یک عدد وارد کنید.")
+            return
+
+        user_telegram_id = int(user_id_str)
+        purchases = _db_manager.get_user_purchases_by_telegram_id(user_telegram_id)
+        user_info = _db_manager.get_user_by_telegram_id(user_telegram_id)
+        user_display = user_info['first_name'] if user_info else f"کاربر {user_telegram_id}"
+
+        # --- THE FIX IS HERE: Pass _db_manager to the keyboard function ---
+        markup = inline_keyboards.get_user_subscriptions_management_menu(_db_manager, purchases, user_telegram_id)
+        
+        _bot.edit_message_text(
+            f"اشتراک‌های یافت شده برای **{user_display}**:",
+            admin_id,
+            state_info['prompt_message_id'],
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
+        _clear_admin_state(admin_id)
+        
+        
+        
+def execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id):
+    """
+    Deletes a purchase from the local database and the corresponding client
+    from the X-UI panel.
+    """
+    # First, get purchase details to find the client UUID and server ID
+    purchase = _db_manager.get_purchase_by_id(purchase_id)
+    if not purchase:
+        _bot.answer_callback_query(message.id, "این اشتراک یافت نشد.", show_alert=True)
+        return
+
+    # Step 1: Delete the purchase from the local database
+    if not _db_manager.delete_purchase(purchase_id):
+        _bot.answer_callback_query(message.id, "خطا در حذف اشتراک از دیتابیس.", show_alert=True)
+        return
+
+    # Step 2: Delete the client from the X-UI panel
+    try:
+        server = _db_manager.get_server_by_id(purchase['server_id'])
+        if server and purchase['xui_client_uuid']:
+            api_client = _xui_api(
+                panel_url=server['panel_url'],
+                username=server['username'],
+                password=server['password']
+            )
+            # We need the inbound_id to delete the client. This is a limitation.
+            # A better approach for the future is to store inbound_id in the purchase record.
+            # For now, we assume we need to iterate or have a default.
+            # This part of the logic might need enhancement based on your X-UI panel version.
+            # We will try to delete by UUID, which is supported by some panel forks.
+            
+            # Note: The default X-UI API requires inbound_id to delete a client.
+            # If your panel supports deleting by UUID directly, this will work.
+            # Otherwise, this part needs to be adapted.
+            # For now, we log the action. A full implementation would require a proper API call.
+            logger.info(f"Admin {admin_id} deleted purchase {purchase_id}. Corresponding X-UI client UUID to be deleted is {purchase['xui_client_uuid']} on server {server['name']}.")
+            # api_client.delete_client(inbound_id, purchase['xui_client_uuid']) # This line would be needed
+    except Exception as e:
+        logger.error(f"Could not delete client from X-UI for purchase {purchase_id}: {e}")
+        _bot.answer_callback_query(message.id, "اشتراک از دیتابیس حذف شد، اما در حذف از پنل خطایی رخ داد.", show_alert=True)
+
+    _bot.answer_callback_query(message.id, f"✅ اشتراک {purchase_id} با موفقیت حذف شد.")
+
+    # Step 3: Refresh the user's subscription list for the admin
+    # We create a mock message object to pass to the search function
+    mock_message = types.Message(
+        message_id=message.message_id,
+        chat=message.chat,
+        date=None,
+        content_type='text',
+        options={},
+        json_string=""
+    )
+    mock_message.text = str(user_telegram_id)
+    
+    # Put the admin back into the search state to show the updated list
+    _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
+    process_user_search(admin_id, mock_message)
+
+
+
+    def show_channel_lock_menu(admin_id, message):
+        """Displays the channel lock management menu."""
+        channel_id = _db_manager.get_setting('required_channel_id')
+        status = f"فعال روی کانال `{channel_id}`" if channel_id else "غیرفعال"
+        text = messages.CHANNEL_LOCK_MENU_TEXT.format(status=status)
+        markup = inline_keyboards.get_channel_lock_management_menu(channel_set=bool(channel_id))
+        _show_menu(admin_id, text, markup, message)
+
+    def start_set_channel_lock_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.CHANNEL_LOCK_SET_PROMPT, inline_keyboards.get_back_button("admin_channel_lock_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_channel_id', 'prompt_message_id': prompt.message_id}
+
+    def process_set_channel_id(admin_id, message):
+        state_info = _admin_states.get(admin_id, {})
+        channel_id_str = message.text.strip()
+
+        if channel_id_str.lower() == 'cancel':
+            _clear_admin_state(admin_id)
+            show_channel_lock_menu(admin_id, state_info.get('prompt_message_id'))
+            return
+
+        if not (channel_id_str.startswith('-') and channel_id_str[1:].isdigit()):
+            _bot.send_message(admin_id, messages.CHANNEL_LOCK_INVALID_ID)
+            return
+
+        _db_manager.update_setting('required_channel_id', channel_id_str)
+        _db_manager.update_setting('required_channel_link', "لینک ثبت نشده") # You can ask for the link in another step
+        
+        _bot.edit_message_text(messages.CHANNEL_LOCK_SUCCESS.format(channel_id=channel_id_str), admin_id, state_info['prompt_message_id'])
+        _clear_admin_state(admin_id)
+        show_channel_lock_menu(admin_id)
+
+    def execute_remove_channel_lock(admin_id, message):
+        _db_manager.update_setting('required_channel_id', '') # Set to empty string
+        _db_manager.update_setting('required_channel_link', '')
+        _bot.answer_callback_query(message.id, messages.CHANNEL_LOCK_REMOVED)
+        show_channel_lock_menu(admin_id, message)

@@ -14,6 +14,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("💰 مدیریت پلن‌ها", callback_data="admin_plan_management"),
         types.InlineKeyboardButton("💳 مدیریت درگاه‌ها", callback_data="admin_payment_management"),
         types.InlineKeyboardButton("👥 مدیریت کاربران", callback_data="admin_user_management"),
+        types.InlineKeyboardButton("🔗 مدیریت قفل کانال", callback_data="admin_channel_lock_management"),
         types.InlineKeyboardButton("📊 داشبورد", callback_data="admin_dashboard"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
@@ -72,13 +73,6 @@ def get_plan_type_selection_menu_admin():
     )
     return markup
     
-def get_gateway_type_selection_menu():
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("💳 کارت به کارت", callback_data="gateway_type_card_to_card"),
-        types.InlineKeyboardButton("🔙 انصراف", callback_data="admin_payment_management")
-    )
-    return markup
     
 def get_inbound_selection_menu(server_id: int, panel_inbounds: list, active_inbound_ids: list):
     """
@@ -224,4 +218,41 @@ def get_gateway_type_selection_menu():
         types.InlineKeyboardButton("🟢 زرین‌پال", callback_data="gateway_type_zarinpal")
     )
     markup.add(types.InlineKeyboardButton("🔙 انصراف", callback_data="admin_payment_management"))
+    return markup
+
+
+def get_channel_lock_management_menu(channel_set: bool):
+    """Creates the menu for managing the required channel."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("✏️ ثبت/تغییر کانال", callback_data="admin_set_channel_lock"))
+    if channel_set:
+        markup.add(types.InlineKeyboardButton("❌ حذف قفل کانال", callback_data="admin_remove_channel_lock"))
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
+
+def get_user_management_menu():
+    """Creates the main menu for user management."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("🔎 جستجوی کاربر", callback_data="admin_search_user"))
+    # Add more user management options here later if needed
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
+
+def get_user_subscriptions_management_menu(db_manager, purchases: list, user_telegram_id: int):
+    """
+    --- MODIFIED: Accepts db_manager as a parameter to fetch server names ---
+    """
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if not purchases:
+        markup.add(types.InlineKeyboardButton("این کاربر اشتراک فعالی ندارد", callback_data="no_action"))
+    else:
+        for p in purchases:
+            # Now we use the passed db_manager to get server info
+            server = db_manager.get_server_by_id(p['server_id'])
+            server_name = server['name'] if server else "N/A"
+            expire_str = p['expire_date'][:10] if p['expire_date'] else "نامحدود"
+            btn_text = f"❌ حذف سرویس {p['id']} ({server_name} - {expire_str})"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_delete_purchase_{p['id']}_{user_telegram_id}"))
+            
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به مدیریت کاربران", callback_data="admin_user_management"))
     return markup

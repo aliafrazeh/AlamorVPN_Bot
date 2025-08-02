@@ -44,7 +44,12 @@ class DatabaseManager:
                     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            ''')
             # جدول سرورها
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS servers (
@@ -804,3 +809,42 @@ class DatabaseManager:
         plans = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return plans
+    
+    
+    
+    def get_setting(self, key: str) -> str or None:
+        """Reads a setting from the database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+
+    def update_setting(self, key: str, value: str):
+        """Updates or creates a setting in the database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+        conn.close()
+
+    def get_user_purchases_by_telegram_id(self, telegram_id: int):
+        """Gets all purchases for a user identified by their Telegram ID."""
+        user = self.get_user_by_telegram_id(telegram_id)
+        if not user:
+            return []
+        return self.get_user_purchases(user['id'])
+
+    def delete_purchase(self, purchase_id: int) -> bool:
+        """Deletes a specific purchase record from the database."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+            conn.commit()
+            conn.close()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting purchase {purchase_id}: {e}")
+            return False
