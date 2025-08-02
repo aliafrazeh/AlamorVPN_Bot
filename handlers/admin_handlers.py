@@ -14,7 +14,7 @@ from utils import messages, helpers
 from keyboards import inline_keyboards
 from utils.config_generator import ConfigGenerator
 from utils.bot_helpers import send_subscription_info # این ایمپورت جدید است
-
+from handlers.user_handlers import _user_states
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -231,7 +231,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
 
+        elif state == 'waiting_for_plan_id_to_delete':
+            process_delete_plan_id(admin_id, message)
         
+        elif state == 'waiting_for_plan_id_to_edit':
+            process_edit_plan_id(admin_id, message)
+        elif state == 'waiting_for_new_plan_name':
+            process_edit_plan_name(admin_id, message)
+            
+        elif state == 'waiting_for_new_plan_price':
+            process_edit_plan_price(admin_id, message)
     # =============================================================================
     # SECTION: Process Starters and Callback Handlers
     # =============================================================================
@@ -322,6 +331,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_delete_plan": start_delete_plan_flow,
+            "admin_edit_plan": start_edit_plan_flow,
             "admin_create_backup": create_backup,
             "admin_main_menu": _show_admin_main_menu,
             "admin_server_management": _show_server_management_menu,
@@ -343,7 +354,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         }
         
         if data in actions:
-            _clear_admin_state(admin_id)
             actions[data](admin_id, message)
             return
 
@@ -360,6 +370,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_payment_approval(admin_id, int(data.split('_')[-1]), message)
         elif data.startswith("admin_reject_payment_"):
             process_payment_rejection(admin_id, int(data.split('_')[-1]), message)
+        elif data.startswith("confirm_delete_plan_"):
+            plan_id = int(data.split('_')[-1])
+            execute_delete_plan(admin_id, message, plan_id)
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id))
@@ -547,49 +560,34 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.warning(f"Error updating inbound selection keyboard: {e}")
 
     def process_payment_approval(admin_id, payment_id, message):
-            _bot.edit_message_caption("⏳ در حال ساخت سرویس...", message.chat.id, message.message_id)
-            payment = _db_manager.get_payment_by_id(payment_id)
-            if not payment or payment['is_confirmed']:
-                _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True); return
-            order_details = json.loads(payment['order_details_json'])
-            user_telegram_id = order_details['user_telegram_id']
-            user_db_id = order_details['user_db_id']
-            
-            if order_details['plan_type'] == 'fixed_monthly':
-                plan = order_details['plan_details']
-                total_gb = plan['volume_gb']
-                duration_days = plan['duration_days']
-                plan_id = plan['id']
-            else: # gigabyte_based
-                gb_plan = order_details['gb_plan_details']
-                total_gb = order_details['requested_gb']
-                duration_days = gb_plan.get('duration_days', 0)
-                plan_id = gb_plan['id']
-                
-            client_details, sub_link, single_configs = _config_generator.create_client_and_configs(user_telegram_id, order_details['server_id'], total_gb, duration_days)
-            if not client_details:
-                _bot.edit_message_caption("❌ خطا در ساخت سرویس در پنل X-UI.", message.chat.id, message.message_id); return
-            
-            expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
-            purchase_id = _db_manager.add_purchase(
-                user_db_id, order_details['server_id'], plan_id,
-                expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
-                total_gb, client_details['uuid'], client_details['email'],
-                client_details['subscription_id'], single_configs
-            )
-            if not purchase_id:
-                _bot.edit_message_caption("❌ خطا در ذخیره خرید در دیتابیس.", message.chat.id, message.message_id); return
-                
-            _db_manager.update_payment_status(payment_id, True, admin_id)
-            admin_user = _bot.get_chat_member(admin_id, admin_id).user
-            new_caption = message.caption + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=f"@{admin_user.username}" if admin_user.username else admin_user.first_name)
-            _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
-            
-            _bot.send_message(user_telegram_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
-            
-            # --- بخش اصلاح شده ---
-            # فراخوانی تابع مشترک جدید برای ارسال لینک و QR کد
-            send_subscription_info(_bot, user_telegram_id, sub_link)
+        """
+        Handles the admin's approval and sets the user's state to wait for a custom config name.
+        """
+        _bot.edit_message_caption("در حال ارسال درخواست به کاربر برای نام کانفیگ...", message.chat.id, message.message_id)
+        
+        payment = _db_manager.get_payment_by_id(payment_id)
+        if not payment or payment['is_confirmed']:
+            _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True)
+            return
+
+        # Update payment status and admin notification message
+        order_details = json.loads(payment['order_details_json'])
+        _db_manager.update_payment_status(payment_id, True, admin_id)
+
+        admin_user = _bot.get_chat_member(admin_id, admin_id).user
+        admin_username = f"@{admin_user.username}" if admin_user.username else admin_user.first_name
+        new_caption = message.caption + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=admin_username)
+        _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
+
+        # --- NEW LOGIC: Set the user's state in the shared _user_states dictionary ---
+        user_telegram_id = order_details['user_telegram_id']
+        prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
+        
+        _user_states[user_telegram_id] = {
+            'state': 'waiting_for_custom_config_name',
+            'data': order_details,
+            'prompt_message_id': prompt.message_id
+        }
 
 
 
@@ -782,3 +780,71 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif gateway_type == 'card_to_card':
             state_info['state'] = 'waiting_for_card_number'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_NUMBER, admin_id, message.message_id)
+            
+            
+            
+            
+    def start_delete_plan_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.DELETE_PLAN_PROMPT, inline_keyboards.get_back_button("admin_plan_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_plan_id_to_delete', 'prompt_message_id': prompt.message_id}
+        
+    def process_delete_plan_id(admin_id, message):
+        state_info = _admin_states[admin_id]
+        if not message.text.isdigit() or not (plan := _db_manager.get_plan_by_id(int(message.text))):
+            _bot.send_message(admin_id, messages.PLAN_NOT_FOUND); return
+
+        plan_id = int(message.text)
+        confirm_text = messages.DELETE_PLAN_CONFIRM.format(plan_name=plan['name'], plan_id=plan_id)
+        markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_plan_{plan_id}", "admin_plan_management")
+        _bot.edit_message_text(confirm_text, admin_id, state_info['prompt_message_id'], reply_markup=markup, parse_mode='Markdown')
+        _clear_admin_state(admin_id) # State is cleared, waiting for callback
+
+    def execute_delete_plan(admin_id, message, plan_id):
+        plan = _db_manager.get_plan_by_id(plan_id)
+        if plan and _db_manager.delete_plan(plan_id):
+            _bot.edit_message_text(messages.PLAN_DELETED_SUCCESS.format(plan_name=plan['name']), admin_id, message.message_id)
+        else:
+            _bot.edit_message_text(messages.OPERATION_FAILED, admin_id, message.message_id)
+        _show_plan_management_menu(admin_id)
+
+    # --- EDIT PLAN ---
+    def start_edit_plan_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.EDIT_PLAN_PROMPT_ID, inline_keyboards.get_back_button("admin_plan_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_plan_id_to_edit', 'data': {}, 'prompt_message_id': prompt.message_id}
+
+    def process_edit_plan_id(admin_id, message):
+        state_info = _admin_states[admin_id]
+        if not message.text.isdigit() or not (plan := _db_manager.get_plan_by_id(int(message.text))):
+            _bot.send_message(admin_id, messages.PLAN_NOT_FOUND); return
+        
+        state_info['data']['plan_id'] = int(message.text)
+        state_info['data']['original_plan'] = plan
+        state_info['state'] = 'waiting_for_new_plan_name'
+        _bot.edit_message_text(messages.EDIT_PLAN_NEW_NAME, admin_id, state_info['prompt_message_id'])
+
+    def process_edit_plan_name(admin_id, message):
+        state_info = _admin_states[admin_id]
+        state_info['data']['new_name'] = message.text
+        state_info['state'] = 'waiting_for_new_plan_price'
+        _bot.edit_message_text(messages.EDIT_PLAN_NEW_PRICE, admin_id, state_info['prompt_message_id'])
+
+    def process_edit_plan_price(admin_id, message):
+        state_info = _admin_states[admin_id]
+        if not helpers.is_float_or_int(message.text) or float(message.text) < 0:
+            _bot.send_message(admin_id, "قیمت نامعتبر است."); return
+        
+        data = state_info['data']
+        original_plan = data['original_plan']
+        
+        _db_manager.update_plan(
+            plan_id=data['plan_id'],
+            name=data['new_name'],
+            price=float(message.text),
+            volume_gb=original_plan['volume_gb'],
+            duration_days=original_plan['duration_days']
+        )
+        _bot.edit_message_text(messages.EDIT_PLAN_SUCCESS.format(plan_name=data['new_name']), admin_id, state_info['prompt_message_id'])
+        _clear_admin_state(admin_id)
+        _show_plan_management_menu(admin_id)

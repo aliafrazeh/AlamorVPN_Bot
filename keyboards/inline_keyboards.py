@@ -32,10 +32,13 @@ def get_server_management_inline_menu():
     return markup
     
 def get_plan_management_inline_menu():
+    """ --- MODIFIED: Added Edit and Delete buttons --- """
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("➕ افزودن پلن", callback_data="admin_add_plan"),
         types.InlineKeyboardButton("📝 لیست پلن‌ها", callback_data="admin_list_plans"),
+        types.InlineKeyboardButton("✏️ ویرایش پلن", callback_data="admin_edit_plan"), # <-- NEW
+        types.InlineKeyboardButton("❌ حذف پلن", callback_data="admin_delete_plan"),     # <-- NEW
         types.InlineKeyboardButton("🔄 تغییر وضعیت پلن", callback_data="admin_toggle_plan_status"),
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
@@ -117,11 +120,13 @@ def get_confirmation_menu(confirm_callback: str, cancel_callback: str, confirm_t
 # --- توابع کیبورد کاربر ---
 
 def get_user_main_inline_menu():
+    """ --- MODIFIED: Added 'How to Connect' button --- """
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("🛒 خرید سرویس", callback_data="user_buy_service"),
         types.InlineKeyboardButton("🎁 اکانت تست رایگان", callback_data="user_free_test"),
         types.InlineKeyboardButton("🗂️ سرویس‌های من", callback_data="user_my_services"),
+        types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect"), # <-- NEW
         types.InlineKeyboardButton("📞 پشتیبانی", callback_data="user_support")
     )
     return markup

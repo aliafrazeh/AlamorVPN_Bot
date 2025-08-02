@@ -1,3 +1,4 @@
+from email import message
 import telebot
 from telebot import types
 import logging
@@ -22,7 +23,6 @@ _bot: telebot.TeleBot = None
 _db_manager: DatabaseManager = None
 _xui_api: XuiAPIClient = None
 _config_generator: ConfigGenerator = None
-
 # متغیرهای وضعیت
 _user_menu_message_ids = {} # {user_id: message_id}
 _user_states = {} # {user_id: {'state': '...', 'data': {...}}}
@@ -72,6 +72,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("user_get_single_configs_"):
             purchase_id = int(data.replace("user_get_single_configs_", ""))
             send_single_configs(user_id, purchase_id)
+        elif data == "user_how_to_connect": # <-- NEW
+            show_how_to_connect(user_id, call.message)
     @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_')))
     def handle_purchase_callbacks(call):
         """هندل کردن دکمه‌های فرآیند خرید"""
@@ -119,8 +121,21 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif current_state == 'waiting_for_payment_receipt':
             process_payment_receipt(message)
 
-
+        elif current_state == 'waiting_for_payment_receipt':
+            process_payment_receipt(message)
+        elif current_state == 'waiting_for_custom_config_name': # <-- NEW
+            process_custom_config_name(message)
     # --- توابع کمکی و اصلی ---
+    def show_how_to_connect(user_id, message):
+        """Sends the guide on how to connect to the services."""
+        _bot.edit_message_text(
+            messages.HOW_TO_CONNECT_TEXT,
+            user_id,
+            message.message_id,
+            reply_markup=inline_keyboards.get_back_button("user_main_menu"),
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
     def _clear_user_state(user_id):
         if user_id in _user_states:
             del _user_states[user_id]
@@ -580,3 +595,32 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             reply_markup=inline_keyboards.get_my_services_menu(purchases),
             parse_mode='Markdown'
         )
+        
+        
+    def process_custom_config_name(message):
+        """Processes the custom name and creates the config."""
+        user_id = message.from_user.id
+        state_info = _user_states.get(user_id, {})
+        if not state_info or state_info.get('state') != 'waiting_for_custom_config_name':
+            return
+
+        custom_name = message.text.strip()
+        if custom_name.lower() == 'skip':
+            custom_name = None  # Use default remark
+
+        order_details = state_info['data']
+        _bot.edit_message_text(messages.PLEASE_WAIT, user_id, state_info['prompt_message_id'])
+
+        # --- This is the logic that was previously in payment approval ---
+        # (Get total_gb, duration_days, server_id, etc. from order_details)
+        # ...
+        
+        # Now, call the config generator with the custom_name
+        client_details, sub_link, _ = _config_generator.create_client_and_configs(
+            user_id, server_id, total_gb, duration_days, custom_remark=custom_name
+        )
+
+        # (The rest of the logic for saving the purchase and sending the info)
+        # ...
+
+        _clear_user_state(user_id)

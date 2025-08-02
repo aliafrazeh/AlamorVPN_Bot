@@ -64,14 +64,16 @@ class DatabaseManager:
             # جدول پلن‌ها
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS plans (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT UNIQUE NOT NULL,
-                    plan_type TEXT NOT NULL,
-                    volume_gb REAL,
-                    duration_days INTEGER,
-                    price REAL,
-                    per_gb_price REAL,
-                    is_active BOOLEAN DEFAULT TRUE
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                plan_type TEXT NOT NULL, -- 'fixed_monthly' or 'gigabyte_based'
+                server_id INTEGER NOT NULL,
+                price REAL NOT NULL, -- Price for fixed plan, or price-per-GB for gigabyte plan
+                volume_gb REAL,
+                duration_days INTEGER,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE,
+                UNIQUE (name, server_id)
                 )
             """)
             
@@ -435,20 +437,7 @@ class DatabaseManager:
         finally:
             if conn: conn.close()
             
-    def update_plan_status(self, plan_id, is_active):
-        conn = None
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("UPDATE plans SET is_active = ? WHERE id = ?", (is_active, plan_id))
-            conn.commit()
-            return True
-        except sqlite3.Error as e:
-            logger.error(f"Error updating plan status for ID {plan_id}: {e}")
-            return False
-        finally:
-            if conn: conn.close()
-            
+    
     # --- توابع درگاه پرداخت ---
     def add_payment_gateway(self, name: str, gateway_type: str, card_number: str = None, card_holder_name: str = None, merchant_id: str = None, description: str = None, priority: int = 0):
         """یک درگاه پرداخت جدید را با تمام اطلاعات لازم اضافه می‌کند."""
@@ -771,3 +760,47 @@ class DatabaseManager:
             return False
         finally:
             if conn: conn.close()
+            
+            
+    def delete_plan(self, plan_id: int) -> bool:
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"Plan with ID {plan_id} has been deleted.")
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting plan with ID {plan_id}: {e}")
+            return False
+
+    # --- NEW: Function to update a plan ---
+    def update_plan(self, plan_id: int, name: str, price: float, volume_gb: float, duration_days: int) -> bool:
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE plans SET name = ?, price = ?, volume_gb = ?, duration_days = ?
+                WHERE id = ?
+            """, (name, price, volume_gb, duration_days, plan_id))
+            conn.commit()
+            conn.close()
+            logger.info(f"Plan with ID {plan_id} has been updated.")
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error updating plan {plan_id}: {e}")
+            return False
+        
+        
+    def get_plans_for_server(self, server_id: int, plan_type: str = 'fixed_monthly'):
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM plans WHERE server_id = ? AND plan_type = ? AND is_active = TRUE ORDER BY price",
+            (server_id, plan_type)
+        )
+        plans = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return plans
