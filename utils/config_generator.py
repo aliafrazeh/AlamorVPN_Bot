@@ -16,7 +16,7 @@ class ConfigGenerator:
         self.db_manager = db_manager
 
     def create_client_and_configs(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int or None, custom_remark: str = None):
-        """MODIFIED: Accepts a custom_remark and calls add_client correctly."""
+        """MODIFIED: Generates a unique email for each inbound to prevent conflicts."""
         logger.info(f"Starting config generation for user:{user_telegram_id} on server:{server_id}")
         server_data = self.db_manager.get_server_by_id(server_id)
         if not server_data:
@@ -46,14 +46,19 @@ class ConfigGenerator:
             return None, None, None
 
         all_generated_configs = []
+        # This UUID is shared across all inbounds for the subscription to work correctly
         representative_client_uuid = str(uuid.uuid4())
-        representative_client_email = f"u{user_telegram_id}.s{server_id}.{generate_random_string(4)}"
-
+        
         for db_inbound in active_inbounds_from_db:
             inbound_id_on_panel = db_inbound['inbound_id']
+            
+            # --- THE FIX IS HERE ---
+            # Generate a NEW, unique email for each inbound to avoid panel conflicts
+            unique_client_email = f"u{user_telegram_id}.i{inbound_id_on_panel}.{generate_random_string(4)}"
+            
             client_settings = {
-                "id": representative_client_uuid,
-                "email": representative_client_email,
+                "id": representative_client_uuid, # UUID must be the same
+                "email": unique_client_email,      # Email must be unique
                 "totalGB": total_traffic_bytes,
                 "expiryTime": expiry_time_ms,
                 "enable": True,
@@ -61,14 +66,11 @@ class ConfigGenerator:
                 "subId": master_sub_id,
             }
 
-            # --- THE FIX IS HERE ---
-            # Create a single dictionary payload for the add_client function
             add_client_payload = {
                 "id": inbound_id_on_panel,
                 "settings": json.dumps({"clients": [client_settings]})
             }
             
-            # Call the function with the single payload
             if not temp_xui_client.add_client(add_client_payload):
                 logger.error(f"Failed to add client to inbound {inbound_id_on_panel}.")
                 continue
@@ -99,7 +101,8 @@ class ConfigGenerator:
 
         client_details_for_db = {
             "uuid": representative_client_uuid,
-            "email": representative_client_email,
+            # We store one of the generated emails for reference; it doesn't matter which one
+            "email": f"u{user_telegram_id}.s{server_id}.{generate_random_string(4)}",
             "subscription_id": master_sub_id
         }
         return client_details_for_db, subscription_link, all_generated_configs
