@@ -275,30 +275,38 @@ class DatabaseManager:
         finally:
             if conn: conn.close()
 
-    def get_all_servers(self):
-        conn = None
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM servers ORDER BY id")
-            servers_data = cursor.fetchall()
+    def get_all_servers(self, only_active=True):
+        """
+        --- CORRECTED VERSION ---
+        This version now correctly accepts the 'only_active' argument.
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM servers"
+        # If the argument is True, only fetch active servers
+        if only_active:
+            query += " WHERE is_active = TRUE"
             
-            decrypted_servers = []
-            for server in servers_data:
-                server_dict = dict(server)
-                server_dict['panel_url'] = self._decrypt(server_dict['panel_url'])
-                server_dict['username'] = self._decrypt(server_dict['username'])
-                server_dict['password'] = self._decrypt(server_dict['password'])
-                server_dict['subscription_base_url'] = self._decrypt(server_dict['subscription_base_url'])
-                server_dict['subscription_path_prefix'] = self._decrypt(server_dict['subscription_path_prefix'])
-                decrypted_servers.append(server_dict)
-            return decrypted_servers
-        except sqlite3.Error as e:
-            logger.error(f"Error getting all servers: {e}")
-            return []
-        finally:
-            if conn: conn.close()
-            
+        cursor.execute(query)
+        servers_data = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        # Decrypting credentials remains the same
+        decrypted_servers = []
+        for server in servers_data:
+            try:
+                server['panel_url'] = self._decrypt(server['panel_url'])
+                server['username'] = self._decrypt(server['username'])
+                server['password'] = self._decrypt(server['password'])
+                decrypted_servers.append(server)
+            except Exception as e:
+                logger.error(f"Could not decrypt credentials for server ID {server.get('id')}: {e}")
+                continue
+                
+        return decrypted_servers
+                
     def get_server_by_id(self, server_id):
         conn = None
         try:
