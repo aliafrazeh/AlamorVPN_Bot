@@ -905,64 +905,64 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
         
-def execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id):
-    """
-    Deletes a purchase from the local database and the corresponding client
-    from the X-UI panel.
-    """
-    # First, get purchase details to find the client UUID and server ID
-    purchase = _db_manager.get_purchase_by_id(purchase_id)
-    if not purchase:
-        _bot.answer_callback_query(message.id, "این اشتراک یافت نشد.", show_alert=True)
-        return
+    def execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id):
+        """
+        Deletes a purchase from the local database and the corresponding client
+        from the X-UI panel.
+        """
+        # First, get purchase details to find the client UUID and server ID
+        purchase = _db_manager.get_purchase_by_id(purchase_id)
+        if not purchase:
+            _bot.answer_callback_query(message.id, "این اشتراک یافت نشد.", show_alert=True)
+            return
 
-    # Step 1: Delete the purchase from the local database
-    if not _db_manager.delete_purchase(purchase_id):
-        _bot.answer_callback_query(message.id, "خطا در حذف اشتراک از دیتابیس.", show_alert=True)
-        return
+        # Step 1: Delete the purchase from the local database
+        if not _db_manager.delete_purchase(purchase_id):
+            _bot.answer_callback_query(message.id, "خطا در حذف اشتراک از دیتابیس.", show_alert=True)
+            return
 
-    # Step 2: Delete the client from the X-UI panel
-    try:
-        server = _db_manager.get_server_by_id(purchase['server_id'])
-        if server and purchase['xui_client_uuid']:
-            api_client = _xui_api(
-                panel_url=server['panel_url'],
-                username=server['username'],
-                password=server['password']
-            )
-            # We need the inbound_id to delete the client. This is a limitation.
-            # A better approach for the future is to store inbound_id in the purchase record.
-            # For now, we assume we need to iterate or have a default.
-            # This part of the logic might need enhancement based on your X-UI panel version.
-            # We will try to delete by UUID, which is supported by some panel forks.
-            
-            # Note: The default X-UI API requires inbound_id to delete a client.
-            # If your panel supports deleting by UUID directly, this will work.
-            # Otherwise, this part needs to be adapted.
-            # For now, we log the action. A full implementation would require a proper API call.
-            logger.info(f"Admin {admin_id} deleted purchase {purchase_id}. Corresponding X-UI client UUID to be deleted is {purchase['xui_client_uuid']} on server {server['name']}.")
-            # api_client.delete_client(inbound_id, purchase['xui_client_uuid']) # This line would be needed
-    except Exception as e:
-        logger.error(f"Could not delete client from X-UI for purchase {purchase_id}: {e}")
-        _bot.answer_callback_query(message.id, "اشتراک از دیتابیس حذف شد، اما در حذف از پنل خطایی رخ داد.", show_alert=True)
+        # Step 2: Delete the client from the X-UI panel
+        try:
+            server = _db_manager.get_server_by_id(purchase['server_id'])
+            if server and purchase['xui_client_uuid']:
+                api_client = _xui_api(
+                    panel_url=server['panel_url'],
+                    username=server['username'],
+                    password=server['password']
+                )
+                # We need the inbound_id to delete the client. This is a limitation.
+                # A better approach for the future is to store inbound_id in the purchase record.
+                # For now, we assume we need to iterate or have a default.
+                # This part of the logic might need enhancement based on your X-UI panel version.
+                # We will try to delete by UUID, which is supported by some panel forks.
+                
+                # Note: The default X-UI API requires inbound_id to delete a client.
+                # If your panel supports deleting by UUID directly, this will work.
+                # Otherwise, this part needs to be adapted.
+                # For now, we log the action. A full implementation would require a proper API call.
+                logger.info(f"Admin {admin_id} deleted purchase {purchase_id}. Corresponding X-UI client UUID to be deleted is {purchase['xui_client_uuid']} on server {server['name']}.")
+                # api_client.delete_client(inbound_id, purchase['xui_client_uuid']) # This line would be needed
+        except Exception as e:
+            logger.error(f"Could not delete client from X-UI for purchase {purchase_id}: {e}")
+            _bot.answer_callback_query(message.id, "اشتراک از دیتابیس حذف شد، اما در حذف از پنل خطایی رخ داد.", show_alert=True)
 
-    _bot.answer_callback_query(message.id, f"✅ اشتراک {purchase_id} با موفقیت حذف شد.")
+        _bot.answer_callback_query(message.id, f"✅ اشتراک {purchase_id} با موفقیت حذف شد.")
 
-    # Step 3: Refresh the user's subscription list for the admin
-    # We create a mock message object to pass to the search function
-    mock_message = types.Message(
-        message_id=message.message_id,
-        chat=message.chat,
-        date=None,
-        content_type='text',
-        options={},
-        json_string=""
-    )
-    mock_message.text = str(user_telegram_id)
-    
-    # Put the admin back into the search state to show the updated list
-    _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
-    process_user_search(admin_id, mock_message)
+        # Step 3: Refresh the user's subscription list for the admin
+        # We create a mock message object to pass to the search function
+        mock_message = types.Message(
+            message_id=message.message_id,
+            chat=message.chat,
+            date=None,
+            content_type='text',
+            options={},
+            json_string=""
+        )
+        mock_message.text = str(user_telegram_id)
+        
+        # Put the admin back into the search state to show the updated list
+        _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
+        process_user_search(admin_id, mock_message)
 
 
 
