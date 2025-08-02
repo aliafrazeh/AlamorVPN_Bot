@@ -37,12 +37,21 @@ def send_welcome(message):
     first_name = message.from_user.first_name
     logger.info(f"Received /start from user ID: {user_id} ({first_name})")
 
-    # --- NEW: Channel Membership Check ---
-    if REQUIRED_CHANNEL_ID and not helpers.is_user_member_of_channel(bot, REQUIRED_CHANNEL_ID, user_id):
-        bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT.format(channel_link=REQUIRED_CHANNEL_LINK))
-        logger.info(f"User {user_id} is not a member of the required channel.")
-        return
-    # --- END NEW ---
+
+    required_channel_id_str = db_manager.get_setting('required_channel_id')
+    
+    if required_channel_id_str:
+        try:
+            required_channel_id = int(required_channel_id_str)
+            # Admins are exempt from the channel lock
+            if not helpers.is_admin(user_id) and not helpers.is_user_member_of_channel(bot, required_channel_id, user_id):
+                channel_link = db_manager.get_setting('required_channel_link') or "کانال ادمین"
+                bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT.format(channel_link=channel_link))
+                logger.info(f"User {user_id} blocked by channel lock.")
+                return
+        except (ValueError, TypeError):
+            logger.error(f"Invalid required_channel_id in database: {required_channel_id_str}")
+
 
     db_manager.add_or_update_user(
         telegram_id=user_id,
