@@ -16,7 +16,7 @@ class ConfigGenerator:
         self.db_manager = db_manager
 
     def create_client_and_configs(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int or None, custom_remark: str = None):
-        """ --- MODIFIED: Accepts a custom_remark parameter --- """
+        """MODIFIED: Accepts a custom_remark and calls add_client correctly."""
         logger.info(f"Starting config generation for user:{user_telegram_id} on server:{server_id}")
         server_data = self.db_manager.get_server_by_id(server_id)
         if not server_data:
@@ -52,7 +52,7 @@ class ConfigGenerator:
         for db_inbound in active_inbounds_from_db:
             inbound_id_on_panel = db_inbound['inbound_id']
             client_settings = {
-                "id": representative_client_uuid, # Use the same UUID for all configs in the sub
+                "id": representative_client_uuid,
                 "email": representative_client_email,
                 "totalGB": total_traffic_bytes,
                 "expiryTime": expiry_time_ms,
@@ -61,24 +61,30 @@ class ConfigGenerator:
                 "subId": master_sub_id,
             }
 
-            if not temp_xui_client.add_client(inbound_id_on_panel, json.dumps({"clients": [client_settings]})):
+            # --- THE FIX IS HERE ---
+            # Create a single dictionary payload for the add_client function
+            add_client_payload = {
+                "id": inbound_id_on_panel,
+                "settings": json.dumps({"clients": [client_settings]})
+            }
+            
+            # Call the function with the single payload
+            if not temp_xui_client.add_client(add_client_payload):
                 logger.error(f"Failed to add client to inbound {inbound_id_on_panel}.")
-                # Don't abort, just skip this inbound
                 continue
+            # --- END OF FIX ---
 
             inbound_details = temp_xui_client.get_inbound(inbound_id_on_panel)
             if not inbound_details:
                 logger.warning(f"Could not get details for inbound {inbound_id_on_panel}.")
                 continue
 
-            # --- NEW: Use custom_remark if provided, otherwise use a default ---
             final_remark = custom_remark if custom_remark else f"Alamor-{server_data['name']}"
-
             single_config_url = self._generate_single_config_url(
                 client_uuid=representative_client_uuid,
                 server_data=server_data,
                 inbound_details=inbound_details,
-                remark=final_remark # Pass the final remark
+                remark=final_remark
             )
             if single_config_url:
                 all_generated_configs.append(single_config_url)
