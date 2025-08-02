@@ -1125,18 +1125,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def show_support_management_menu(admin_id, message):
-        """Displays the main menu for support management."""
-        support_type = _db_manager.get_setting('support_type') or 'admin'
+        """--- SIMPLIFIED: Displays the simple support management menu ---"""
         support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
         
-        status = f"چت مستقیم با ادمین" if support_type == 'admin' else f"لینک به: {support_link}"
+        # Escape the link to prevent Markdown errors
+        safe_link = helpers.escape_markdown_v1(support_link)
+        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(link=safe_link)
         
-        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(status=status)
-        markup = inline_keyboards.get_support_management_menu(support_type)
-        
-        # --- THE FIX IS HERE ---
-        # We explicitly tell the bot to NOT parse this specific menu as Markdown.
-        _show_menu(admin_id, text, markup, message, parse_mode=None)
+        markup = inline_keyboards.get_support_management_menu()
+        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')
 
     def set_support_type(admin_id, call, support_type):
         """Sets the support type (admin chat or link)."""
@@ -1152,20 +1149,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, messages.SET_SUPPORT_LINK_PROMPT, inline_keyboards.get_back_button("admin_support_management"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_support_link', 'prompt_message_id': prompt.message_id}
-
     def process_support_link(admin_id, message):
         """Saves the support link provided by the admin."""
+        # This function remains the same as before
         state_info = _admin_states.get(admin_id, {})
         support_link = message.text.strip()
 
-        if not support_link.lower().startswith(('http://', 'https://')):
+        # You can add validation for t.me links here if you want
+        if not support_link.lower().startswith(('http://', 'https://', 't.me/')):
             _bot.send_message(admin_id, "لینک وارد شده نامعتبر است. لطفاً لینک کامل را وارد کنید.")
             return
             
         _db_manager.update_setting('support_link', support_link)
         _bot.edit_message_text(messages.SUPPORT_LINK_SET_SUCCESS, admin_id, state_info['prompt_message_id'])
         _clear_admin_state(admin_id)
-        show_support_management_menu(admin_id)
+        show_support_management_menu(admin_id) # Show the updated menu
         
         
         

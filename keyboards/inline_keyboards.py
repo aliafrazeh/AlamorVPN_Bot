@@ -115,8 +115,8 @@ def get_confirmation_menu(confirm_callback: str, cancel_callback: str, confirm_t
 
 # --- توابع کیبورد کاربر ---
 
-def get_user_main_inline_menu(support_type: str, support_link: str, first_admin_id: int):
-    """ --- REWRITTEN: Creates a fully dynamic user menu --- """
+def get_user_main_inline_menu(support_link: str):
+    """ --- SIMPLIFIED: Creates the user menu with only a support link --- """
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("🛒 خرید سرویس", callback_data="user_buy_service"),
@@ -125,18 +125,10 @@ def get_user_main_inline_menu(support_type: str, support_link: str, first_admin_
         types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect")
     )
 
-    # --- NEW LOGIC for the support button ---
-    support_button = None
-    if support_type == 'admin' and first_admin_id:
-        # Direct link to the first admin's chat
-        support_url = f"tg://user?id={first_admin_id}"
-        support_button = types.InlineKeyboardButton("📞 پشتیبانی", url=support_url)
-    elif support_type == 'link' and support_link and support_link.startswith('http'):
-        # Link to the support channel/group
-        support_button = types.InlineKeyboardButton("📞 پشتیبانی", url=support_link)
-    
-    if support_button:
-        markup.add(support_button)
+    # --- Simplified Logic ---
+    # If a valid link exists, add the support button
+    if support_link and support_link.startswith('http'):
+        markup.add(types.InlineKeyboardButton("📞 پشتیبانی", url=support_link))
         
     return markup
     
