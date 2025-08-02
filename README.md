@@ -28,7 +28,7 @@ AlamorVPN Bot یک ربات تلگرامی قدرتمند و ماژولار اس
 برای نصب کامل ربات روی یک سرور خام (Ubuntu 20.04/22.04)، کافیست دستور زیر را به عنوان کاربر `root` اجرا کنید. این اسکریپت تمام مراحل را به صورت خودکار انجام می‌دهد:
 
 ```bash
-bash <(curl -Ls [https://raw.githubusercontent.com/AlamorNetwork/AlamorVPN_Bot/main/install.sh](https://raw.githubusercontent.com/AlamorNetwork/AlamorVPN_Bot/main/install.sh)) install
+bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/AlamorVPN_Bot/main/install.sh) install
 ```
 این اسکریپت به صورت تعاملی، اطلاعات لازم مانند توکن ربات، آیدی ادمین و... را از شما دریافت کرده و در نهایت دستور مدیریتی `alamorbot` را برای شما فعال می‌کند.
 
