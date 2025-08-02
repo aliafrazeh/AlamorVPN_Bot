@@ -108,20 +108,54 @@ class ConfigGenerator:
         return client_details_for_db, subscription_link, all_generated_configs
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark: str) -> dict or None:
-        """ --- MODIFIED: Accepts a remark parameter --- """
+        """ --- MODIFIED: Restored the missing query_string definition --- """
         try:
-            # ... (the logic inside this function remains the same, just ensure it uses the 'remark' variable)
             protocol = inbound_details.get('protocol')
             address = server_data['subscription_base_url'].split('//')[1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
             
-            # ... (rest of the logic for building params)
+            stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
+            network = stream_settings.get('network', 'tcp')
+            security = stream_settings.get('security', 'none')
             
-            # Use the passed remark
-            config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
-            
-            if config_url:
-                return {"remark": remark, "url": config_url}
+            config_url = ""
+            params = {'type': network} # Initialize params dictionary
+
+            if protocol == 'vless':
+                if security in ['tls', 'xtls', 'reality']:
+                    params['security'] = security
+                
+                if security == 'reality':
+                    reality_settings = stream_settings.get('realitySettings', {})
+                    params['fp'] = reality_settings.get('fingerprint', '')
+                    params['pbk'] = reality_settings.get('publicKey', '')
+                    params['sid'] = reality_settings.get('shortId', '')
+                    params['sni'] = reality_settings.get('serverNames', [''])[0]
+                
+                if security == 'tls':
+                    tls_settings = stream_settings.get('tlsSettings', {})
+                    params['sni'] = tls_settings.get('serverName', address)
+
+                if network == 'ws':
+                    ws_settings = stream_settings.get('wsSettings', {})
+                    params['path'] = ws_settings.get('path', '/')
+                    params['host'] = ws_settings.get('headers', {}).get('Host', address)
+                    if security == 'tls':
+                        params['sni'] = params['host']
+
+                if security == 'xtls':
+                    xtls_settings = stream_settings.get('xtlsSettings', {})
+                    params['flow'] = xtls_settings.get('flow', 'xtls-rprx-direct')
+
+                # --- THE FIX IS HERE ---
+                # This line was missing. It converts the params dictionary into a URL string.
+                query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in params.items() if value])
+                
+                config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+                
+                if config_url:
+                    return {"remark": remark, "url": config_url}
+
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
         return None
