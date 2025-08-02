@@ -31,36 +31,25 @@ bot = telebot.TeleBot(BOT_TOKEN)
 db_manager = DatabaseManager()
 
 # --- MODIFIED: /start command handler ---
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name
     logger.info(f"Received /start from user ID: {user_id} ({first_name})")
 
-    # --- UPDATED: Channel lock logic with inline keyboard ---
+    # --- Channel Lock Logic (remains the same) ---
     required_channel_id_str = db_manager.get_setting('required_channel_id')
-    
     if required_channel_id_str:
         try:
             required_channel_id = int(required_channel_id_str)
-            # Admins are exempt from the channel lock
             if not helpers.is_admin(user_id) and not helpers.is_user_member_of_channel(bot, required_channel_id, user_id):
-                channel_link = db_manager.get_setting('required_channel_link')
-                
-                # Safeguard: Only create the keyboard if the link is a valid URL
-                if channel_link and channel_link.startswith('http'):
-                    markup = inline_keyboards.get_join_channel_keyboard(channel_link)
-                    bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT, reply_markup=markup)
-                else:
-                    # Fallback to a simple text message if link is invalid or not set
-                    fallback_link = "https://t.me/Alamor_Network" # Your default channel
-                    bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT.format(channel_link=fallback_link))
-                
-                logger.info(f"User {user_id} blocked by channel lock.")
+                channel_link = db_manager.get_setting('required_channel_link') or "https://t.me/Alamor_Network"
+                markup = inline_keyboards.get_join_channel_keyboard(channel_link)
+                bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT, reply_markup=markup)
                 return
         except (ValueError, TypeError):
             logger.error(f"Invalid required_channel_id in database: {required_channel_id_str}")
-    # --- END UPDATED ---
 
     db_manager.add_or_update_user(
         telegram_id=user_id,
@@ -69,11 +58,17 @@ def send_welcome(message):
         username=message.from_user.username
     )
 
+    # --- THE FIX IS HERE ---
+    # We now fetch the support link from the database before creating the user menu.
+    support_link = db_manager.get_setting('support_link')
+    
     if helpers.is_admin(user_id):
         bot.send_message(user_id, messages.ADMIN_WELCOME, reply_markup=inline_keyboards.get_admin_main_inline_menu())
     else:
         welcome_text = messages.START_WELCOME.format(first_name=helpers.escape_markdown_v1(first_name))
-        bot.send_message(user_id, welcome_text, parse_mode='Markdown', reply_markup=inline_keyboards.get_user_main_inline_menu())
+        # And we pass the fetched link to the keyboard function.
+        user_menu_markup = inline_keyboards.get_user_main_inline_menu(support_link)
+        bot.send_message(user_id, welcome_text, parse_mode='Markdown', reply_markup=user_menu_markup)
 @bot.message_handler(commands=['myid'])
 def send_user_id(message):
     user_id = message.from_user.id
