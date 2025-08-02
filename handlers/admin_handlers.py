@@ -44,21 +44,37 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
         """
-        --- CORRECTED VERSION ---
-        This version correctly accepts the 'parse_mode' argument.
+        --- FINAL & ROBUST VERSION ---
+        This function intelligently handles Markdown parsing errors.
+        It first tries to send the message with Markdown. If Telegram rejects it
+        due to a formatting error, it automatically retries sending it as plain text.
         """
         try:
+            # First attempt: Send with specified parse_mode (usually Markdown)
             if message:
                 return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
             else:
                 return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
+
         except telebot.apihelper.ApiTelegramException as e:
-            if 'message to edit not found' in str(e):
-                # If the original message is gone, send a new one
+            # If the error is specifically a Markdown parsing error...
+            if "can't parse entities" in str(e):
+                logger.warning(f"Markdown parse error for user {user_id}. Retrying with plain text.")
+                try:
+                    # Second attempt: Send as plain text
+                    if message:
+                        return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=None)
+                    else:
+                        return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=None)
+                except telebot.apihelper.ApiTelegramException as retry_e:
+                    logger.error(f"Failed to send menu even as plain text for user {user_id}: {retry_e}")
+
+            # Handle other common errors
+            elif 'message to edit not found' in str(e):
                 return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
             elif 'message is not modified' not in str(e):
-                # Log other errors but don't crash
                 logger.warning(f"Menu error for {user_id}: {e}")
+                
         return message
 
     def _show_admin_main_menu(admin_id, message=None): _show_menu(admin_id, messages.ADMIN_WELCOME, inline_keyboards.get_admin_main_inline_menu(), message)
@@ -1124,40 +1140,18 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         show_tutorial_management_menu(admin_id)
         
         
-    def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
-        """
-        --- FINAL & ROBUST VERSION ---
-        This function intelligently handles Markdown parsing errors.
-        It first tries to send the message with Markdown. If Telegram rejects it
-        due to a formatting error, it automatically retries sending it as plain text.
-        """
-        try:
-            # First attempt: Send with specified parse_mode (usually Markdown)
-            if message:
-                return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
-            else:
-                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
-
-        except telebot.apihelper.ApiTelegramException as e:
-            # If the error is specifically a Markdown parsing error...
-            if "can't parse entities" in str(e):
-                logger.warning(f"Markdown parse error for user {user_id}. Retrying with plain text.")
-                try:
-                    # Second attempt: Send as plain text
-                    if message:
-                        return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=None)
-                    else:
-                        return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=None)
-                except telebot.apihelper.ApiTelegramException as retry_e:
-                    logger.error(f"Failed to send menu even as plain text for user {user_id}: {retry_e}")
-
-            # Handle other common errors
-            elif 'message to edit not found' in str(e):
-                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
-            elif 'message is not modified' not in str(e):
-                logger.warning(f"Menu error for {user_id}: {e}")
-                
-        return message
+    def show_support_management_menu(admin_id, message):
+        """Displays the simple support management menu as plain text to avoid errors."""
+        support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
+        
+        # We don't need to escape the link anymore because we are not using Markdown
+        text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(link=support_link)
+        
+        markup = inline_keyboards.get_support_management_menu()
+        
+        # --- THE FINAL FIX IS HERE ---
+        # We explicitly tell the bot to send this specific menu as plain text.
+        _show_menu(admin_id, text, markup, message, parse_mode=None)
 
     def set_support_type(admin_id, call, support_type):
         """Sets the support type (admin chat or link)."""
