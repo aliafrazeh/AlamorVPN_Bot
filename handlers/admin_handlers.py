@@ -1186,25 +1186,42 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def process_add_plan_server(admin_id, message):
-        """Processes the selected server ID and asks for the plan name."""
+        """
+        --- ROBUST VERSION ---
+        Processes the selected server ID, handles potential errors,
+        and reliably moves to the next state.
+        """
         state_info = _admin_states.get(admin_id, {})
+        # Ensure we have a prompt message ID to edit
+        prompt_id = state_info.get('prompt_message_id')
+        if not prompt_id:
+            _bot.send_message(admin_id, "خطایی رخ داده است. لطفاً از ابتدا شروع کنید.")
+            _clear_admin_state(admin_id)
+            return
+
+        # Delete the user's message (the server ID) to keep the chat clean
+        try:
+            _bot.delete_message(admin_id, message.message_id)
+        except Exception:
+            pass # Ignore if message is already gone
+
         server_id_str = message.text.strip()
         
         if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
-            _bot.send_message(admin_id, "ID سرور نامعتبر است. لطفاً دوباره تلاش کنید.")
+            # Re-ask the question by editing the original prompt
+            _bot.edit_message_text("ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:", admin_id, prompt_id)
             return
 
+        # If the ID is valid, proceed to the next step
         state_info['data']['server_id'] = int(server_id_str)
         state_info['state'] = 'waiting_for_plan_name'
-        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, state_info['prompt_message_id'])
-
-    def process_add_plan_name(admin_id, message):
-        """Processes the plan name and asks for the price."""
-        state_info = _admin_states.get(admin_id, {})
-        state_info['data']['name'] = message.text.strip()
-        state_info['state'] = 'waiting_for_plan_price'
-        # For this update, we assume all new plans are gigabyte-based
-        _bot.edit_message_text("قیمت هر گیگابایت را به تومان وارد کنید:", admin_id, state_info['prompt_message_id'])
+        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id)
+            """Processes the plan name and asks for the price."""
+            state_info = _admin_states.get(admin_id, {})
+            state_info['data']['name'] = message.text.strip()
+            state_info['state'] = 'waiting_for_plan_price'
+            # For this update, we assume all new plans are gigabyte-based
+            _bot.edit_message_text("قیمت هر گیگابایت را به تومان وارد کنید:", admin_id, state_info['prompt_message_id'])
 
     def process_add_plan_price(admin_id, message):
         """Processes the price and saves the new plan."""
