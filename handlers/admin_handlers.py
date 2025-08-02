@@ -1120,10 +1120,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
     def show_support_management_menu(admin_id, message):
         """Displays the main menu for support management."""
-        support_type = _db_manager.get_setting('support_type') or 'admin' # Default to admin
+        support_type = _db_manager.get_setting('support_type') or 'admin'
         support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
         
-        status = f"چت مستقیم با ادمین" if support_type == 'admin' else f"لینک به: {support_link}"
+        # --- THE FIX IS HERE ---
+        # We escape the dynamic part of the status message to prevent errors.
+        if support_type == 'admin':
+            status = "چت مستقیم با ادمین"
+        else:
+            # The link is user-provided, so we must escape it.
+            escaped_link = helpers.escape_markdown_v1(support_link)
+            status = f"لینک به: {escaped_link}"
+        # --- END OF FIX ---
+            
         text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(status=status)
         markup = inline_keyboards.get_support_management_menu(support_type)
         _show_menu(admin_id, text, markup, message)
