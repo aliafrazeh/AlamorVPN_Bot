@@ -1123,19 +1123,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         support_type = _db_manager.get_setting('support_type') or 'admin'
         support_link = _db_manager.get_setting('support_link') or "تنظیم نشده"
         
-        # --- THE FIX IS HERE ---
-        # We escape the dynamic part of the status message to prevent errors.
-        if support_type == 'admin':
-            status = "چت مستقیم با ادمین"
-        else:
-            # The link is user-provided, so we must escape it.
-            escaped_link = helpers.escape_markdown_v1(support_link)
-            status = f"لینک به: {escaped_link}"
-        # --- END OF FIX ---
-            
+        status = f"چت مستقیم با ادمین" if support_type == 'admin' else f"لینک به: {support_link}"
+        
         text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(status=status)
         markup = inline_keyboards.get_support_management_menu(support_type)
-        _show_menu(admin_id, text, markup, message)
+        
+        # --- THE FIX IS HERE ---
+        # We explicitly tell the bot to NOT parse this specific menu as Markdown.
+        _show_menu(admin_id, text, markup, message, parse_mode=None)
 
     def set_support_type(admin_id, call, support_type):
         """Sets the support type (admin chat or link)."""
