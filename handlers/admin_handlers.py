@@ -559,35 +559,68 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             if 'message is not modified' not in e.description:
                 logger.warning(f"Error updating inbound selection keyboard: {e}")
 
-    def process_payment_approval(admin_id, payment_id, message):
+    def process_custom_config_name(message):
         """
-        Handles the admin's approval and sets the user's state to wait for a custom config name.
+        Processes the custom name sent by the user, creates the config,
+        saves the purchase, and sends the subscription info.
         """
-        _bot.edit_message_caption("در حال ارسال درخواست به کاربر برای نام کانفیگ...", message.chat.id, message.message_id)
-        
-        payment = _db_manager.get_payment_by_id(payment_id)
-        if not payment or payment['is_confirmed']:
-            _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True)
+        user_id = message.from_user.id
+        state_info = _user_states.get(user_id, {})
+        if not state_info or state_info.get('state') != 'waiting_for_custom_config_name':
             return
 
-        # Update payment status and admin notification message
-        order_details = json.loads(payment['order_details_json'])
-        _db_manager.update_payment_status(payment_id, True, admin_id)
+        # Get the custom name, or use None if the user skips
+        custom_name = message.text.strip()
+        if custom_name.lower() == 'skip':
+            custom_name = None
 
-        admin_user = _bot.get_chat_member(admin_id, admin_id).user
-        admin_username = f"@{admin_user.username}" if admin_user.username else admin_user.first_name
-        new_caption = message.caption + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=admin_username)
-        _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
+        order_details = state_info['data']
+        prompt_id = state_info['prompt_message_id']
+        _bot.edit_message_text(messages.PLEASE_WAIT, user_id, prompt_id)
 
-        # --- NEW LOGIC: Set the user's state in the shared _user_states dictionary ---
-        user_telegram_id = order_details['user_telegram_id']
-        prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
+        # --- Reconstruct variables from order_details ---
+        # --- FIX: The missing server_id variable is now defined here ---
+        server_id = order_details['server_id']
+        plan_type = order_details['plan_type']
+        total_gb, duration_days, plan_id = 0, 0, None
+
+        if plan_type == 'fixed_monthly':
+            plan = order_details['plan_details']
+            total_gb, duration_days, plan_id = plan.get('volume_gb'), plan.get('duration_days'), plan.get('id')
+        elif plan_type == 'gigabyte_based':
+            gb_plan = order_details['gb_plan_details']
+            total_gb = order_details['requested_gb']
+            duration_days = gb_plan.get('duration_days', 0)
+            plan_id = gb_plan.get('id')
         
-        _user_states[user_telegram_id] = {
-            'state': 'waiting_for_custom_config_name',
-            'data': order_details,
-            'prompt_message_id': prompt.message_id
-        }
+        # --- Create the config with the custom remark ---
+        client_details, sub_link, single_configs = _config_generator.create_client_and_configs(
+            user_id, server_id, total_gb, duration_days, custom_remark=custom_name
+        )
+
+        if not sub_link:
+            _bot.edit_message_text(messages.OPERATION_FAILED, user_id, prompt_id)
+            _clear_user_state(user_id)
+            return
+
+        # --- Save the purchase to the database ---
+        user_db_info = _db_manager.get_user_by_telegram_id(user_id)
+        expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
+        
+        _db_manager.add_purchase(
+            user_id=user_db_info['id'], server_id=server_id, plan_id=plan_id,
+            expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
+            initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
+            client_email=client_details['email'], sub_id=client_details['subscription_id'],
+            single_configs=json.dumps(single_configs)
+        )
+
+        # --- Send the final subscription info to the user ---
+        _bot.delete_message(user_id, prompt_id)
+        _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
+        send_subscription_info(_bot, user_id, sub_link) # Corrected call to send_subscription_info
+        
+        _clear_user_state(user_id)
 
 
 
