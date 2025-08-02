@@ -61,3 +61,5 @@ sudo alamorbot
 
 
 
+
+sudo journalctl -u suggestion_site.service -n 50 --no-pager
