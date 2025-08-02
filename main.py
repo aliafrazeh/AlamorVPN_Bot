@@ -37,27 +37,31 @@ def send_welcome(message):
     first_name = message.from_user.first_name
     logger.info(f"Received /start from user ID: {user_id} ({first_name})")
 
-    # --- MODIFIED: Now uses the new inline keyboard for channel lock ---
+    # --- UPDATED: Channel lock logic with inline keyboard ---
     required_channel_id_str = db_manager.get_setting('required_channel_id')
     
     if required_channel_id_str:
         try:
             required_channel_id = int(required_channel_id_str)
+            # Admins are exempt from the channel lock
             if not helpers.is_admin(user_id) and not helpers.is_user_member_of_channel(bot, required_channel_id, user_id):
-                channel_link = db_manager.get_setting('required_channel_link') or "https://t.me/Alamor_Network" # Fallback link
+                channel_link = db_manager.get_setting('required_channel_link')
                 
-                # Create the new keyboard
-                markup = inline_keyboards.get_join_channel_keyboard(channel_link)
+                # Safeguard: Only create the keyboard if the link is a valid URL
+                if channel_link and channel_link.startswith('http'):
+                    markup = inline_keyboards.get_join_channel_keyboard(channel_link)
+                    bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT, reply_markup=markup)
+                else:
+                    # Fallback to a simple text message if link is invalid or not set
+                    fallback_link = "https://t.me/Alamor_Network" # Your default channel
+                    bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT.format(channel_link=fallback_link))
                 
-                # Send the message with the keyboard
-                bot.send_message(user_id, messages.REQUIRED_CHANNEL_PROMPT, reply_markup=markup)
                 logger.info(f"User {user_id} blocked by channel lock.")
                 return
         except (ValueError, TypeError):
             logger.error(f"Invalid required_channel_id in database: {required_channel_id_str}")
-    # --- END MODIFIED ---
+    # --- END UPDATED ---
 
-    # The rest of the function remains the same
     db_manager.add_or_update_user(
         telegram_id=user_id,
         first_name=first_name,

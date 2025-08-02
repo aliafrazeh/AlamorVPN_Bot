@@ -206,6 +206,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_set_channel_id(admin_id, message)
         elif state == 'waiting_for_user_id_to_search':
             process_user_search(admin_id,message)
+        elif state == 'waiting_for_channel_link':
+            process_set_channel_link(admin_id,message)
         # --- Gateway Flows ---
         if state == 'waiting_for_gateway_name':
             data['name'] = text
@@ -982,23 +984,40 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     def process_set_channel_id(admin_id, message):
         state_info = _admin_states.get(admin_id, {})
         channel_id_str = message.text.strip()
-
-        if channel_id_str.lower() == 'cancel':
-            _clear_admin_state(admin_id)
-            show_channel_lock_menu(admin_id, state_info.get('prompt_message_id'))
-            return
+        # ... (code for cancel and validation remains the same)
 
         if not (channel_id_str.startswith('-') and channel_id_str[1:].isdigit()):
             _bot.send_message(admin_id, messages.CHANNEL_LOCK_INVALID_ID)
             return
 
-        _db_manager.update_setting('required_channel_id', channel_id_str)
-        _db_manager.update_setting('required_channel_link', "لینک ثبت نشده") # You can ask for the link in another step
+        # Save the ID in the state and ask for the link
+        state_info['data'] = {'channel_id': channel_id_str}
+        state_info['state'] = 'waiting_for_channel_link' # <-- Move to next state
         
-        _bot.edit_message_text(messages.CHANNEL_LOCK_SUCCESS.format(channel_id=channel_id_str), admin_id, state_info['prompt_message_id'])
-        _clear_admin_state(admin_id)
-        show_channel_lock_menu(admin_id)
+        _bot.edit_message_text(
+            "عالی. حالا لطفاً لینک عمومی کانال را وارد کنید (مثلاً: https://t.me/Alamor_Network):",
+            admin_id,
+            state_info['prompt_message_id']
+        )
 
+    def process_set_channel_link(admin_id, message):
+        """ --- NEW FUNCTION --- """
+        state_info = _admin_states.get(admin_id, {})
+        channel_link = message.text.strip()
+        
+        if not channel_link.lower().startswith(('http://', 'https://')):
+            _bot.send_message(admin_id, "لینک وارد شده نامعتبر است. لطفاً لینک کامل را وارد کنید.")
+            return
+            
+        channel_id = state_info['data']['channel_id']
+
+        # Now, save both ID and Link to the database
+        _db_manager.update_setting('required_channel_id', channel_id)
+        _db_manager.update_setting('required_channel_link', channel_link)
+        
+        _bot.edit_message_text(messages.CHANNEL_LOCK_SUCCESS.format(channel_id=channel_id), admin_id, state_info['prompt_message_id'])
+        _clear_admin_state(admin_id)
+        show_channel_lock_menu(admin_id) # Show the updated menu
     def execute_remove_channel_lock(admin_id, message):
         _db_manager.update_setting('required_channel_id', '') # Set to empty string
         _db_manager.update_setting('required_channel_link', '')
