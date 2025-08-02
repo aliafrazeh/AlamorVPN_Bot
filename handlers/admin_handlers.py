@@ -278,9 +278,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(prompt_text, admin_id, message.message_id, parse_mode='Markdown')
 
     def start_add_plan_flow(admin_id, message):
+        """Starts the multi-step process for adding a new plan priced for a specific server."""
         _clear_admin_state(admin_id)
-        _admin_states[admin_id] = {'state': 'waiting_for_plan_name', 'data': {}, 'prompt_message_id': message.message_id}
-        _bot.edit_message_text(messages.ADD_PLAN_PROMPT_NAME, admin_id, message.message_id)
+        servers = _db_manager.get_all_servers(only_active=False)
+        if not servers:
+            _show_menu(admin_id, "ابتدا باید حداقل یک سرور اضافه کنید.", inline_keyboards.get_back_button("admin_plan_management"), message, parse_mode=None)
+            return
+        
+        # --- FIX: Escape server names to prevent Markdown errors ---
+        server_list_text = "\n".join([f"ID: `{s['id']}` - {helpers.escape_markdown_v1(s['name'])}" for s in servers])
+        prompt_text = f"**لیست سرورها:**\n{server_list_text}\n\nلطفا ID سروری که میخواهید پلن را برای آن تعریف کنید، وارد نمایید:"
+
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_plan_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_server_id_for_plan', 'data': {}, 'prompt_message_id': prompt.message_id}
         
     def start_toggle_plan_status_flow(admin_id, message):
         _clear_admin_state(admin_id)
@@ -841,7 +851,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.send_message(admin_id, messages.PLAN_NOT_FOUND); return
 
         plan_id = int(message.text)
-        confirm_text = messages.DELETE_PLAN_CONFIRM.format(plan_name=plan['name'], plan_id=plan_id)
+        confirm_text = messages.DELETE_PLAN_CONFIRM.format(
+        plan_name=helpers.escape_markdown_v1(plan['name']),
+        plan_id=plan_id
+)
         markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_plan_{plan_id}", "admin_plan_management")
         _bot.edit_message_text(confirm_text, admin_id, state_info['prompt_message_id'], reply_markup=markup, parse_mode='Markdown')
         _clear_admin_state(admin_id) # State is cleared, waiting for callback
@@ -1143,3 +1156,49 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(messages.SUPPORT_LINK_SET_SUCCESS, admin_id, state_info['prompt_message_id'])
         _clear_admin_state(admin_id)
         show_support_management_menu(admin_id)
+        
+        
+        
+    def process_add_plan_server(admin_id, message):
+        """Processes the selected server ID and asks for the plan name."""
+        state_info = _admin_states.get(admin_id, {})
+        server_id_str = message.text.strip()
+        
+        if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
+            _bot.send_message(admin_id, "ID سرور نامعتبر است. لطفاً دوباره تلاش کنید.")
+            return
+
+        state_info['data']['server_id'] = int(server_id_str)
+        state_info['state'] = 'waiting_for_plan_name'
+        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, state_info['prompt_message_id'])
+
+    def process_add_plan_name(admin_id, message):
+        """Processes the plan name and asks for the price."""
+        state_info = _admin_states.get(admin_id, {})
+        state_info['data']['name'] = message.text.strip()
+        state_info['state'] = 'waiting_for_plan_price'
+        # For this update, we assume all new plans are gigabyte-based
+        _bot.edit_message_text("قیمت هر گیگابایت را به تومان وارد کنید:", admin_id, state_info['prompt_message_id'])
+
+    def process_add_plan_price(admin_id, message):
+        """Processes the price and saves the new plan."""
+        state_info = _admin_states.get(admin_id, {})
+        try:
+            price = float(message.text)
+            if price < 0: raise ValueError
+        except (ValueError, TypeError):
+            _bot.send_message(admin_id, "قیمت وارد شده نامعتبر است.")
+            return
+
+        data = state_info['data']
+        _db_manager.add_plan(
+            name=data['name'],
+            plan_type='gigabyte_based',
+            server_id=data['server_id'],
+            price=price,
+            volume_gb=None, # Not applicable for gigabyte-based plans at creation
+            duration_days=None # Not applicable for gigabyte-based plans at creation
+        )
+        _bot.edit_message_text("✅ پلن با موفقیت برای سرور مورد نظر اضافه شد.", admin_id, state_info['prompt_message_id'])
+        _clear_admin_state(admin_id)
+        _show_plan_management_menu(admin_id)
