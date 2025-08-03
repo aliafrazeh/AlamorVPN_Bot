@@ -395,11 +395,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_delete_plan": start_delete_plan_flow,
             "admin_edit_plan": start_edit_plan_flow,
             "admin_create_backup": create_backup,
-            "admin_main_menu": _show_admin_main_menu,
+            "admin_main_menu":  lambda a, m: (_clear_admin_state(a), _show_menu(a, messages.ADMIN_WELCOME, inline_keyboards.get_admin_main_inline_menu(), m)),
             "admin_server_management": _show_server_management_menu,
-            "admin_plan_management": _show_plan_management_menu,
+            "admin_plan_management": lambda a, m: (_clear_admin_state(a), _show_plan_management_menu(a, m)),
             "admin_payment_management": _show_payment_gateway_management_menu,
-            "admin_user_management": _show_user_management_menu,
             "admin_add_server": start_add_server_flow,
             "admin_delete_server": start_delete_server_flow,
             "admin_add_plan": start_add_plan_flow,
@@ -1186,36 +1185,31 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def process_add_plan_server(admin_id, message):
-        """
-        --- ROBUST VERSION ---
-        Processes the selected server ID, handles potential errors,
-        and reliably moves to the next state.
-        """
         state_info = _admin_states.get(admin_id, {})
-        # Ensure we have a prompt message ID to edit
         prompt_id = state_info.get('prompt_message_id')
         if not prompt_id:
-            _bot.send_message(admin_id, "خطایی رخ داده است. لطفاً از ابتدا شروع کنید.")
+            logger.error(f"Critical error: prompt_message_id not found for admin {admin_id} in state 'waiting_for_server_id_for_plan'.")
             _clear_admin_state(admin_id)
             return
 
-        # Delete the user's message (the server ID) to keep the chat clean
         try:
             _bot.delete_message(admin_id, message.message_id)
         except Exception:
-            pass # Ignore if message is already gone
+            pass
 
         server_id_str = message.text.strip()
+        logger.info(f"Admin {admin_id} provided server ID: '{server_id_str}'.")
         
         if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
-            # Re-ask the question by editing the original prompt
+            logger.warning(f"Invalid server ID '{server_id_str}' provided by admin {admin_id}.")
             _bot.edit_message_text("ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
             return
 
-        # If the ID is valid, proceed to the next step
         state_info['data']['server_id'] = int(server_id_str)
         state_info['state'] = 'waiting_for_plan_name'
         _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
+        logger.info(f"State for admin {admin_id} changed to 'waiting_for_plan_name'.")
+
     def process_add_plan_price(admin_id, message):
         """Processes the price and saves the new plan."""
         state_info = _admin_states.get(admin_id, {})
