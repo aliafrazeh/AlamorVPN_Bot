@@ -1216,13 +1216,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state_info['data']['server_id'] = int(server_id_str)
         state_info['state'] = 'waiting_for_plan_name'
         _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id)
-        """Processes the plan name and asks for the price."""
-        state_info = _admin_states.get(admin_id, {})
-        state_info['data']['name'] = message.text.strip()
-        state_info['state'] = 'waiting_for_plan_price'
-        # For this update, we assume all new plans are gigabyte-based
-        _bot.edit_message_text("قیمت هر گیگابایت را به تومان وارد کنید:", admin_id, state_info['prompt_message_id'])
-
     def process_add_plan_price(admin_id, message):
         """Processes the price and saves the new plan."""
         state_info = _admin_states.get(admin_id, {})
