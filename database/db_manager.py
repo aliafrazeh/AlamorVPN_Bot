@@ -388,24 +388,33 @@ class DatabaseManager:
 
     # --- توابع پلن‌ها ---
     def add_plan(self, name, plan_type, server_id, price, volume_gb, duration_days):
-        """ --- MODIFIED: Returns the new plan ID on success and None on failure --- """
+        """
+        --- CORRECTED VERSION ---
+        This version fixes the SQL error that caused all inserts to fail.
+        """
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            
+            # --- THE FIX IS HERE ---
+            # The SQL statement now has the correct number of placeholders (?)
+            # and we pass 'True' as a parameter for the 'is_active' column.
             cursor.execute(
-                "INSERT INTO plans (name, plan_type, server_id, price, volume_gb, duration_days, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)",
-                (name, plan_type, server_id, price, volume_gb, duration_days)
+                "INSERT INTO plans (name, plan_type, server_id, price, volume_gb, duration_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, plan_type, server_id, price, volume_gb, duration_days, True)
             )
             new_plan_id = cursor.lastrowid
             conn.commit()
             conn.close()
+            logger.info(f"Successfully added plan '{name}' with ID {new_plan_id} for server {server_id}.")
             return new_plan_id
+            
         except sqlite3.IntegrityError:
-            logger.warning(f"Plan with name '{name}' already exists.")
-            return None # Return None on failure
+            logger.warning(f"Plan with name '{name}' for server '{server_id}' already exists.")
+            return None
         except sqlite3.Error as e:
-            logger.error(f"Error adding plan: {e}")
-            return None # Return None on failure
+            logger.error(f"A database error occurred while adding plan '{name}': {e}")
+            return None
     def get_all_plans(self, only_active=False):
         conn = None
         try:
