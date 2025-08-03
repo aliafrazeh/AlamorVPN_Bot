@@ -79,15 +79,13 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS plans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                plan_type TEXT NOT NULL, -- 'fixed_monthly' or 'gigabyte_based'
-                server_id INTEGER NOT NULL,
-                price REAL NOT NULL, -- Price for fixed plan, or price-per-GB for gigabyte plan
+                name TEXT UNIQUE NOT NULL,
+                plan_type TEXT NOT NULL,
                 volume_gb REAL,
                 duration_days INTEGER,
-                is_active BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE,
-                UNIQUE (name, server_id)
+                price REAL,
+                per_gb_price REAL,
+                is_active BOOLEAN DEFAULT TRUE
                 )
             """)
             
@@ -387,34 +385,27 @@ class DatabaseManager:
             if conn: conn.close()
 
     # --- توابع پلن‌ها ---
-    def add_plan(self, name, plan_type, server_id, price, volume_gb, duration_days):
-        """
-        --- CORRECTED VERSION ---
-        This version fixes the SQL error that caused all inserts to fail.
-        """
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            # --- THE FIX IS HERE ---
-            # The SQL statement now has the correct number of placeholders (?)
-            # and we pass 'True' as a parameter for the 'is_active' column.
-            cursor.execute(
-                "INSERT INTO plans (name, plan_type, server_id, price, volume_gb, duration_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (name, plan_type, server_id, price, volume_gb, duration_days, True)
-            )
-            new_plan_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
-            logger.info(f"Successfully added plan '{name}' with ID {new_plan_id} for server {server_id}.")
-            return new_plan_id
-            
-        except sqlite3.IntegrityError:
-            logger.warning(f"Plan with name '{name}' for server '{server_id}' already exists.")
-            return None
-        except sqlite3.Error as e:
-            logger.error(f"A database error occurred while adding plan '{name}': {e}")
-            return None
+    def add_plan(self, name, plan_type, volume_gb, duration_days, price, per_gb_price):
+            """ --- CORRECTED LOGIC: Does not try to insert server_id --- """
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (name, plan_type, volume_gb, duration_days, price, per_gb_price, True)
+                )
+                new_plan_id = cursor.lastrowid
+                conn.commit()
+                conn.close()
+                logger.info(f"Successfully added plan '{name}' with ID {new_plan_id}.")
+                return new_plan_id
+            except sqlite3.IntegrityError:
+                logger.warning(f"Plan with name '{name}' already exists.")
+                return None
+            except sqlite3.Error as e:
+                logger.error(f"A database error occurred while adding plan '{name}': {e}")
+                return None
+
     def get_all_plans(self, only_active=False):
         conn = None
         try:
