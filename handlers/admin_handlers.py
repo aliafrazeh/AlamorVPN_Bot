@@ -441,6 +441,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("confirm_delete_plan_"):
             plan_id = int(data.split('_')[-1])
             execute_delete_plan(admin_id, message, plan_id)
+        elif data.startswith("panel_type_"):
+            handle_panel_type_selection(call)
+            return
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id = int(parts[3])
