@@ -1209,13 +1209,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
             # Re-ask the question by editing the original prompt
-            _bot.edit_message_text("ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:", admin_id, prompt_id)
+            _bot.edit_message_text("ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
             return
 
         # If the ID is valid, proceed to the next step
         state_info['data']['server_id'] = int(server_id_str)
         state_info['state'] = 'waiting_for_plan_name'
-        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id)
+        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
     def process_add_plan_price(admin_id, message):
         """Processes the price and saves the new plan."""
         state_info = _admin_states.get(admin_id, {})
