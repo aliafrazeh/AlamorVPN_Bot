@@ -277,57 +277,36 @@ class DatabaseManager:
 
     def get_all_servers(self, only_active=True):
         """
-        --- CORRECTED VERSION ---
-        This version now correctly accepts the 'only_active' argument.
+        Gets all servers and returns them decrypted.
         """
         conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         query = "SELECT * FROM servers"
-        # If the argument is True, only fetch active servers
         if only_active:
             query += " WHERE is_active = TRUE"
             
         cursor.execute(query)
-        servers_data = [dict(row) for row in cursor.fetchall()]
+        servers_data = cursor.fetchall()
         conn.close()
         
-        # Decrypting credentials remains the same
-        decrypted_servers = []
-        for server in servers_data:
-            try:
-                server['panel_url'] = self._decrypt(server['panel_url'])
-                server['username'] = self._decrypt(server['username'])
-                server['password'] = self._decrypt(server['password'])
-                decrypted_servers.append(server)
-            except Exception as e:
-                logger.error(f"Could not decrypt credentials for server ID {server.get('id')}: {e}")
-                continue
+        # Decrypt each server row using the helper function
+        decrypted_servers = [self._decrypt_server_row(row) for row in servers_data]
+        # Filter out any servers that failed to decrypt
+        return [s for s in decrypted_servers if s is not None]
                 
-        return decrypted_servers
-                
-    def get_server_by_id(self, server_id):
-        conn = None
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM servers WHERE id = ?", (server_id,))
-            server = cursor.fetchone()
-            if server:
-                server_dict = dict(server)
-                server_dict['panel_url'] = self._decrypt(server_dict['panel_url'])
-                server_dict['username'] = self._decrypt(server_dict['username'])
-                server_dict['password'] = self._decrypt(server_dict['password'])
-                server_dict['subscription_base_url'] = self._decrypt(server_dict['subscription_base_url'])
-                server_dict['subscription_path_prefix'] = self._decrypt(server_dict['subscription_path_prefix'])
-                return server_dict
-            return None
-        except sqlite3.Error as e:
-            logger.error(f"Error getting server by ID {server_id}: {e}")
-            return None
-        finally:
-            if conn: conn.close()
+    def get_server_by_id(self, server_id: int):
+        """
+        Gets a single server by its ID and returns it decrypted.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM servers WHERE id = ?", (server_id,))
+        server_row = cursor.fetchone()
+        conn.close()
+        
+        # Decrypt the single row
+        return self._decrypt_server_row(server_row)
 
     def delete_server(self, server_id):
         conn = None
@@ -962,3 +941,19 @@ class DatabaseManager:
             logger.error(f"Error updating active inbounds for server {server_id}: {e}")
             return False
         
+        
+    def _decrypt_server_row(self, server_row: sqlite3.Row) -> dict or None:
+        """Takes a database row for a server and returns a decrypted dictionary."""
+        if not server_row:
+            return None
+        
+        server_dict = dict(server_row)
+        try:
+            server_dict['panel_url'] = self._decrypt(server_dict['panel_url'])
+            server_dict['username'] = self._decrypt(server_dict['username'])
+            server_dict['password'] = self._decrypt(server_dict['password'])
+            # Add other encrypted fields here if you have them
+            return server_dict
+        except Exception as e:
+            logger.error(f"Could not decrypt credentials for server ID {server_dict.get('id')}: {e}")
+            return None # Return None if decryption fails
