@@ -198,6 +198,7 @@ class XuiAPIClient:
             return False
 
     def add_client(self, data):
+        """ --- CORRECTED VERSION (from user) --- """
         if not self.check_login():
             logger.error("Not logged in to X-UI. Cannot add client.")
             return False
@@ -209,7 +210,9 @@ class XuiAPIClient:
             logger.info(f"Client added successfully to inbound {data.get('id', 'N/A')}.")
             return True
         else:
-            logger.warning(f"Failed to add client to inbound {data.get('id', 'N/A')}: {response}")
+            # The response from _make_request might be None, so we handle that
+            error_msg = response.get('msg', 'Unknown error') if response else "No response from panel"
+            logger.warning(f"Failed to add client to inbound {data.get('id', 'N/A')}: {error_msg}")
             return False
 
     def delete_client(self, inbound_id, client_id):
