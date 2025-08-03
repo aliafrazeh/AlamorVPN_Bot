@@ -275,7 +275,7 @@ class DatabaseManager:
 
     def get_all_servers(self, only_active=True):
         """
-        Gets all servers and returns them decrypted.
+        Gets all servers from the database and returns them FULLY DECRYPTED.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -288,14 +288,14 @@ class DatabaseManager:
         servers_data = cursor.fetchall()
         conn.close()
         
-        # Decrypt each server row using the helper function
-        decrypted_servers = [self._decrypt_server_row(row) for row in servers_data]
+        # Decrypt each server row using the new helper function
+        decrypted_list = [self._decrypt_server_row(row) for row in servers_data]
         # Filter out any servers that failed to decrypt
-        return [s for s in decrypted_servers if s is not None]
+        return [s for s in decrypted_list if s is not None]
                 
     def get_server_by_id(self, server_id: int):
         """
-        Gets a single server by its ID and returns it decrypted.
+        Gets a single server by its ID and returns it FULLY DECRYPTED.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -303,9 +303,7 @@ class DatabaseManager:
         server_row = cursor.fetchone()
         conn.close()
         
-        # Decrypt the single row
         return self._decrypt_server_row(server_row)
-
     def delete_server(self, server_id):
         conn = None
         try:
@@ -947,17 +945,19 @@ class DatabaseManager:
         
         
     def _decrypt_server_row(self, server_row: sqlite3.Row) -> dict or None:
-        """Takes a database row for a server and returns a decrypted dictionary."""
+        """Helper function to decrypt a single server record."""
         if not server_row:
             return None
         
         server_dict = dict(server_row)
         try:
+            # Decrypt all necessary fields
             server_dict['panel_url'] = self._decrypt(server_dict['panel_url'])
             server_dict['username'] = self._decrypt(server_dict['username'])
             server_dict['password'] = self._decrypt(server_dict['password'])
-            # Add other encrypted fields here if you have them
+            server_dict['subscription_base_url'] = self._decrypt(server_dict['subscription_base_url'])
+            server_dict['subscription_path_prefix'] = self._decrypt(server_dict['subscription_path_prefix'])
             return server_dict
         except Exception as e:
             logger.error(f"Could not decrypt credentials for server ID {server_dict.get('id')}: {e}")
-            return None # Return None if decryption fails
+            return None
