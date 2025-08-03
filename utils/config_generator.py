@@ -108,7 +108,7 @@ class ConfigGenerator:
         return client_details_for_db, subscription_link, all_generated_configs
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark: str) -> dict or None:
-        """ --- MODIFIED: Restored the missing query_string definition --- """
+        """ --- MODIFIED: Safely handles empty serverNames for REALITY --- """
         try:
             protocol = inbound_details.get('protocol')
             address = server_data['subscription_base_url'].split('//')[1].split(':')[0].split('/')[0]
@@ -119,7 +119,7 @@ class ConfigGenerator:
             security = stream_settings.get('security', 'none')
             
             config_url = ""
-            params = {'type': network} # Initialize params dictionary
+            params = {'type': network}
 
             if protocol == 'vless':
                 if security in ['tls', 'xtls', 'reality']:
@@ -130,8 +130,14 @@ class ConfigGenerator:
                     params['fp'] = reality_settings.get('fingerprint', '')
                     params['pbk'] = reality_settings.get('publicKey', '')
                     params['sid'] = reality_settings.get('shortId', '')
-                    params['sni'] = reality_settings.get('serverNames', [''])[0]
-                
+                    
+                    # --- THE FIX IS HERE ---
+                    # Safely get the SNI from the serverNames list
+                    server_names = reality_settings.get('serverNames', [])
+                    if server_names: # Check if the list is not empty
+                        params['sni'] = server_names[0]
+                    # --- END OF FIX ---
+
                 if security == 'tls':
                     tls_settings = stream_settings.get('tlsSettings', {})
                     params['sni'] = tls_settings.get('serverName', address)
@@ -147,8 +153,6 @@ class ConfigGenerator:
                     xtls_settings = stream_settings.get('xtlsSettings', {})
                     params['flow'] = xtls_settings.get('flow', 'xtls-rprx-direct')
 
-                # --- THE FIX IS HERE ---
-                # This line was missing. It converts the params dictionary into a URL string.
                 query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in params.items() if value])
                 
                 config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
