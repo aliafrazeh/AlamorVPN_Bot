@@ -441,11 +441,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             purchase_id = int(parts[3])
             user_telegram_id = int(parts[4])
             execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
-        if data.startswith("admin_set_support_type_"):
+        elif data.startswith("admin_set_support_type_"):
             support_type = data.split('_')[-1]
             # --- THE FIX IS HERE ---
             # Pass the entire 'call' object, not just 'message'
             set_support_type(admin_id, call, support_type)
+        elif data.startswith("inbound_save_"):
+            server_id = int(data.split('_')[-1])
+            execute_save_inbounds(admin_id, message, server_id)
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id, user_telegram_id = int(parts[3]), int(parts[4])
@@ -1253,3 +1256,27 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         prompt = _bot.send_message(admin_id, "قیمت هر گیگابایت را به تومان وارد کنید:")
         _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
+
+
+
+    
+        
+    def execute_save_inbounds(admin_id, message, server_id):
+        """Saves the selected inbound settings to the database."""
+        state_info = _admin_states.get(admin_id, {})
+        
+        # Check if the admin was actually in the selection state for this server
+        if not state_info or state_info.get('state') != f'selecting_inbounds_for_{server_id}':
+            _bot.answer_callback_query(message.id, "خطایی رخ داده است. لطفاً دوباره تلاش کنید.", show_alert=True)
+            return
+
+        selected_ids = state_info['data'].get('selected_inbound_ids', [])
+        
+        if _db_manager.update_active_inbounds_for_server(server_id, selected_ids):
+            _bot.edit_message_text("✅ تنظیمات اینباندها با موفقیت ذخیره شد.", admin_id, message.message_id)
+        else:
+            _bot.edit_message_text("❌ در ذخیره تنظیمات خطایی رخ داد.", admin_id, message.message_id)
+
+        _clear_admin_state(admin_id)
+        # You can show the server management menu again after this
+        # _show_server_management_menu(admin_id) # Optional

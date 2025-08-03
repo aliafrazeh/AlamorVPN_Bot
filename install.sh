@@ -268,6 +268,7 @@ update_bot() {
     print_info "Restarting services..."
     sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
     print_success "Bot updated and restarted successfully."
+    
 }
 
 remove_bot_internal() {

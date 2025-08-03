@@ -934,3 +934,30 @@ class DatabaseManager:
         tutorial = cursor.fetchone()
         conn.close()
         return dict(tutorial) if tutorial else None
+    
+    
+    
+    def update_active_inbounds_for_server(self, server_id: int, active_inbound_ids: list):
+        """
+        Updates the active status for all inbounds of a specific server.
+        Inbounds in the list will be marked as active, others as inactive.
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            # First, deactivate all inbounds for this server
+            cursor.execute("UPDATE server_inbounds SET is_active = FALSE WHERE server_id = ?", (server_id,))
+            # Then, activate only the selected ones
+            if active_inbound_ids:
+                # Create placeholders for the query string
+                placeholders = ', '.join('?' for _ in active_inbound_ids)
+                query = f"UPDATE server_inbounds SET is_active = TRUE WHERE server_id = ? AND inbound_id IN ({placeholders})"
+                params = [server_id] + active_inbound_ids
+                cursor.execute(query, params)
+            conn.commit()
+            conn.close()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error updating active inbounds for server {server_id}: {e}")
+            return False
+        
