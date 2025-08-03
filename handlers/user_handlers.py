@@ -457,7 +457,12 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         _show_user_main_menu(user_id)
 
     # --- سرویس‌های من ---
+    # handlers/user_handlers.py
+
     def show_service_details(user_id, purchase_id, message):
+        """
+        Shows the details of a specific subscription, without the single config button.
+        """
         purchase = _db_manager.get_purchase_by_id(purchase_id)
         if not purchase:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
@@ -465,27 +470,23 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             
         sub_link = ""
         server = _db_manager.get_server_by_id(purchase['server_id'])
-        if server and purchase['subscription_id']:
+        if server and purchase['sub_id']: # Use sub_id which is correct
             sub_base = server['subscription_base_url'].rstrip('/')
             sub_path = server['subscription_path_prefix'].strip('/')
-            sub_link = f"{sub_base}/{sub_path}/{purchase['subscription_id']}"
+            sub_link = f"{sub_base}/{sub_path}/{purchase['sub_id']}"
         
         if sub_link:
-            # --- بخش اصلاح شده ---
-            # فراخوانی escape_markdown_v1 از اینجا نیز حذف شد
             text = messages.CONFIG_DELIVERY_HEADER + \
                 messages.CONFIG_DELIVERY_SUB_LINK.format(sub_link=sub_link)
             
-            # ساخت کیبورد با دکمه‌های بازگشت و دریافت کانفیگ تکی
+            # --- REMOVED: The button for single configs is gone ---
             markup = types.InlineKeyboardMarkup()
-            btn_single_configs = types.InlineKeyboardButton(messages.GET_SINGLE_CONFIGS_BUTTON, callback_data=f"user_get_single_configs_{purchase_id}")
             btn_back = types.InlineKeyboardButton("🔙 بازگشت به سرویس‌ها", callback_data="user_my_services")
-            markup.add(btn_single_configs)
             markup.add(btn_back)
 
             _bot.edit_message_text(text, user_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
             
-            # ارسال QR کد به صورت یک پیام جدید
+            # Send QR Code as a new message
             try:
                 import qrcode
                 from io import BytesIO
@@ -496,7 +497,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 bio.seek(0)
                 _bot.send_photo(user_id, bio, caption=messages.QR_CODE_CAPTION)
             except Exception as e:
-                logger.error(f"Failed to generate or send QR code in service details: {e}")
+                logger.error(f"Failed to generate QR code in service details: {e}")
         else:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
     def send_single_configs(user_id, purchase_id):
@@ -631,15 +632,14 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
     def process_custom_config_name(message):
         """
-        Processes the custom name sent by the user, creates the config,
-        saves the purchase, and sends the subscription info.
+        Processes the custom name, creates the subscription link (only),
+        saves the purchase, and sends the info to the user.
         """
         user_id = message.from_user.id
         state_info = _user_states.get(user_id, {})
         if not state_info or state_info.get('state') != 'waiting_for_custom_config_name':
             return
 
-        # Get the custom name, or use None if the user skips
         custom_name = message.text.strip()
         if custom_name.lower() == 'skip':
             custom_name = None
@@ -648,8 +648,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         prompt_id = state_info['prompt_message_id']
         _bot.edit_message_text(messages.PLEASE_WAIT, user_id, prompt_id)
 
-        # --- Reconstruct variables from order_details ---
-        # --- FIX: The missing server_id variable is now defined here ---
+        # --- Reconstruct variables ---
         server_id = order_details['server_id']
         plan_type = order_details['plan_type']
         total_gb, duration_days, plan_id = 0, 0, None
@@ -663,8 +662,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             duration_days = gb_plan.get('duration_days', 0)
             plan_id = gb_plan.get('id')
         
-        # --- Create the config with the custom remark ---
-        client_details, sub_link, single_configs = _config_generator.create_client_and_configs(
+        # --- MODIFIED: The function now only returns two values ---
+        client_details, sub_link = _config_generator.create_client_and_configs(
             user_id, server_id, total_gb, duration_days, custom_remark=custom_name
         )
 
@@ -677,21 +676,21 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
         expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
         
+        # --- MODIFIED: 'single_configs' is no longer passed to the database ---
         _db_manager.add_purchase(
             user_id=user_db_info['id'], server_id=server_id, plan_id=plan_id,
             expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
             initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
             client_email=client_details['email'], sub_id=client_details['subscription_id'],
-            single_configs=json.dumps(single_configs)
+            single_configs=None # Set to None as it's removed
         )
 
-        # --- Send the final subscription info to the user ---
+        # --- Send the final subscription info ---
         _bot.delete_message(user_id, prompt_id)
         _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
-        send_subscription_info(user_id, sub_link) # Corrected call to send_subscription_info
+        send_subscription_info(_bot, user_id, sub_link)
         
         _clear_user_state(user_id)
-        
         
     def show_platform_selection(user_id, message):
         """Shows the platform selection menu to the user."""
