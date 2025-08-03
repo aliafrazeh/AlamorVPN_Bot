@@ -16,7 +16,6 @@ class ConfigGenerator:
         self.db_manager = db_manager
 
     def create_client_and_configs(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int or None, custom_remark: str = None):
-        """MODIFIED: Generates a unique email for each inbound to prevent conflicts."""
         logger.info(f"Starting config generation for user:{user_telegram_id} on server:{server_id}")
         server_data = self.db_manager.get_server_by_id(server_id)
         if not server_data:
@@ -46,19 +45,15 @@ class ConfigGenerator:
             return None, None, None
 
         all_generated_configs = []
-        # This UUID is shared across all inbounds for the subscription to work correctly
         representative_client_uuid = str(uuid.uuid4())
         
         for db_inbound in active_inbounds_from_db:
             inbound_id_on_panel = db_inbound['inbound_id']
-            
-            # --- THE FIX IS HERE ---
-            # Generate a NEW, unique email for each inbound to avoid panel conflicts
             unique_client_email = f"u{user_telegram_id}.i{inbound_id_on_panel}.{generate_random_string(4)}"
             
             client_settings = {
-                "id": representative_client_uuid, # UUID must be the same
-                "email": unique_client_email,      # Email must be unique
+                "id": representative_client_uuid,
+                "email": unique_client_email,
                 "totalGB": total_traffic_bytes,
                 "expiryTime": expiry_time_ms,
                 "enable": True,
@@ -74,7 +69,6 @@ class ConfigGenerator:
             if not temp_xui_client.add_client(add_client_payload):
                 logger.error(f"Failed to add client to inbound {inbound_id_on_panel}.")
                 continue
-            # --- END OF FIX ---
 
             inbound_details = temp_xui_client.get_inbound(inbound_id_on_panel)
             if not inbound_details:
@@ -101,14 +95,13 @@ class ConfigGenerator:
 
         client_details_for_db = {
             "uuid": representative_client_uuid,
-            # We store one of the generated emails for reference; it doesn't matter which one
             "email": f"u{user_telegram_id}.s{server_id}.{generate_random_string(4)}",
             "subscription_id": master_sub_id
         }
         return client_details_for_db, subscription_link, all_generated_configs
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark: str) -> dict or None:
-        """ --- MODIFIED: Safely handles empty serverNames for REALITY --- """
+        """ --- FINAL CORRECTED VERSION: Safely handles empty serverNames for REALITY --- """
         try:
             protocol = inbound_details.get('protocol')
             address = server_data['subscription_base_url'].split('//')[1].split(':')[0].split('/')[0]
@@ -118,7 +111,6 @@ class ConfigGenerator:
             network = stream_settings.get('network', 'tcp')
             security = stream_settings.get('security', 'none')
             
-            config_url = ""
             params = {'type': network}
 
             if protocol == 'vless':
@@ -134,7 +126,7 @@ class ConfigGenerator:
                     # --- THE FIX IS HERE ---
                     # Safely get the SNI from the serverNames list
                     server_names = reality_settings.get('serverNames', [])
-                    if server_names: # Check if the list is not empty
+                    if server_names and server_names[0]: # Check if the list exists AND its first item is not empty
                         params['sni'] = server_names[0]
                     # --- END OF FIX ---
 
@@ -157,8 +149,7 @@ class ConfigGenerator:
                 
                 config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
                 
-                if config_url:
-                    return {"remark": remark, "url": config_url}
+                return {"remark": remark, "url": config_url}
 
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
