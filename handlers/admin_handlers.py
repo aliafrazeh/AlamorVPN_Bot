@@ -710,16 +710,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # در نهایت، وضعیت ادمین پاک می‌شود
         _clear_admin_state(admin_id)
     def start_manage_inbounds_flow(admin_id, message):
-            """فرآیند مدیریت اینباند را با نمایش لیست سرورها آغاز می‌کند."""
-            _clear_admin_state(admin_id)
-            list_text = _generate_server_list_text()
-            if list_text == messages.NO_SERVERS_FOUND:
-                _bot.edit_message_text(list_text, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_server_management"))
-                return
-            
-            _admin_states[admin_id] = {'state': 'waiting_for_server_id_for_inbounds', 'prompt_message_id': message.message_id}
-            prompt_text = f"{list_text}\n\n{messages.SELECT_SERVER_FOR_INBOUNDS_PROMPT}"
-            _bot.edit_message_text(prompt_text, admin_id, message.message_id, parse_mode='Markdown')
+        _clear_admin_state(admin_id)
+        
+        # This call now automatically receives decrypted server names
+        servers = _db_manager.get_all_servers(only_active=False) 
+        
+        if not servers:
+            # ...
+            return
+        
+        # The 'name' field is already decrypted, so no error will occur
+        server_list_text = "\n".join([f"ID: `{s['id']}` - {helpers.escape_markdown_v1(s['name'])}" for s in servers])
+        prompt_text = f"**لیست سرورها:**\n{server_list_text}\n\nلطفا ID سروری که میخواهید اینباندهای آن را مدیریت کنید، وارد نمایید:"
+        
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_server_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_server_id_for_inbounds', 'prompt_message_id': prompt.message_id}
 
 
     def process_manage_inbounds_flow(admin_id, message):
