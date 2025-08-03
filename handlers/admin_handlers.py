@@ -1207,26 +1207,44 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data) # Pass data to the next step
 
     def process_add_plan_price(message, plan_data):
-        """Processes the price and saves the new plan."""
+        """--- CORRECTED VERSION: Calls the updated add_plan function correctly ---"""
         admin_id = message.from_user.id
         try:
-            price = float(message.text)
-            if price < 0: raise ValueError
+            price_input = float(message.text)
+            if price_input < 0: raise ValueError
         except (ValueError, TypeError):
             prompt = _bot.send_message(admin_id, "قیمت وارد شده نامعتبر است. لطفاً یک عدد وارد کنید:")
             _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
             return
 
+        # Prepare all arguments for the database function
+        plan_data['price'] = price_input
+        
+        # Set default/null values for arguments not collected in this specific flow
+        # This makes the call robust
+        final_args = {
+            'name': plan_data.get('name'),
+            'plan_type': plan_data.get('plan_type'),
+            'volume_gb': plan_data.get('volume_gb'),
+            'duration_days': plan_data.get('duration_days'),
+            'price': plan_data.get('price'),
+            'per_gb_price': plan_data.get('per_gb_price')
+        }
+        
+        # Adjust price based on plan type
+        if final_args['plan_type'] == 'gigabyte_based':
+            final_args['per_gb_price'] = final_args.pop('price', None)
+        
         _db_manager.add_plan(
-            name=plan_data['name'],
-            plan_type='gigabyte_based',
-            server_id=plan_data['server_id'],
-            price=price,
-            volume_gb=None,
-            duration_days=None
+            name=final_args['name'],
+            plan_type=final_args['plan_type'],
+            volume_gb=final_args['volume_gb'],
+            duration_days=final_args['duration_days'],
+            price=final_args.get('price'), # Use .get() for safety
+            per_gb_price=final_args.get('per_gb_price') # Use .get() for safety
         )
-        _bot.send_message(admin_id, "✅ پلن با موفقیت برای سرور مورد نظر اضافه شد.")
-        # The flow ends here, no need to clear state.
+        
+        _bot.send_message(admin_id, "✅ پلن با موفقیت اضافه شد.")
         
     def process_add_plan_name(message, plan_data):
         """Processes the plan name and asks for the price."""

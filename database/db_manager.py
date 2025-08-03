@@ -409,24 +409,20 @@ class DatabaseManager:
 
     # --- توابع پلن‌ها ---
     def add_plan(self, name, plan_type, volume_gb, duration_days, price, per_gb_price):
-        conn = None
+        """ --- CORRECTED VERSION: Reverted to simple global pricing model --- """
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, TRUE)
-            """, (name, plan_type, volume_gb, duration_days, price, per_gb_price))
+            cursor.execute(
+                "INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)",
+                (name, plan_type, volume_gb, duration_days, price, per_gb_price)
+            )
             conn.commit()
+            conn.close()
             return cursor.lastrowid
         except sqlite3.IntegrityError:
+            logger.warning(f"Plan with name '{name}' already exists.")
             return None
-        except sqlite3.Error as e:
-            logger.error(f"Error adding plan '{name}': {e}")
-            return None
-        finally:
-            if conn: conn.close()
-
     def get_all_plans(self, only_active=False):
         conn = None
         try:
