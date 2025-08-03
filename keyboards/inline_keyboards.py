@@ -322,3 +322,17 @@ def get_support_management_menu(): # The 'support_type' argument has been remove
     markup.add(types.InlineKeyboardButton("✏️ ثبت/ویرایش لینک پشتیبانی", callback_data="admin_edit_support_link"))
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup
+
+
+
+
+def get_panel_type_selection_menu():
+    """کیبورد انتخاب نوع پنل هنگام افزودن سرور جدید را می‌سازد."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("3x-ui (standard)", callback_data="panel_type_x-ui"),
+        types.InlineKeyboardButton("Alireza-x-ui", callback_data="panel_type_alireza"),
+        # types.InlineKeyboardButton("Hiddify", callback_data="panel_type_hiddify"), # برای آینده
+        types.InlineKeyboardButton("🔙 انصراف", callback_data="admin_server_management")
+    )
+    return markup

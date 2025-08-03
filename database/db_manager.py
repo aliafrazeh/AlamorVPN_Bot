@@ -60,20 +60,21 @@ class DatabaseManager:
                 )
             ''')
             # جدول سرورها
-            cursor.execute("""
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS servers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
+                    panel_type TEXT NOT NULL DEFAULT 'x-ui',
                     panel_url TEXT NOT NULL,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
                     subscription_base_url TEXT NOT NULL,
                     subscription_path_prefix TEXT NOT NULL,
                     is_active BOOLEAN DEFAULT TRUE,
-                    last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_checked TIMESTAMP,
                     is_online BOOLEAN DEFAULT FALSE
                 )
-            """)
+            ''')
             
             # جدول پلن‌ها
             cursor.execute("""
@@ -252,26 +253,22 @@ class DatabaseManager:
             if conn: conn.close()
 
     # --- توابع سرورها ---
-    def add_server(self, name, panel_url, username, password, sub_base_url, sub_path_prefix):
-        conn = None
+    def add_server(self, name, panel_type, panel_url, username, password, sub_base_url, sub_path_prefix):
+        """ --- MODIFIED: Now saves the panel_type as well --- """
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO servers (name, panel_url, username, password, subscription_base_url, subscription_path_prefix)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, self._encrypt(panel_url), self._encrypt(username), self._encrypt(password), self._encrypt(sub_base_url), self._encrypt(sub_path_prefix)))
+            cursor.execute(
+                "INSERT INTO servers (name, panel_type, panel_url, username, password, subscription_base_url, subscription_path_prefix) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, panel_type, self._encrypt(panel_url), self._encrypt(username), self._encrypt(password), self._encrypt(sub_base_url), self._encrypt(sub_path_prefix))
+            )
+            new_server_id = cursor.lastrowid
             conn.commit()
-            logger.info(f"Server '{name}' added successfully.")
-            return cursor.lastrowid
-        except sqlite3.IntegrityError:
-            logger.warning(f"Server with name '{name}' already exists.")
-            return None
+            conn.close()
+            return new_server_id
         except sqlite3.Error as e:
             logger.error(f"Error adding server '{name}': {e}")
             return None
-        finally:
-            if conn: conn.close()
 
     def get_all_servers(self, only_active=True):
         """

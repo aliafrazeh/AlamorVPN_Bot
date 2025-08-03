@@ -286,9 +286,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     # SECTION: Process Starters and Callback Handlers
     # =============================================================================
     def start_add_server_flow(admin_id, message):
-        _clear_admin_state(admin_id)
-        _admin_states[admin_id] = {'state': 'waiting_for_server_name', 'data': {}, 'prompt_message_id': message.message_id}
-        _bot.edit_message_text(messages.ADD_SERVER_PROMPT_NAME, admin_id, message.message_id)
+        """فرآیند افزودن سرور را با پرسیدن نوع پنل شروع می‌کند."""
+        _clear_admin_state(admin_id) # پاک کردن وضعیت قبلی
+        prompt = _show_menu(admin_id, "لطفاً نوع پنل سرور جدید را انتخاب کنید:", inline_keyboards.get_panel_type_selection_menu(), message)
+        # The next step is handled by the callback handler below
+
 
     def start_delete_server_flow(admin_id, message):
         _clear_admin_state(admin_id)
@@ -382,6 +384,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_add_server": start_add_server_flow,
             "admin_support_management": show_support_management_menu, 
             "admin_edit_support_link": start_edit_support_link_flow,
             "admin_tutorial_management": show_tutorial_management_menu, 
@@ -1332,3 +1335,95 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.send_message(admin_id, "✅ پلن گیگابایتی با موفقیت اضافه شد.")
         else:
             _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد.")
+            
+            
+            
+    @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith('panel_type_'))
+    def handle_panel_type_selection(call):
+        """نوع پنل انتخاب شده توسط ادمین را پردازش می‌کند."""
+        admin_id = call.from_user.id
+        panel_type = call.data.replace("panel_type_", "")
+        
+        server_data = {'panel_type': panel_type}
+        
+        prompt = _bot.edit_message_text("نام دلخواه سرور را وارد کنید:", admin_id, call.message.message_id)
+        _bot.register_next_step_handler(prompt, process_add_server_name, server_data)
+
+    def process_add_server_name(message, server_data):
+        """نام سرور را پردازش کرده و آدرس پنل را می‌پرسد."""
+        admin_id = message.from_user.id
+        server_data['name'] = message.text.strip()
+        
+        prompt = _bot.send_message(admin_id, "آدرس کامل پنل را وارد کنید (مثال: http://1.2.3.4:54321):")
+        _bot.register_next_step_handler(prompt, process_add_server_url, server_data)
+
+    def process_add_server_url(message, server_data):
+        """آدرس پنل را پردازش کرده و نام کاربری را می‌پرسد."""
+        admin_id = message.from_user.id
+        server_data['panel_url'] = message.text.strip()
+        
+        # برای هیدیفای، به جای یوزرنیم، UUID ادمین را می‌پرسیم
+        prompt_text = "نام کاربری پنل را وارد کنید:"
+        if server_data['panel_type'] == 'hiddify':
+            prompt_text = "UUID ادمین پنل هیدیفای را وارد کنید:"
+            
+        prompt = _bot.send_message(admin_id, prompt_text)
+        _bot.register_next_step_handler(prompt, process_add_server_username, server_data)
+
+    def process_add_server_username(message, server_data):
+        """نام کاربری را پردازش کرده و رمز عبور را می‌پرسد."""
+        admin_id = message.from_user.id
+        server_data['username'] = message.text.strip()
+        
+        # برای هیدیفay، رمز عبور لازم نیست
+        if server_data['panel_type'] == 'hiddify':
+            # مستقیم به مرحله ذخیره می‌رویم
+            execute_add_server(admin_id, server_data)
+            return
+
+        prompt = _bot.send_message(admin_id, "رمز عبور پنل را وارد کنید:")
+        _bot.register_next_step_handler(prompt, process_add_server_password, server_data)
+
+    def process_add_server_password(message, server_data):
+        """رمز عبور را پردازش کرده و آدرس سابسکریپشن را می‌پرسد."""
+        admin_id = message.from_user.id
+        server_data['password'] = message.text.strip()
+        
+        prompt = _bot.send_message(admin_id, "آدرس پایه سابسکریپشن را وارد کنید (مثال: https://yourdomain.com:2096):")
+        _bot.register_next_step_handler(prompt, process_add_server_sub_base_url, server_data)
+
+    def process_add_server_sub_base_url(message, server_data):
+        """آدرس سابسکریپشن را پردازش کرده و پیشوند مسیر را می‌پرسد."""
+        admin_id = message.from_user.id
+        server_data['sub_base_url'] = message.text.strip()
+
+        prompt = _bot.send_message(admin_id, "پیشوند مسیر سابسکریپشن را وارد کنید (مثال: sub):")
+        _bot.register_next_step_handler(prompt, process_add_server_sub_path, server_data)
+
+    def process_add_server_sub_path(message, server_data):
+        """پیشوند مسیر را پردازش کرده و سرور را ذخیره می‌کند."""
+        admin_id = message.from_user.id
+        server_data['sub_path_prefix'] = message.text.strip()
+        execute_add_server(admin_id, server_data)
+
+    def execute_add_server(admin_id, server_data):
+        """اطلاعات نهایی را در دیتابیس ذخیره می‌کند."""
+        # برای هیدیفای مقادیر خالی را تنظیم می‌کنیم
+        password = server_data.get('password', '')
+        sub_base_url = server_data.get('sub_base_url', '')
+        sub_path_prefix = server_data.get('sub_path_prefix', '')
+
+        new_server_id = _db_manager.add_server(
+            name=server_data['name'],
+            panel_type=server_data['panel_type'],
+            panel_url=server_data['panel_url'],
+            username=server_data['username'],
+            password=password,
+            sub_base_url=sub_base_url,
+            sub_path_prefix=sub_path_prefix
+        )
+
+        if new_server_id:
+            _bot.send_message(admin_id, f"✅ سرور '{server_data['name']}' با موفقیت اضافه شد.")
+        else:
+            _bot.send_message(admin_id, f"❌ خطایی در افزودن سرور رخ داد. ممکن است نام سرور تکراری باشد.")
