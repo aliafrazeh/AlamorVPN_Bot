@@ -300,11 +300,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(prompt_text, admin_id, message.message_id, parse_mode='Markdown')
 
     def start_add_plan_flow(admin_id, message):
-        """Starts the flow using the library's standard next_step_handler."""
-        servers = _db_manager.get_all_servers(only_active=False)
-        if not servers:
-            _show_menu(admin_id, "ابتدا باید حداقل یک سرور اضافه کنید.", inline_keyboards.get_back_button("admin_plan_management"), message, parse_mode=None)
-            return
+        """Starts the flow for adding a new global plan."""
+        _clear_admin_state(admin_id) # Clear any previous state
+        prompt = _show_menu(admin_id, "لطفاً نوع پلن را انتخاب کنید:", inline_keyboards.get_plan_type_selection_menu_admin(), message)
+        # The next step is handled by the callback handler for the plan type buttons.
+
         
         server_list_text = "\n".join([f"ID: `{s['id']}` - {helpers.escape_markdown_v1(s['name'])}" for s in servers])
         prompt_text = f"**لیست سرورها:**\n{server_list_text}\n\nلطفا ID سروری که میخواهید پلن را برای آن تعریف کنید، وارد نمایید:"
@@ -424,7 +424,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             tutorial_id = int(data.split('_')[-1])
             execute_delete_tutorial(admin_id, message, tutorial_id)
         elif data.startswith("plan_type_"):
-            get_plan_details_from_callback(admin_id, message, data.replace('plan_type_', ''))
+            process_add_plan_type_selection(call)
+            return
+        
         elif data.startswith("confirm_delete_server_"):
             execute_delete_server(admin_id, message, int(data.split('_')[-1]))
         elif data.startswith("inbound_"):
@@ -1215,47 +1217,64 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data) # Pass data to the next step
 
     def process_add_plan_price(message, plan_data):
-        """--- MODIFIED: Now checks if the plan was successfully added to the database ---"""
+        """Processes the final price for a fixed plan and saves it."""
         admin_id = message.from_user.id
         try:
-            price = float(message.text)
-            if price < 0: raise ValueError
+            plan_data['price'] = float(message.text)
         except (ValueError, TypeError):
-            prompt = _bot.send_message(admin_id, "قیمت وارد شده نامعتبر است. لطفاً یک عدد وارد کنید:")
+            prompt = _bot.send_message(admin_id, "قیمت نامعتبر است. لطفاً یک عدد وارد کنید:")
             _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
             return
 
-        # --- THE FIX IS HERE ---
-        # We now capture the result of the add_plan function
         result = _db_manager.add_plan(
             name=plan_data['name'],
-            plan_type='gigabyte_based',
-            server_id=plan_data['server_id'],
-            price=price,
-            volume_gb=None,
-            duration_days=None
+            plan_type='fixed_monthly',
+            volume_gb=plan_data['volume_gb'],
+            duration_days=plan_data['duration_days'],
+            price=plan_data['price'],
+            per_gb_price=None # Not applicable for fixed plans
         )
-
-        # Check if the result is successful (not None)
+        
         if result:
-            _bot.send_message(admin_id, "✅ پلن با موفقیت برای سرور مورد نظر اضافه شد.")
+            _bot.send_message(admin_id, "✅ پلن ثابت با موفقیت اضافه شد.")
         else:
-            # If it failed, inform the admin of the error
-            _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید.")
-        
-        # The flow ends here regardless of success or failure
-        
+            _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد.")
+
     def process_add_plan_name(message, plan_data):
-        """Processes the plan name and asks for the price."""
+        """Processes the plan name and asks for the next detail."""
         admin_id = message.from_user.id
         plan_data['name'] = message.text.strip()
         
-        prompt = _bot.send_message(admin_id, "قیمت هر گیگابایت را به تومان وارد کنید:")
+        if plan_data['plan_type'] == 'fixed_monthly':
+            prompt = _bot.send_message(admin_id, "حجم پلن را به GB وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_plan_volume, plan_data)
+        else: # gigabyte_based
+            prompt = _bot.send_message(admin_id, "قیمت هر گیگابایت را به تومان وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_per_gb_price, plan_data)
+
+
+    def process_add_plan_volume(message, plan_data):
+        """Processes volume for fixed plans."""
+        admin_id = message.from_user.id
+        try:
+            plan_data['volume_gb'] = float(message.text)
+        except (ValueError, TypeError):
+            prompt = _bot.send_message(admin_id, "مقدار نامعتبر است. لطفاً یک عدد وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_plan_volume, plan_data)
+            return
+    def process_add_plan_duration(message, plan_data):
+        """Processes duration for fixed plans."""
+        admin_id = message.from_user.id
+        try:
+            plan_data['duration_days'] = int(message.text)
+        except (ValueError, TypeError):
+            prompt = _bot.send_message(admin_id, "مقدار نامعتبر است. لطفاً یک عدد صحیح وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_plan_duration, plan_data)
+            return
+
+        prompt = _bot.send_message(admin_id, "قیمت کل پلن را به تومان وارد کنید:")
         _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
 
-
-
-    
         
     def execute_save_inbounds(admin_id, message, server_id):
         """Saves the selected inbound settings to the database."""
@@ -1276,3 +1295,40 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         # You can show the server management menu again after this
         # _show_server_management_menu(admin_id) # Optional
+        
+        
+    def process_add_plan_type_selection(call):
+        """Handles the callback from the plan type selection keyboard."""
+        admin_id = call.from_user.id
+        plan_type = call.data.replace("plan_type_", "") # 'fixed_monthly' or 'gigabyte_based'
+        
+        plan_data = {'plan_type': plan_type}
+        
+        prompt = _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, call.message.message_id)
+        _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data)
+
+
+
+    def process_add_per_gb_price(message, plan_data):
+        """Processes the price for a gigabyte-based plan and saves it."""
+        admin_id = message.from_user.id
+        try:
+            plan_data['per_gb_price'] = float(message.text)
+        except (ValueError, TypeError):
+            prompt = _bot.send_message(admin_id, "قیمت نامعتبر است. لطفاً یک عدد وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_per_gb_price, plan_data)
+            return
+
+        result = _db_manager.add_plan(
+            name=plan_data['name'],
+            plan_type='gigabyte_based',
+            volume_gb=None, # Not applicable
+            duration_days=None, # Not applicable
+            price=None, # Not applicable
+            per_gb_price=plan_data['per_gb_price']
+        )
+
+        if result:
+            _bot.send_message(admin_id, "✅ پلن گیگابایتی با موفقیت اضافه شد.")
+        else:
+            _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد.")
