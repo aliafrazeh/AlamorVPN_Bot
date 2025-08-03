@@ -943,6 +943,7 @@ class DatabaseManager:
         Inbounds in the list will be marked as active, others as inactive.
         """
         try:
+            
             conn = self._get_connection()
             cursor = conn.cursor()
             # First, deactivate all inbounds for this server
