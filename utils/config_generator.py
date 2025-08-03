@@ -1,36 +1,43 @@
 # utils/config_generator.py
 
-import json
-import logging
-import uuid
+# --- NEW: Import the API factory ---
+from api_client.factory import get_api_client
 import datetime
-from urllib.parse import quote
-
+import json
 from utils.helpers import generate_random_string
+import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ConfigGenerator:
     def __init__(self, xui_api_client, db_manager):
-        self.xui_api = xui_api_client
+        self.xui_api = xui_api_client # This is kept for legacy compatibility if needed elsewhere
         self.db_manager = db_manager
 
     def create_client_and_configs(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int or None, custom_remark: str = None):
         """
         --- FINAL & ROBUST VERSION ---
-        This version calls the corrected add_client function with the correct payload.
+        This version now uses the API factory to work with any panel type.
         """
         logger.info(f"Starting config generation for user:{user_telegram_id} on server:{server_id}")
         server_data = self.db_manager.get_server_by_id(server_id)
-        if not server_data: return None, None
+        if not server_data:
+            logger.error(f"Server {server_id} not found.")
+            return None, None
 
-        temp_xui_client = self.xui_api(
-            panel_url=server_data['panel_url'],
-            username=server_data['username'],
-            password=server_data['password']
-        )
-        if not temp_xui_client.login(): return None, None
+        # --- THE FIX IS HERE: Use the factory to get the correct API client ---
+        api_client = get_api_client(server_data)
+        if not api_client:
+            logger.error(f"Could not initialize API client for server {server_id} with panel type {server_data.get('panel_type')}.")
+            return None, None
+        
+        # The login check is now handled by the API client itself
+        if not api_client.check_login():
+             logger.error(f"Failed to login to panel for server {server_data['name']}.")
+             return None, None
 
+        # --- The rest of the function logic ---
         master_sub_id = generate_random_string(12)
         expiry_time_ms = 0
         if duration_days is not None and duration_days > 0:
@@ -51,20 +58,21 @@ class ConfigGenerator:
             unique_client_email = f"u{user_telegram_id}.i{inbound_id_on_panel}.{generate_random_string(4)}"
             
             client_settings = {
-                "id": representative_client_uuid, "email": unique_client_email,
-                "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                "enable": True, "tgId": str(user_telegram_id), "subId": master_sub_id,
+                "id": representative_client_uuid,
+                "email": unique_client_email,
+                "totalGB": total_traffic_bytes,
+                "expiryTime": expiry_time_ms,
+                "enable": True,
+                "tgId": str(user_telegram_id),
+                "subId": master_sub_id,
             }
 
-            # --- THE FIX IS HERE ---
-            # Create the single dictionary payload that the user's function expects
             add_client_payload = {
                 "id": inbound_id_on_panel,
                 "settings": json.dumps({"clients": [client_settings]})
             }
             
-            # Call the corrected function
-            if temp_xui_client.add_client(add_client_payload):
+            if api_client.add_client(add_client_payload):
                 at_least_one_client_created = True
             else:
                 logger.error(f"Could not add client to inbound {inbound_id_on_panel}. Skipping.")
@@ -72,8 +80,6 @@ class ConfigGenerator:
         if not at_least_one_client_created:
             logger.error(f"Failed to create any clients on the panel for user {user_telegram_id}. Aborting.")
             return None, None
-
-        # ... (The rest of the function for generating the sub link remains the same)
 
         sub_base_url = server_data['subscription_base_url'].rstrip('/')
         sub_path = server_data['subscription_path_prefix'].strip('/')
