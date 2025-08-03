@@ -632,13 +632,15 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
     def process_custom_config_name(message):
         """
-        Processes the custom name, creates the subscription link (only),
-        saves the purchase, and sends the info to the user.
+        Processes the custom name, creates the config, saves the purchase,
+        and correctly calls the local send_subscription_info function.
         """
         user_id = message.from_user.id
         state_info = _user_states.get(user_id, {})
         if not state_info or state_info.get('state') != 'waiting_for_custom_config_name':
             return
+
+        # ... (The first part of the function to get order details is correct and remains the same)
 
         custom_name = message.text.strip()
         if custom_name.lower() == 'skip':
@@ -648,7 +650,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         prompt_id = state_info['prompt_message_id']
         _bot.edit_message_text(messages.PLEASE_WAIT, user_id, prompt_id)
 
-        # --- Reconstruct variables ---
         server_id = order_details['server_id']
         plan_type = order_details['plan_type']
         total_gb, duration_days, plan_id = 0, 0, None
@@ -662,7 +663,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             duration_days = gb_plan.get('duration_days', 0)
             plan_id = gb_plan.get('id')
         
-        # --- MODIFIED: The function now only returns two values ---
         client_details, sub_link = _config_generator.create_client_and_configs(
             user_id, server_id, total_gb, duration_days, custom_remark=custom_name
         )
@@ -672,26 +672,25 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _clear_user_state(user_id)
             return
 
-        # --- Save the purchase to the database ---
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
         expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
         
-        # --- MODIFIED: 'single_configs' is no longer passed to the database ---
         _db_manager.add_purchase(
             user_id=user_db_info['id'], server_id=server_id, plan_id=plan_id,
             expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
             initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
             client_email=client_details['email'], sub_id=client_details['subscription_id'],
-            single_configs=None # Set to None as it's removed
+            single_configs=None
         )
 
-        # --- Send the final subscription info ---
         _bot.delete_message(user_id, prompt_id)
         _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
-        send_subscription_info(_bot, user_id, sub_link)
+        
+        # --- THE FIX IS HERE ---
+        # We now call the function with the correct number of arguments (2 instead of 3).
+        send_subscription_info(user_id, sub_link)
         
         _clear_user_state(user_id)
-        
     def show_platform_selection(user_id, message):
         """Shows the platform selection menu to the user."""
         platforms = _db_manager.get_distinct_platforms()
