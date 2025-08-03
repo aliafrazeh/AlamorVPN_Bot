@@ -300,20 +300,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(prompt_text, admin_id, message.message_id, parse_mode='Markdown')
 
     def start_add_plan_flow(admin_id, message):
-        """Starts the multi-step process for adding a new plan priced for a specific server."""
-        _clear_admin_state(admin_id)
+        """Starts the flow using the library's standard next_step_handler."""
         servers = _db_manager.get_all_servers(only_active=False)
         if not servers:
             _show_menu(admin_id, "ابتدا باید حداقل یک سرور اضافه کنید.", inline_keyboards.get_back_button("admin_plan_management"), message, parse_mode=None)
             return
         
-        # --- FIX: Escape server names to prevent Markdown errors ---
         server_list_text = "\n".join([f"ID: `{s['id']}` - {helpers.escape_markdown_v1(s['name'])}" for s in servers])
         prompt_text = f"**لیست سرورها:**\n{server_list_text}\n\nلطفا ID سروری که میخواهید پلن را برای آن تعریف کنید، وارد نمایید:"
-
-        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_plan_management"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_server_id_for_plan', 'data': {}, 'prompt_message_id': prompt.message_id}
         
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_plan_management"), message)
+        
+        # --- THE FIX IS HERE ---
+        # Explicitly tell the bot to pass the next message to the 'process_add_plan_server' function.
+        _bot.register_next_step_handler(prompt, process_add_plan_server)
     def start_toggle_plan_status_flow(admin_id, message):
         _clear_admin_state(admin_id)
         # --- بخش اصلاح شده ---
@@ -1184,51 +1184,54 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
         
-    def process_add_plan_server(admin_id, message):
-        state_info = _admin_states.get(admin_id, {})
-        prompt_id = state_info.get('prompt_message_id')
-        if not prompt_id:
-            logger.error(f"Critical error: prompt_message_id not found for admin {admin_id} in state 'waiting_for_server_id_for_plan'.")
-            _clear_admin_state(admin_id)
-            return
-
+    def process_add_plan_server(message):
+        """Processes the server ID and asks for the plan name."""
+        admin_id = message.from_user.id
+        
         try:
             _bot.delete_message(admin_id, message.message_id)
         except Exception:
             pass
 
         server_id_str = message.text.strip()
-        logger.info(f"Admin {admin_id} provided server ID: '{server_id_str}'.")
         
         if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
-            logger.warning(f"Invalid server ID '{server_id_str}' provided by admin {admin_id}.")
-            _bot.edit_message_text("ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
+            prompt = _bot.send_message(admin_id, "ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:")
+            _bot.register_next_step_handler(prompt, process_add_plan_server) # Ask again
             return
 
-        state_info['data']['server_id'] = int(server_id_str)
-        state_info['state'] = 'waiting_for_plan_name'
-        _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
-        logger.info(f"State for admin {admin_id} changed to 'waiting_for_plan_name'.")
+        # Save data in a temporary dictionary for this conversation
+        plan_data = {'server_id': int(server_id_str)}
+        
+        prompt = _bot.send_message(admin_id, "نام پلن را وارد کنید (مثلا: پلن اقتصادی):")
+        _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data) # Pass data to the next step
 
-    def process_add_plan_price(admin_id, message):
+    def process_add_plan_price(message, plan_data):
         """Processes the price and saves the new plan."""
-        state_info = _admin_states.get(admin_id, {})
+        admin_id = message.from_user.id
         try:
             price = float(message.text)
             if price < 0: raise ValueError
         except (ValueError, TypeError):
-            _bot.send_message(admin_id, "قیمت وارد شده نامعتبر است.")
+            prompt = _bot.send_message(admin_id, "قیمت وارد شده نامعتبر است. لطفاً یک عدد وارد کنید:")
+            _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
             return
 
-        data = state_info['data']
         _db_manager.add_plan(
-            name=data['name'],
+            name=plan_data['name'],
             plan_type='gigabyte_based',
-            server_id=data['server_id'],
+            server_id=plan_data['server_id'],
             price=price,
-            volume_gb=None, # Not applicable for gigabyte-based plans at creation
-            duration_days=None # Not applicable for gigabyte-based plans at creation
+            volume_gb=None,
+            duration_days=None
         )
-        _bot.edit_message_text("✅ پلن با موفقیت برای سرور مورد نظر اضافه شد.", admin_id, state_info['prompt_message_id'])
-        _clear_admin_state(admin_id)
-        _show_plan_management_menu(admin_id)
+        _bot.send_message(admin_id, "✅ پلن با موفقیت برای سرور مورد نظر اضافه شد.")
+        # The flow ends here, no need to clear state.
+        
+    def process_add_plan_name(message, plan_data):
+        """Processes the plan name and asks for the price."""
+        admin_id = message.from_user.id
+        plan_data['name'] = message.text.strip()
+        
+        prompt = _bot.send_message(admin_id, "قیمت هر گیگابایت را به تومان وارد کنید:")
+        _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
