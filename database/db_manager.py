@@ -387,21 +387,25 @@ class DatabaseManager:
             if conn: conn.close()
 
     # --- توابع پلن‌ها ---
-    def add_plan(self, name, plan_type, volume_gb, duration_days, price, per_gb_price):
-        """ --- CORRECTED VERSION: Reverted to simple global pricing model --- """
+    def add_plan(self, name, plan_type, server_id, price, volume_gb, duration_days):
+        """ --- MODIFIED: Returns the new plan ID on success and None on failure --- """
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)",
-                (name, plan_type, volume_gb, duration_days, price, per_gb_price)
+                "INSERT INTO plans (name, plan_type, server_id, price, volume_gb, duration_days, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)",
+                (name, plan_type, server_id, price, volume_gb, duration_days)
             )
+            new_plan_id = cursor.lastrowid
             conn.commit()
             conn.close()
-            return cursor.lastrowid
+            return new_plan_id
         except sqlite3.IntegrityError:
             logger.warning(f"Plan with name '{name}' already exists.")
-            return None
+            return None # Return None on failure
+        except sqlite3.Error as e:
+            logger.error(f"Error adding plan: {e}")
+            return None # Return None on failure
     def get_all_plans(self, only_active=False):
         conn = None
         try:
