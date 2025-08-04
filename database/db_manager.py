@@ -850,7 +850,7 @@ class DatabaseManager:
         """
         conn = self._get_connection()
         try:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(sql, (name, price, total_gb, duration_days, description))
                 profile_id = cur.fetchone()[0]
                 conn.commit()
@@ -876,7 +876,7 @@ class DatabaseManager:
         
         conn = self._get_connection()
         try:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(query)
                 profiles = cur.fetchall()
                 # fetchall در psycopg2 با DictCursor لیستی از ردیف‌های دیکشنری مانند برمی‌گرداند
