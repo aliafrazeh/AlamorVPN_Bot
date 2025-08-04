@@ -17,7 +17,8 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("🔗 مدیریت قفل کانال", callback_data="admin_channel_lock_management"),
         types.InlineKeyboardButton("📊 داشبورد", callback_data="admin_dashboard"),
         types.InlineKeyboardButton("💡 مدیریت آموزش‌ها", callback_data="admin_tutorial_management"),
-        types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"), 
+        types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"),
+        types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -334,5 +335,19 @@ def get_panel_type_selection_menu():
         types.InlineKeyboardButton("Alireza-x-ui", callback_data="panel_type_alireza"),
         # types.InlineKeyboardButton("Hiddify", callback_data="panel_type_hiddify"), # برای آینده
         types.InlineKeyboardButton("🔙 انصراف", callback_data="admin_server_management")
+    )
+    return markup
+
+
+
+def get_profile_management_inline_menu():
+    """منوی اصلی برای مدیریت پروفایل‌ها را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ افزودن پروفایل", callback_data="admin_add_profile"),
+        types.InlineKeyboardButton("📝 لیست پروفایل‌ها", callback_data="admin_list_profiles"),
+        types.InlineKeyboardButton("🔗 مدیریت اینباندهای پروفایل", callback_data="admin_manage_profile_inbounds"),
+        types.InlineKeyboardButton("❌ حذف پروفایل", callback_data="admin_delete_profile"),
+        types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
     return markup

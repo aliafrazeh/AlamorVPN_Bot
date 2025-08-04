@@ -83,6 +83,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     def _show_plan_management_menu(admin_id, message=None): _show_menu(admin_id, messages.PLAN_MGMT_MENU_TEXT, inline_keyboards.get_plan_management_inline_menu(), message)
     def _show_payment_gateway_management_menu(admin_id, message=None): _show_menu(admin_id, messages.PAYMENT_GATEWAY_MGMT_MENU_TEXT, inline_keyboards.get_payment_gateway_management_inline_menu(), message)
     def _show_user_management_menu(admin_id, message=None): _show_menu(admin_id, messages.USER_MGMT_MENU_TEXT, inline_keyboards.get_user_management_inline_menu(), message)
+    def _show_profile_management_menu(admin_id, message=None):
+        _show_menu(admin_id, "🗂️ گزینه‌های مدیریت پروفایل:", inline_keyboards.get_profile_management_inline_menu(), message)
 
     # =============================================================================
     # SECTION: Single-Action Functions (Listing, Testing)
@@ -396,6 +398,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_profile_management": _show_profile_management_menu,
             "admin_add_server": start_add_server_flow,
             "admin_support_management": show_support_management_menu, 
             "admin_edit_support_link": start_edit_support_link_flow,
