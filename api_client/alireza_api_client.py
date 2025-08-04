@@ -73,17 +73,11 @@ class AlirezaAPIClient:
         return self.login()
 
     def add_client(self, data):
-        """یک کلاینت جدید به یک اینباند مشخص اضافه می‌کند."""
-        logger.info(f"Adding client to inbound {data.get('id')}...")
+        """Adds a new client."""
         full_path = self.api_base_path + "/addClient/"
         response_data = self._request('post', full_path, json=data)
-        
         if response_data and response_data.get('success'):
-            logger.info(f"Client added successfully.")
             return True
-        
-        error_msg = response_data.get('msg', 'Unknown error') if response_data else "No response"
-        logger.error(f"Failed to add client. Reason: {error_msg}")
         return False
 
     def get_inbound(self, inbound_id):
@@ -95,9 +89,14 @@ class AlirezaAPIClient:
         return None
 
     def list_inbounds(self):
-        """لیست تمام اینباندها را دریافت می‌کند."""
+        """
+        --- CORRECTED VERSION ---
+        Gets the list of all inbounds for Alireza panels.
+        """
         full_path = self.api_base_path + "/"
+        # Alireza panel uses GET for listing inbounds
         response_data = self._request('get', full_path)
         if response_data and response_data.get('success'):
             return response_data.get('obj', [])
+        logger.error(f"Failed to get inbound list from Alireza panel. Response: {response_data}")
         return []
