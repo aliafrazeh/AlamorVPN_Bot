@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 class AlirezaAPIClient:
     """
-    کلاینت API نهایی و اصلاح شده برای پنل‌های Alireza-x-ui.
-    این نسخه مشکل دریافت لیست اینباندها را به صورت قطعی حل می‌کند.
+    Corrected API client for Alireza-x-ui panels, using the exact HTTP methods
+    from the official documentation.
     """
     def __init__(self, panel_url, username, password):
         self.base_url = panel_url.rstrip('/')
@@ -21,12 +21,10 @@ class AlirezaAPIClient:
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.is_logged_in = False
-        # مسیر پایه API برای این پنل
-        self.api_base_path = "/xui/API/inbounds" # مسیر صحیح بر اساس داکیومنت
+        self.api_base_path = "/xui/API/inbounds"
         logger.info(f"AlirezaAPIClient initialized for {self.base_url}")
 
     def _request(self, method, path, **kwargs):
-        # این تابع مرکزی بدون تغییر باقی می‌ماند
         if not path.startswith('/'):
             path = '/' + path
         
@@ -48,8 +46,8 @@ class AlirezaAPIClient:
             return None
 
     def login(self):
-        # تابع لاگین هوشمند بدون تغییر باقی می‌ماند
         self.is_logged_in = False
+        # --- CORRECTED: Using 'data' for a POST request as per documentation ---
         payload = {'username': self.username, 'password': self.password}
         response_data = self._request('post', '/login', data=payload)
         
@@ -68,16 +66,9 @@ class AlirezaAPIClient:
         return self.login()
 
     def list_inbounds(self):
-        """
-        --- FIX FINAL ---
-        لیست تمام اینباندها را با متد و مسیر صحیح دریافت می‌کند.
-        """
-        # مسیر کامل شبیه به پنل سنایی است
-        full_path = self.api_base_path + "/list"
-        
-        # --- THE FIX IS HERE ---
-        # این پنل نیز مانند سنایی از متد POST برای لیست کردن استفاده می‌کند
-        response_data = self._request('post', full_path)
+        """ --- CORRECTED: Uses GET method as per documentation --- """
+        full_path = self.api_base_path + "/"
+        response_data = self._request('get', full_path)
         
         if response_data and response_data.get('success'):
             return response_data.get('obj', [])
@@ -86,7 +77,7 @@ class AlirezaAPIClient:
         return []
         
     def add_client(self, data):
-        # این تابع صحیح است و بدون تغییر باقی می‌ماند
+        """ --- CORRECTED: Uses POST method as per documentation --- """
         full_path = self.api_base_path + "/addClient/"
         response_data = self._request('post', full_path, json=data)
         
