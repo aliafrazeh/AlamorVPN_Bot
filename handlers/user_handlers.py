@@ -56,9 +56,9 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _show_user_main_menu(user_id, message_to_edit=call.message)
         elif data == "user_buy_service":
             start_purchase(user_id, call.message)
-        elif data.startswith("buy_select_profile_"): 
+        elif data.startswith("buy_select_profile_"):
             profile_id = int(data.replace("buy_select_profile_", ""))
-            select_profile_for_purchase(user_id, profile_id, call.message)
+            select_profile_for_purchase(user_id, profile_id, message)
         elif data == "user_my_services":
             show_my_services_list(user_id, call.message)
         
@@ -754,13 +754,18 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
         
     def select_profile_for_purchase(user_id, profile_id, message):
+        """
+        اطلاعات پروفایل انتخاب شده را آماده کرده و از کاربر مقدار حجم را می‌پرسد.
+        """
         profile = _db_manager.get_profile_by_id(profile_id)
         if not profile:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
             return
             
+        # پاک کردن وضعیت قبلی و تنظیم وضعیت جدید برای دریافت حجم
+        _clear_user_state(user_id)
         _user_states[user_id] = {
-            'state': 'waiting_for_profile_gigabytes_input', # <-- تغییر وضعیت
+            'state': 'waiting_for_profile_gigabytes_input',
             'data': {
                 'purchase_type': 'profile',
                 'profile_details': dict(profile)
@@ -768,12 +773,13 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         }
         
         # پرسیدن مقدار حجم از کاربر
-        sent_msg = _bot.edit_message_text(messages.ENTER_PROFILE_GIGABYTES_PROMPT, user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("user_buy_profile"))
+        sent_msg = _bot.edit_message_text(
+            messages.ENTER_PROFILE_GIGABYTES_PROMPT, 
+            user_id, 
+            message.message_id, 
+            reply_markup=inline_keyboards.get_back_button("user_buy_profile")
+        )
         _user_states[user_id]['prompt_message_id'] = sent_msg.message_id
-
-        
-        
-        
     def process_profile_gigabyte_input(message):
         user_id = message.from_user.id
         state_data = _user_states[user_id]
