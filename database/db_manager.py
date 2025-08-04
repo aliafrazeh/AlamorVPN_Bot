@@ -39,7 +39,7 @@ class DatabaseManager:
         """Creates the necessary tables in the PostgreSQL database if they do not exist."""
         commands = [
             """
-            DROP TABLE IF EXISTS profiles CASCADE; 
+        
             CREATE TABLE IF NOT EXISTS profiles (
                 id SERIAL PRIMARY KEY,
                 name TEXT UNIQUE NOT NULL,
@@ -50,7 +50,7 @@ class DatabaseManager:
             )
             """,
             """
-            DROP TABLE IF EXISTS profile_inbounds CASCADE;
+            
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
                 profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
