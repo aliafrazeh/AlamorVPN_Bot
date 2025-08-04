@@ -97,7 +97,7 @@ class XuiAPIClient:
             return []
         
         endpoint = "/panel/api/inbounds/list"
-        response = self._make_request("GET", endpoint) 
+        response = self._request("GET", endpoint) 
         
         if response and response.get('success'):
             logger.info("Successfully retrieved inbound list.")
@@ -112,7 +112,7 @@ class XuiAPIClient:
             return None
         
         endpoint = f"/panel/api/inbounds/get/{inbound_id}"
-        response = self._make_request("GET", endpoint) 
+        response = self._request("GET", endpoint) 
         
         if response and response.get('success'):
             logger.info(f"Successfully retrieved inbound details for ID {inbound_id}.")
@@ -127,7 +127,7 @@ class XuiAPIClient:
             return None
         
         endpoint = "/panel/api/inbounds/add"
-        response = self._make_request("POST", endpoint, data=data) 
+        response = self._request("POST", endpoint, data=data) 
         
         if response and response.get('success'):
             logger.info(f"Inbound added: {response.get('obj')}")
@@ -142,7 +142,7 @@ class XuiAPIClient:
             return False
         
         endpoint = f"/panel/api/inbounds/del/{inbound_id}"
-        response = self._make_request("POST", endpoint) 
+        response = self._request("POST", endpoint) 
         
         if response and response.get('success'):
             logger.info(f"Inbound {inbound_id} deleted successfully.")
@@ -157,7 +157,7 @@ class XuiAPIClient:
             return False
         
         endpoint = f"/panel/api/inbounds/update/{inbound_id}"
-        response = self._make_request("POST", endpoint, data=data) 
+        response = self._request("POST", endpoint, data=data) 
         
         if response and response.get('success'):
             logger.info(f"Inbound {inbound_id} updated successfully.")
@@ -174,7 +174,7 @@ class XuiAPIClient:
             return False
         
         endpoint = f"/panel/api/inbounds/{inbound_id}/delClient/{client_id}"
-        response = self._make_request("POST", endpoint) 
+        response = self._request("POST", endpoint) 
         
         if response and response.get('success'):
             logger.info(f"Client {client_id} deleted from inbound ID {inbound_id}.")
@@ -189,7 +189,7 @@ class XuiAPIClient:
             return False
         
         endpoint = f"/panel/api/inbounds/updateClient/{client_id}"
-        response = self._make_request("POST", endpoint, data=data) 
+        response = self._request("POST", endpoint, data=data) 
         
         if response and response.get('success'):
             logger.info(f"Client {client_id} updated successfully.")
