@@ -1,105 +1,97 @@
 # api_client/xui_api_client.py
 
 import requests
-import urllib3
-import json 
-import logging 
-import time 
+import logging
+import json
 
-from config import MAX_API_RETRIES # این ایمپورت باید از config بیاید
+# Disable SSL warnings
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__) 
-
-class XuiAPIClient: 
-    def __init__(self, panel_url, username, password, two_factor=None): 
-        self.panel_url = panel_url.rstrip('/') 
+class XuiAPIClient:
+    """
+    Robust API client for 3x-ui panels.
+    This version includes a standardized _request method and handles cookies correctly.
+    """
+    def __init__(self, panel_url, username, password):
+        self.base_url = panel_url.rstrip('/')
         self.username = username
         self.password = password
-        self.two_factor = two_factor
-        self.session = requests.Session() # استفاده از requests.Session
-        # session_token_value دیگر لازم نیست اگر کوکی 3x-ui به درستی مدیریت شود.
-        logger.info(f"XuiAPIClient initialized for {self.panel_url}") 
+        self.session = requests.Session()
+        self.session.headers.update({'Accept': 'application/json'})
+        self.is_logged_in = False
+        logger.info(f"XuiAPIClient initialized for {self.base_url}")
 
-    def _make_request(self, method, endpoint, data=None, retries=0):
-        url = f"{self.panel_url}{endpoint}"
-        headers = {"Content-Type": "application/json"} 
-        # requests.Session() به طور خودکار کوکی‌ها را مدیریت می‌کند.
-        # پس از لاگین، کوکی '3x-ui' به طور خودکار در درخواست‌های بعدی ارسال خواهد شد.
+    def _request(self, method, path, **kwargs):
+        """A central and robust method for sending all requests."""
+        if not path.startswith('/'):
+            path = '/' + path
+        
+        # Auto-login if not already logged in
+        if not self.is_logged_in and path != '/login':
+            if not self.login():
+                return None # Stop if login fails
 
+        url = self.base_url + path
         try:
-            response = self.session.request(method, url, json=data, headers=headers, verify=False, timeout=15) 
-            response.raise_for_status() 
+            response = self.session.request(method, url, verify=False, timeout=20, **kwargs)
 
-            response_json = response.json()
-            if response_json.get('success', False):
-                return response_json
-            else:
-                logger.warning(f"API request to {endpoint} failed: {response_json.get('msg', 'Unknown error')}. Full response: {response_json}")
-                if response.status_code in [401, 403]: 
-                    logger.warning(f"Authentication error ({response.status_code}) for {endpoint}. Attempting to re-login.")
-                    self.session.cookies.clear() # Clear existing cookies
-                    if self.login(): # تلاش برای لاگین مجدد
-                        logger.info("Re-login successful. Retrying original request.")
-                        return self._make_request(method, endpoint, data, retries) 
-                    else:
-                        logger.error("Re-login failed. Cannot proceed with request.")
-                        return None
+            # Re-login attempt on authentication failure
+            if response.status_code in [401, 403]:
+                logger.warning("Authentication error. Re-logging in...")
+                if not self.login(): return None
+                response = self.session.request(method, url, verify=False, timeout=20, **kwargs)
+
+            response.raise_for_status() # Check for other HTTP errors (like 500)
+            if not response.text:
                 return None
+            
+            return response.json()
 
-        except requests.exceptions.Timeout:
-            logger.error(f"API request to {endpoint} timed out.")
-            if retries < MAX_API_RETRIES:
-                time.sleep(2 ** retries) 
-                logger.info(f"Retrying {endpoint} ({retries + 1}/{MAX_API_RETRIES})...")
-                return self._make_request(method, endpoint, data, retries + 1)
-            return None
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"API connection error to {endpoint}: {e}")
-            if retries < MAX_API_RETRIES:
-                time.sleep(2 ** retries) 
-                logger.info(f"Retrying {endpoint} ({retries + 1}/{MAX_API_RETRIES})...")
-                return self._make_request(method, endpoint, data, retries + 1)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON from {path}. Response: {response.text[:200]}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.error(f"An unexpected API request error occurred for {endpoint}: {e}")
-            if hasattr(response, 'text'):
-                logger.error(f"Response text: {response.text}")
+            logger.error(f"Request failed for {path}: {e}")
             return None
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON response from {endpoint}. Response text: {response.text}")
-            return None
-    
+
     def login(self):
         """Logs into the panel and handles different possible session cookie names."""
-        self.session.cookies.clear()
+        self.is_logged_in = False
         payload = {'username': self.username, 'password': self.password}
+        # --- THE FIX IS HERE: It now calls self._request ---
         response_data = self._request('post', '/login', data=payload)
         
         if response_data and response_data.get('success'):
-            # --- THE FIX IS HERE ---
-            # We now check for either of the common cookie names.
             if '3x-ui' in self.session.cookies or 'session' in self.session.cookies:
                 self.is_logged_in = True
                 logger.info(f"Successfully logged in to {self.base_url} and found session cookie.")
                 return True
             else:
-                logger.warning(f"Login successful but no recognized session cookie ('3x-ui' or 'session') was found.")
+                logger.warning(f"Login successful but no recognized session cookie was found.")
                 return False
         else:
             logger.error(f"Login failed for {self.base_url}.")
             return False
-    def check_login(self):
-        """
-        بررسی می‌کند که آیا لاگین معتبر است یا خیر.
-        اگر کوکی '3x-ui' در session موجود باشد، True برمی‌گرداند.
-        """
-        if '3x-ui' in self.session.cookies: # <--- اینجا هم به روز شد
-            return True 
-        else:
-            return self.login()
 
+    def check_login(self):
+        """Checks if the session is still valid."""
+        if self.is_logged_in:
+            return True
+        return self.login()
+
+    def add_client(self, data):
+        """Adds a new client to an inbound."""
+        response_data = self._request('post', '/panel/api/inbounds/addClient', json=data)
+        if response_data and response_data.get('success'):
+            logger.info(f"Client added successfully to inbound {data.get('id', 'N/A')}.")
+            return True
+        else:
+            error_msg = response_data.get('msg', 'Unknown') if response_data else "No response"
+            logger.warning(f"Failed to add client to inbound {data.get('id', 'N/A')}: {error_msg}")
+            return False
     def list_inbounds(self):
         if not self.check_login(): 
             logger.error("Not logged in to X-UI. Cannot list inbounds.")
@@ -175,23 +167,7 @@ class XuiAPIClient:
             logger.warning(f"Failed to update inbound {inbound_id}: {response}")
             return False
 
-    def add_client(self, data):
-        """ --- CORRECTED VERSION (from user) --- """
-        if not self.check_login():
-            logger.error("Not logged in to X-UI. Cannot add client.")
-            return False
-        
-        endpoint = "/panel/api/inbounds/addClient"
-        response = self._make_request("POST", endpoint, data=data) 
-        
-        if response and response.get('success'):
-            logger.info(f"Client added successfully to inbound {data.get('id', 'N/A')}.")
-            return True
-        else:
-            # The response from _make_request might be None, so we handle that
-            error_msg = response.get('msg', 'Unknown error') if response else "No response from panel"
-            logger.warning(f"Failed to add client to inbound {data.get('id', 'N/A')}: {error_msg}")
-            return False
+    
 
     def delete_client(self, inbound_id, client_id):
         if not self.check_login():
