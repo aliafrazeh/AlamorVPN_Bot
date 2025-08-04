@@ -66,13 +66,15 @@ class AlirezaAPIClient:
         return self.login()
 
     def list_inbounds(self):
-        """ --- CORRECTED: Uses GET method as per documentation --- """
+        """
+        --- CORRECTED VERSION ---
+        Gets the list of all inbounds for Alireza panels.
+        """
         full_path = self.api_base_path + "/"
+        # Alireza panel uses GET for listing inbounds
         response_data = self._request('get', full_path)
-        
         if response_data and response_data.get('success'):
             return response_data.get('obj', [])
-        
         logger.error(f"Failed to get inbound list from Alireza panel. Response: {response_data}")
         return []
         
