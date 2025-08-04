@@ -1183,22 +1183,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         prompt = _show_menu(admin_id, messages.SET_SUPPORT_LINK_PROMPT, inline_keyboards.get_back_button("admin_support_management"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_support_link', 'prompt_message_id': prompt.message_id}
     def process_support_link(admin_id, message):
-        """Saves the support link provided by the admin."""
-        # This function remains the same as before
+        """Saves the support link provided by the admin. (Corrected Version)"""
         state_info = _admin_states.get(admin_id, {})
         support_link = message.text.strip()
 
-        # You can add validation for t.me links here if you want
         if not support_link.lower().startswith(('http://', 'https://', 't.me/')):
             _bot.send_message(admin_id, "لینک وارد شده نامعتبر است. لطفاً لینک کامل را وارد کنید.")
             return
             
         _db_manager.update_setting('support_link', support_link)
-        _bot.edit_message_text(messages.SUPPORT_LINK_SET_SUCCESS, admin_id, state_info['prompt_message_id'])
+
+        # --- اصلاح اصلی اینجاست ---
+        # ما پیام قبلی که برای راهنمایی بود را ویرایش می‌کنیم و آن را به منوی جدید تبدیل می‌کنیم.
+        
+        prompt_message_id = state_info.get('prompt_message_id')
+        
+        # ما نیاز به یک آبجکت message داریم تا تابع ویرایش کار کند.
+        # چون آبجکت اصلی را نداریم، یک نمونه ساده با اطلاعات لازم می‌سازیم.
+        message_to_edit = types.Message(
+            message_id=prompt_message_id, 
+            chat=message.chat, 
+            date=None, 
+            content_type='text', 
+            options={}, 
+            json_string=""
+        )
+
         _clear_admin_state(admin_id)
-        show_support_management_menu(admin_id) # Show the updated menu
-        
-        
+        # حالا آبجکت message را به تابع پاس می‌دهیم
+        show_support_management_menu(admin_id, message_to_edit)
         
     def process_add_plan_server(message):
         """Processes the server ID and asks for the plan name."""
