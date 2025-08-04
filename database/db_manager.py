@@ -866,3 +866,24 @@ class DatabaseManager:
             return False # نشان دهنده خطای عمومی
         finally:
             if conn: conn.close()
+            
+            
+    def get_all_profiles(self, only_active=False):
+        """تمام پروفایل‌های ثبت شده در دیتابیس را برمی‌گرداند."""
+        query = "SELECT * FROM profiles ORDER BY id"
+        if only_active:
+            query = "SELECT * FROM profiles WHERE is_active = TRUE ORDER BY id"
+        
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                profiles = cur.fetchall()
+                # fetchall در psycopg2 با DictCursor لیستی از ردیف‌های دیکشنری مانند برمی‌گرداند
+                return profiles
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profiles: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()

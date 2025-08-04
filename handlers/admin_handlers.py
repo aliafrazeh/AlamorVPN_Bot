@@ -426,6 +426,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_list_profiles": list_all_profiles,
             "admin_add_profile": start_add_profile_flow,
             "admin_profile_management": _show_profile_management_menu,
             "admin_add_server": start_add_server_flow,
@@ -1517,3 +1518,29 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         _bot.send_message(admin_id, msg)
         _show_profile_management_menu(admin_id)
+        
+        
+    def list_all_profiles(admin_id, message):
+        """لیستی از تمام پروفایل‌های ساخته شده را نمایش می‌دهد."""
+        profiles = _db_manager.get_all_profiles()
+        
+        if not profiles:
+            text = "هیچ پروفایلی تاکنون ثبت نشده است."
+        else:
+            text = "📄 **لیست پروفایل‌های ثبت شده:**\n\n"
+            for p in profiles:
+                status = "✅ فعال" if p['is_active'] else "❌ غیرفعال"
+                description = p['description'] or "ندارد"
+                
+                details = (
+                    f"**ID: `{p['id']}` - {helpers.escape_markdown_v1(p['name'])}**\n"
+                    f"▫️ قیمت: `{p['price']:,.0f}` تومان\n"
+                    f"▫️ حجم: `{p['total_gb']}` گیگابایت\n"
+                    f"▫️ مدت: `{p['duration_days']}` روز\n"
+                    f"▫️ توضیحات: {helpers.escape_markdown_v1(description)}\n"
+                    f"▫️ وضعیت: {status}\n"
+                    "-----------------------------------\n"
+                )
+                text += details
+                
+        _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
