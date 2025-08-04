@@ -211,7 +211,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             confirm_text = messages.DELETE_SERVER_CONFIRM.format(server_name=server['name'], server_id=server['id'])
             markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_server_{server['id']}", "admin_server_management")
             _bot.edit_message_text(confirm_text, admin_id, prompt_id, reply_markup=markup)
+        elif state == 'waiting_for_profile_name':
+            data['name'] = text
+            state_info['state'] = 'waiting_for_profile_price'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_PRICE, admin_id, prompt_id)
+        
+        elif state == 'waiting_for_profile_price':
+            if not helpers.is_float_or_int(text) or float(text) <= 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_PRICE}", admin_id, prompt_id); return
+            data['price'] = float(text)
+            state_info['state'] = 'waiting_for_profile_volume'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_VOLUME, admin_id, prompt_id)
 
+        elif state == 'waiting_for_profile_volume':
+            if not helpers.is_float_or_int(text) or float(text) <= 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_VOLUME}", admin_id, prompt_id); return
+            data['total_gb'] = float(text)
+            state_info['state'] = 'waiting_for_profile_duration'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DURATION, admin_id, prompt_id)
+            
+        elif state == 'waiting_for_profile_duration':
+            if not text.isdigit() or int(text) <= 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_DURATION}", admin_id, prompt_id); return
+            data['duration_days'] = int(text)
+            state_info['state'] = 'waiting_for_profile_description'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DESCRIPTION, admin_id, prompt_id)
+            
+        elif state == 'waiting_for_profile_description':
+            data['description'] = None if text.lower() == 'skip' else text
+            execute_add_profile(admin_id, data)
         # --- Plan Flows ---
         elif state == 'waiting_for_plan_name':
             data['name'] = text; state_info['state'] = 'waiting_for_plan_type'
@@ -398,6 +426,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_add_profile": start_add_profile_flow,
             "admin_profile_management": _show_profile_management_menu,
             "admin_add_server": start_add_server_flow,
             "admin_support_management": show_support_management_menu, 
@@ -1456,3 +1485,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.send_message(admin_id, f"✅ سرور '{server_data['name']}' با موفقیت اضافه شد.")
         else:
             _bot.send_message(admin_id, f"❌ خطایی در افزودن سرور رخ داد. ممکن است نام سرور تکراری باشد.")
+            
+            
+            
+            
+    def start_add_profile_flow(admin_id, message):
+        """فرآیند افزودن پروفایل جدید را شروع می‌کند."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.ADD_PROFILE_PROMPT_NAME, inline_keyboards.get_back_button("admin_profile_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_profile_name', 'data': {}, 'prompt_message_id': prompt.message_id}
+
+    # ... (در بخش Final Execution Functions)
+
+    def execute_add_profile(admin_id, data):
+        """اطلاعات پروفایل را در دیتابیس ذخیره می‌کند."""
+        _clear_admin_state(admin_id)
+        profile_id = _db_manager.add_profile(
+            name=data['name'],
+            price=data['price'],
+            total_gb=data['total_gb'],
+            duration_days=data['duration_days'],
+            description=data['description']
+        )
+        
+        if profile_id:
+            msg = messages.ADD_PROFILE_SUCCESS.format(profile_name=data['name'])
+        elif profile_id is None: # None یعنی نام تکراری
+            msg = messages.ADD_PROFILE_DUPLICATE_ERROR.format(profile_name=data['name'])
+        else: # False یعنی خطای عمومی
+            msg = messages.ADD_PROFILE_GENERAL_ERROR
+            
+        _bot.send_message(admin_id, msg)
+        _show_profile_management_menu(admin_id)

@@ -838,3 +838,31 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error getting tutorial by ID {tutorial_id}: {e}")
             return None
+        
+        
+        
+    def add_profile(self, name, price, total_gb, duration_days, description):
+        """یک پروفایل جدید به دیتابیس اضافه می‌کند."""
+        sql = """
+            INSERT INTO profiles (name, price, total_gb, duration_days, description, is_active)
+            VALUES (%s, %s, %s, %s, %s, TRUE)
+            RETURNING id;
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (name, price, total_gb, duration_days, description))
+                profile_id = cur.fetchone()[0]
+                conn.commit()
+                logger.info(f"Profile '{name}' added with ID {profile_id}.")
+                return profile_id
+        except psycopg2.IntegrityError:
+            logger.warning(f"Profile with name '{name}' already exists.")
+            if conn: conn.rollback()
+            return None # نشان دهنده نام تکراری
+        except psycopg2.Error as e:
+            logger.error(f"Error adding profile '{name}': {e}")
+            if conn: conn.rollback()
+            return False # نشان دهنده خطای عمومی
+        finally:
+            if conn: conn.close()
