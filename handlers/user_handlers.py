@@ -57,6 +57,9 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _show_user_main_menu(user_id, message_to_edit=call.message)
         elif data == "user_buy_service":
             start_purchase(user_id, call.message)
+        elif data.startswith("buy_select_profile_"): 
+            profile_id = int(data.replace("buy_select_profile_", ""))
+            select_profile_for_purchase(user_id, profile_id, call.message)
         elif data == "user_my_services":
             show_my_services_list(user_id, call.message)
         
@@ -76,9 +79,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("user_get_single_configs_"):
             purchase_id = int(data.replace("user_get_single_configs_", ""))
             send_single_configs(user_id, purchase_id)
-        elif data.startswith("buy_select_profile_"): # <-- این بلاک را اضافه کنید
-            profile_id = int(data.replace("buy_select_profile_", ""))
-            select_profile_for_purchase(user_id, profile_id, call.message)
+        
         elif data == "user_how_to_connect":
             show_platform_selection(user_id, call.message)
         elif data.startswith("user_select_platform_"):
