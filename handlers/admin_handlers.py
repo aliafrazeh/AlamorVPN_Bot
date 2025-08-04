@@ -491,6 +491,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             return
             
         elif data.startswith("admin_pi_save_"): # Profile Inbound Save
+
+            _bot.answer_callback_query(call.id, "⏳ در حال ذخیره تغییرات...")
+            
             parts = data.split('_')
             profile_id = int(parts[3])
             server_id = int(parts[4])
