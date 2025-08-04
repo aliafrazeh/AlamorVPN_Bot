@@ -1678,10 +1678,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         selected_ids = state_info['data']['selected_inbound_ids']
         
-        if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
-            _bot.answer_callback_query(message.id, "✅ تغییرات با موفقیت ذخیره شد.")
-        else:
-            _bot.answer_callback_query(message.id, "❌ خطایی در ذخیره تغییرات رخ داد.", show_alert=True)
-        
+        # --- اصلاح اصلی اینجاست ---
+        # توابع answer_callback_query از اینجا حذف شدند
+        if not _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
+            # اگر خطایی رخ داد، می‌توانیم یک پیام هشدار به کاربر بدهیم
+            _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
+
         # کاربر را به مرحله انتخاب سرور برمی‌گردانیم تا بتواند از سرور دیگری هم اینباند اضافه کند
         handle_profile_selection(admin_id, message, profile_id)
