@@ -1183,35 +1183,41 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         prompt = _show_menu(admin_id, messages.SET_SUPPORT_LINK_PROMPT, inline_keyboards.get_back_button("admin_support_management"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_support_link', 'prompt_message_id': prompt.message_id}
     def process_support_link(admin_id, message):
-        """Saves the support link provided by the admin. (Corrected Version)"""
+        """Saves the support link and updates the menu directly. (Final Version)"""
         state_info = _admin_states.get(admin_id, {})
         support_link = message.text.strip()
+        prompt_message_id = state_info.get('prompt_message_id')
 
         if not support_link.lower().startswith(('http://', 'https://', 't.me/')):
             _bot.send_message(admin_id, "لینک وارد شده نامعتبر است. لطفاً لینک کامل را وارد کنید.")
             return
             
+        # Save the new link to the database
         _db_manager.update_setting('support_link', support_link)
 
-        # --- اصلاح اصلی اینجاست ---
-        # ما پیام قبلی که برای راهنمایی بود را ویرایش می‌کنیم و آن را به منوی جدید تبدیل می‌کنیم.
-        
-        prompt_message_id = state_info.get('prompt_message_id')
-        
-        # ما نیاز به یک آبجکت message داریم تا تابع ویرایش کار کند.
-        # چون آبجکت اصلی را نداریم، یک نمونه ساده با اطلاعات لازم می‌سازیم.
-        message_to_edit = types.Message(
-            message_id=prompt_message_id, 
-            chat=message.chat, 
-            date=None, 
-            content_type='text', 
-            options={}, 
-            json_string=""
-        )
+        # --- اصلاح اصلی و نهایی ---
+        # Get the text and keyboard for the updated menu
+        new_support_link_text = _db_manager.get_setting('support_link') or "تنظیم نشده"
+        menu_text = messages.SUPPORT_MANAGEMENT_MENU_TEXT.format(link=new_support_link_text)
+        menu_markup = inline_keyboards.get_support_management_menu()
 
+        # Directly edit the original prompt message to show the new menu
+        try:
+            if prompt_message_id:
+                _bot.edit_message_text(
+                    text=menu_text,
+                    chat_id=admin_id,
+                    message_id=prompt_message_id,
+                    reply_markup=menu_markup,
+                    parse_mode=None  # Use plain text to be safe
+                )
+        except Exception as e:
+            logger.error(f"Failed to edit message into support menu: {e}")
+            # If editing fails for any reason, send a new message with the menu
+            _bot.send_message(admin_id, menu_text, reply_markup=menu_markup, parse_mode=None)
+
+        # Clean up the admin state
         _clear_admin_state(admin_id)
-        # حالا آبجکت message را به تابع پاس می‌دهیم
-        show_support_management_menu(admin_id, message_to_edit)
         
     def process_add_plan_server(message):
         """Processes the server ID and asks for the plan name."""
