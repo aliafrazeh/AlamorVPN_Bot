@@ -931,3 +931,19 @@ class DatabaseManager:
             return False
         finally:
             if conn: conn.close()
+            
+            
+            
+    def get_profile_by_id(self, profile_id):
+        """اطلاعات یک پروفایل خاص را بر اساس ID آن برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM profiles WHERE id = %s", (profile_id,))
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting profile by ID {profile_id}: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
