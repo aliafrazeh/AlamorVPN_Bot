@@ -11,10 +11,6 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 class XuiAPIClient:
-    """
-    Robust API client for 3x-ui panels.
-    This version includes a standardized _request method and handles cookies correctly.
-    """
     def __init__(self, panel_url, username, password):
         self.base_url = panel_url.rstrip('/')
         self.username = username
@@ -22,6 +18,7 @@ class XuiAPIClient:
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.is_logged_in = False
+        self.api_base_path = "/panel/api/inbounds" # مسیر استاندارد سنایی
         logger.info(f"XuiAPIClient initialized for {self.base_url}")
 
     def _request(self, method, path, **kwargs):
@@ -58,19 +55,21 @@ class XuiAPIClient:
             return None
 
     def login(self):
-        """Logs into the panel and handles different possible session cookie names."""
+        """ --- FINAL VERSION: Smart cookie detection --- """
         self.is_logged_in = False
         payload = {'username': self.username, 'password': self.password}
-        # --- THE FIX IS HERE: It now calls self._request ---
         response_data = self._request('post', '/login', data=payload)
         
         if response_data and response_data.get('success'):
-            if '3x-ui' in self.session.cookies or 'session' in self.session.cookies:
+            # --- THE FIX IS HERE ---
+            # We no longer care about the cookie's name. If any cookie is set, it's a success.
+            if self.session.cookies:
                 self.is_logged_in = True
-                logger.info(f"Successfully logged in to {self.base_url} and found session cookie.")
+                cookie_names = '; '.join([f'{c.name}' for c in self.session.cookies])
+                logger.info(f"Successfully logged in. Found session cookie(s): {cookie_names}")
                 return True
             else:
-                logger.warning(f"Login successful but no recognized session cookie was found.")
+                logger.error("Login API call was successful, but the panel did not return any session cookie.")
                 return False
         else:
             logger.error(f"Login failed for {self.base_url}.")

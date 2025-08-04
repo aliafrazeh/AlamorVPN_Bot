@@ -11,10 +11,6 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 class AlirezaAPIClient:
-    """
-    کلاینت API برای تعامل با پنل‌های Alireza-x-ui.
-    این کلاس بر اساس مستندات رسمی گیت‌هاب نوشته شده است.
-    """
     def __init__(self, panel_url, username, password):
         self.base_url = panel_url.rstrip('/')
         self.username = username
@@ -22,10 +18,8 @@ class AlirezaAPIClient:
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.is_logged_in = False
-        # مسیر پایه API برای این پنل
-        self.api_base_path = "/xui/API/inbounds"
+        self.api_base_path = "/xui/API/inbounds" # مسیر استاندارد علیرضا
         logger.info(f"AlirezaAPIClient initialized for {self.base_url}")
-
     def _request(self, method, path, **kwargs):
         """یک متد مرکزی برای ارسال تمام درخواست‌ها."""
         if not path.startswith('/'):
@@ -52,20 +46,21 @@ class AlirezaAPIClient:
             return None
 
     def login(self):
-        """Logs into the panel and handles different possible session cookie names."""
+        """ --- FINAL VERSION: Smart cookie detection --- """
         self.is_logged_in = False
         payload = {'username': self.username, 'password': self.password}
         response_data = self._request('post', '/login', data=payload)
         
         if response_data and response_data.get('success'):
             # --- THE FIX IS HERE ---
-            # We use the same robust check for either cookie name.
-            if '3x-ui' in self.session.cookies or 'session' in self.session.cookies:
+            # We use the same robust check here.
+            if self.session.cookies:
                 self.is_logged_in = True
-                logger.info(f"Successfully logged in to {self.base_url} and found session cookie.")
+                cookie_names = '; '.join([f'{c.name}' for c in self.session.cookies])
+                logger.info(f"Successfully logged in. Found session cookie(s): {cookie_names}")
                 return True
             else:
-                logger.warning(f"Login successful but no recognized session cookie ('3x-ui' or 'session') was found.")
+                logger.error("Login API call was successful, but the panel did not return any session cookie.")
                 return False
         else:
             logger.error(f"Login failed for {self.base_url}.")
