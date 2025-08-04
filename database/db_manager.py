@@ -39,6 +39,26 @@ class DatabaseManager:
         """Creates the necessary tables in the PostgreSQL database if they do not exist."""
         commands = [
             """
+            CREATE TABLE IF NOT EXISTS profiles (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                price REAL NOT NULL,
+                total_gb REAL NOT NULL,
+                duration_days INTEGER NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profile_inbounds (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                UNIQUE (profile_id, server_id, inbound_id)
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 telegram_id BIGINT UNIQUE NOT NULL,
