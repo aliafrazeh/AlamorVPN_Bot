@@ -36,5 +36,6 @@ def get_api_client(server_info: dict):
         return XuiAPIClient(panel_url=panel_url, username=username, password=password)
     
     else:
-        logger.error(f"Unknown panel type: '{panel_type}'. Cannot create API client.")
-        return None
+        logger.error(f"Unknown panel type: '{panel_type}'. Using default XuiAPIClient.")
+        # Fallback to the default client if the type is unknown
+        return XuiAPIClient(panel_url=panel_url, username=username, password=password)

@@ -22,16 +22,15 @@ class AlirezaAPIClient:
         self.session = requests.Session()
         self.session.headers.update({'Accept': 'application/json'})
         self.is_logged_in = False
-        # --- THE FIX IS HERE: Define the correct API base path ---
+        # مسیر پایه API برای این پنل
         self.api_base_path = "/xui/API/inbounds"
         logger.info(f"AlirezaAPIClient initialized for {self.base_url}")
 
     def _request(self, method, path, **kwargs):
-        """یک متد مرکزی و قوی برای ارسال تمام درخواست‌ها."""
+        """یک متد مرکزی برای ارسال تمام درخواست‌ها."""
         if not path.startswith('/'):
             path = '/' + path
         
-        # لاگین خودکار اگر لازم بود
         if not self.is_logged_in and path != '/login':
             if not self.login():
                 return None
@@ -39,7 +38,6 @@ class AlirezaAPIClient:
         url = self.base_url + path
         try:
             response = self.session.request(method, url, verify=False, timeout=20, **kwargs)
-
             if response.status_code in [401, 403]:
                 logger.warning("Authentication error. Re-logging in...")
                 if not self.login(): return None
@@ -48,7 +46,6 @@ class AlirezaAPIClient:
             response.raise_for_status()
             if not response.text:
                 return None
-            
             return response.json()
         except Exception as e:
             logger.error(f"Request failed for {path}: {e}")
@@ -61,8 +58,13 @@ class AlirezaAPIClient:
         response_data = self._request('post', '/login', data=payload)
         
         if response_data and response_data.get('success'):
-            self.is_logged_in = True
-            return True
+            if 'session' in self.session.cookies:
+                self.is_logged_in = True
+                logger.info(f"Successfully logged in to {self.base_url}")
+                return True
+            else:
+                logger.warning(f"Login successful but no 'session' cookie found for Alireza panel.")
+                return False
         else:
             logger.error(f"Login failed for {self.base_url}.")
             return False
@@ -74,12 +76,8 @@ class AlirezaAPIClient:
         return self.login()
 
     def add_client(self, data):
-        """
-        یک کلاینت جدید به یک اینباند مشخص اضافه می‌کند.
-        مسیر API: /xui/API/inbounds/addClient/
-        """
+        """یک کلاینت جدید به یک اینباند مشخص اضافه می‌کند."""
         logger.info(f"Adding client to inbound {data.get('id')}...")
-        # --- THE FIX IS HERE: Use the correct API path ---
         full_path = self.api_base_path + "/addClient/"
         response_data = self._request('post', full_path, json=data)
         
@@ -92,10 +90,7 @@ class AlirezaAPIClient:
         return False
 
     def get_inbound(self, inbound_id):
-        """
-        اطلاعات یک اینباند خاص را دریافت می‌کند.
-        مسیر API: /xui/API/inbounds/get/:id
-        """
+        """اطلاعات یک اینباند خاص را دریافت می‌کند."""
         full_path = f"{self.api_base_path}/get/{inbound_id}"
         response_data = self._request('get', full_path)
         if response_data and response_data.get('success'):
@@ -103,10 +98,7 @@ class AlirezaAPIClient:
         return None
 
     def list_inbounds(self):
-        """
-        لیست تمام اینباندها را دریافت می‌کند.
-        مسیر API: /xui/API/inbounds/
-        """
+        """لیست تمام اینباندها را دریافت می‌کند."""
         full_path = self.api_base_path + "/"
         response_data = self._request('get', full_path)
         if response_data and response_data.get('success'):
