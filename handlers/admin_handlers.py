@@ -16,6 +16,7 @@ from utils.config_generator import ConfigGenerator
 from utils.bot_helpers import send_subscription_info # این ایمپورت جدید است
 from handlers.user_handlers import _user_states
 from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
+from api_client.factory import get_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -149,18 +150,29 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def test_all_servers(admin_id, message):
         _bot.edit_message_text(messages.TESTING_ALL_SERVERS, admin_id, message.message_id, reply_markup=None)
-        servers = _db_manager.get_all_servers()
+        servers = _db_manager.get_all_servers(only_active=False) # همه سرورها را تست می‌کنیم
         if not servers:
-            _bot.send_message(admin_id, messages.NO_SERVERS_FOUND); _show_server_management_menu(admin_id); return
+            _bot.send_message(admin_id, messages.NO_SERVERS_FOUND)
+            _show_server_management_menu(admin_id)
+            return
+            
         results = []
         for s in servers:
-            temp_xui_client = _xui_api(panel_url=s['panel_url'], username=s['username'], password=s['password'])
-            is_online = temp_xui_client.login()
+            # --- اصلاح اصلی اینجاست ---
+            # استفاده از factory برای انتخاب کلاینت مناسب
+            api_client = get_api_client(s)
+            is_online = False
+            if api_client:
+                # تابع check_login لاگین را نیز انجام می‌دهد
+                is_online = api_client.check_login()
+            # --- پایان بخش اصلاح شده ---
+
             _db_manager.update_server_status(s['id'], is_online, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            results.append(f"{'✅' if is_online else '❌'} {helpers.escape_markdown_v1(s['name'])}")
+            status_emoji = "✅" if is_online else "❌"
+            results.append(f"{status_emoji} {helpers.escape_markdown_v1(s['name'])} (Type: {s['panel_type']})")
+
         _bot.send_message(admin_id, messages.TEST_RESULTS_HEADER + "\n".join(results), parse_mode='Markdown')
         _show_server_management_menu(admin_id)
-
     # =============================================================================
     # SECTION: Stateful Process Handlers
     # =============================================================================
@@ -568,28 +580,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             )
         return response_text
 
-    def process_manage_inbounds_flow(admin_id, message):
-        state_info = _admin_states.get(admin_id, {})
-        if state_info.get('state') != 'waiting_for_server_id_for_inbounds': return
-        server_id_str = message.text.strip()
-        prompt_id = state_info.get('prompt_message_id')
-        try: _bot.delete_message(admin_id, message.message_id)
-        except Exception: pass
-        if not server_id_str.isdigit() or not (server_data := _db_manager.get_server_by_id(int(server_id_str))):
-            _bot.edit_message_text(f"{messages.SERVER_NOT_FOUND}\n\n{messages.SELECT_SERVER_FOR_INBOUNDS_PROMPT}", admin_id, prompt_id, parse_mode='Markdown'); return
-        server_id = int(server_id_str)
-        _bot.edit_message_text(messages.FETCHING_INBOUNDS, admin_id, prompt_id)
-        temp_xui_client = _xui_api(panel_url=server_data['panel_url'], username=server_data['username'], password=server_data['password'])
-        panel_inbounds = temp_xui_client.list_inbounds()
-        if not panel_inbounds:
-            _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_server_management"))
-            _clear_admin_state(admin_id); return
-        active_db_inbound_ids = [i['inbound_id'] for i in _db_manager.get_server_inbounds(server_id, only_active=True)]
-        state_info['state'] = f'selecting_inbounds_for_{server_id}'
-        state_info['data'] = {'panel_inbounds': panel_inbounds, 'selected_inbound_ids': active_db_inbound_ids}
-        markup = inline_keyboards.get_inbound_selection_menu(server_id, panel_inbounds, active_db_inbound_ids)
-        _bot.edit_message_text(messages.SELECT_INBOUNDS_TO_ACTIVATE.format(server_name=server_data['name']), admin_id, prompt_id, reply_markup=markup, parse_mode='Markdown')
-
+    
     def handle_inbound_selection(admin_id, call):
         """کلیک روی دکمه‌های کیبورد انتخاب اینباند را به درستی مدیریت می‌کند."""
         data = call.data
@@ -737,7 +728,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def process_manage_inbounds_flow(admin_id, message):
         """
-        پس از دریافت ID سرور از ادمین، لیست اینباندهای آن را از پنل X-UI گرفته و نمایش می‌دهد.
+        پس از دریافت ID سرور از ادمین، لیست اینباندهای آن را از پنل گرفته و نمایش می‌دهد.
+        (نسخه اصلاح شده با استفاده از API Factory)
         """
         state_info = _admin_states.get(admin_id, {})
         if state_info.get('state') != 'waiting_for_server_id_for_inbounds': return
@@ -754,8 +746,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         server_id = int(server_id_str)
         _bot.edit_message_text(messages.FETCHING_INBOUNDS, admin_id, prompt_id)
         
-        temp_xui_client = _xui_api(panel_url=server_data['panel_url'], username=server_data['username'], password=server_data['password'])
-        panel_inbounds = temp_xui_client.list_inbounds()
+        # --- اصلاح اصلی اینجاست ---
+        # به جای ساخت مستقیم XuiAPIClient، از factory استفاده می‌کنیم
+        api_client = get_api_client(server_data)
+        if not api_client:
+            logger.error(f"Could not create API client for server {server_id}. Data: {server_data}")
+            _bot.edit_message_text("خطا در ایجاد کلاینت API برای این سرور.", admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_server_management"))
+            _clear_admin_state(admin_id)
+            return
+
+        panel_inbounds = api_client.list_inbounds()
+        # --- پایان بخش اصلاح شده ---
 
         if not panel_inbounds:
             _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, prompt_id, reply_markup=inline_keyboards.get_back_button("admin_server_management"))
@@ -769,7 +770,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         markup = inline_keyboards.get_inbound_selection_menu(server_id, panel_inbounds, active_db_inbound_ids)
         _bot.edit_message_text(messages.SELECT_INBOUNDS_TO_ACTIVATE.format(server_name=server_data['name']), admin_id, prompt_id, reply_markup=markup, parse_mode='Markdown')
-
 
     def save_inbound_changes(admin_id, message, server_id, selected_ids):
         """تغییرات انتخاب اینباندها را در دیتابیس ذخیره می‌کند."""
