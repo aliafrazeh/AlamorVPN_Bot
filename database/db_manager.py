@@ -842,17 +842,17 @@ class DatabaseManager:
         
         
         
-    def add_profile(self, name, price, total_gb, duration_days, description):
-        """یک پروفایل جدید به دیتابیس اضافه می‌کند."""
+    def add_profile(self, name, per_gb_price, duration_days, description):
+        """یک پروفایل حجمی جدید به دیتابیس اضافه می‌کند."""
         sql = """
-            INSERT INTO profiles (name, price, total_gb, duration_days, description, is_active)
-            VALUES (%s, %s, %s, %s, %s, TRUE)
+            INSERT INTO profiles (name, per_gb_price, duration_days, description, is_active)
+            VALUES (%s, %s, %s, %s, TRUE)
             RETURNING id;
         """
         conn = self._get_connection()
         try:
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute(sql, (name, price, total_gb, duration_days, description))
+            with conn.cursor() as cur:
+                cur.execute(sql, (name, per_gb_price, duration_days, description))
                 profile_id = cur.fetchone()[0]
                 conn.commit()
                 logger.info(f"Profile '{name}' added with ID {profile_id}.")
@@ -860,11 +860,11 @@ class DatabaseManager:
         except psycopg2.IntegrityError:
             logger.warning(f"Profile with name '{name}' already exists.")
             if conn: conn.rollback()
-            return None # نشان دهنده نام تکراری
+            return None
         except psycopg2.Error as e:
             logger.error(f"Error adding profile '{name}': {e}")
             if conn: conn.rollback()
-            return False # نشان دهنده خطای عمومی
+            return False
         finally:
             if conn: conn.close()
             

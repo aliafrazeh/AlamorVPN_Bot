@@ -213,15 +213,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(confirm_text, admin_id, prompt_id, reply_markup=markup)
         elif state == 'waiting_for_profile_name':
             data['name'] = text
-            state_info['state'] = 'waiting_for_profile_price'
-            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_PRICE, admin_id, prompt_id)
+            state_info['state'] = 'waiting_for_profile_per_gb_price'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_PER_GB_PRICE, admin_id, prompt_id)
         
-        elif state == 'waiting_for_profile_price':
+        elif state == 'waiting_for_profile_per_gb_price':
             if not helpers.is_float_or_int(text) or float(text) <= 0:
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_PRICE}", admin_id, prompt_id); return
-            data['price'] = float(text)
-            state_info['state'] = 'waiting_for_profile_volume'
-            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_VOLUME, admin_id, prompt_id)
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_PER_GB_PRICE}", admin_id, prompt_id); return
+            data['per_gb_price'] = float(text)
+            state_info['state'] = 'waiting_for_profile_duration'
+            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DURATION, admin_id, prompt_id)
 
         elif state == 'waiting_for_profile_volume':
             if not helpers.is_float_or_int(text) or float(text) <= 0:
@@ -229,7 +229,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['total_gb'] = float(text)
             state_info['state'] = 'waiting_for_profile_duration'
             _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DURATION, admin_id, prompt_id)
-            
+        elif state == 'waiting_for_profile_description':
+            data['description'] = None if text.lower() == 'skip' else text
+            execute_add_profile(admin_id, data)
         elif state == 'waiting_for_profile_duration':
             if not text.isdigit() or int(text) <= 0:
                 _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_DURATION}", admin_id, prompt_id); return
@@ -1527,31 +1529,26 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     # ... (در بخش Final Execution Functions)
 
     def execute_add_profile(admin_id, data):
-        """اطلاعات پروفایل را در دیتابیس ذخیره می‌کند."""
         _clear_admin_state(admin_id)
         profile_id = _db_manager.add_profile(
             name=data['name'],
-            price=data['price'],
-            total_gb=data['total_gb'],
+            per_gb_price=data['per_gb_price'],
             duration_days=data['duration_days'],
             description=data['description']
         )
-        
         if profile_id:
             msg = messages.ADD_PROFILE_SUCCESS.format(profile_name=data['name'])
-        elif profile_id is None: # None یعنی نام تکراری
+        elif profile_id is None:
             msg = messages.ADD_PROFILE_DUPLICATE_ERROR.format(profile_name=data['name'])
-        else: # False یعنی خطای عمومی
+        else:
             msg = messages.ADD_PROFILE_GENERAL_ERROR
-            
         _bot.send_message(admin_id, msg)
         _show_profile_management_menu(admin_id)
-        
+
+            
         
     def list_all_profiles(admin_id, message):
-        """لیستی از تمام پروفایل‌های ساخته شده را نمایش می‌دهد."""
         profiles = _db_manager.get_all_profiles()
-        
         if not profiles:
             text = "هیچ پروفایلی تاکنون ثبت نشده است."
         else:
@@ -1559,24 +1556,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             for p in profiles:
                 status = "✅ فعال" if p['is_active'] else "❌ غیرفعال"
                 description = p['description'] or "ندارد"
-                
                 details = (
                     f"**ID: `{p['id']}` - {helpers.escape_markdown_v1(p['name'])}**\n"
-                    f"▫️ قیمت: `{p['price']:,.0f}` تومان\n"
-                    f"▫️ حجم: `{p['total_gb']}` گیگابایت\n"
+                    f"▫️ قیمت هر گیگ: `{p['per_gb_price']:,.0f}` تومان\n"
                     f"▫️ مدت: `{p['duration_days']}` روز\n"
                     f"▫️ توضیحات: {helpers.escape_markdown_v1(description)}\n"
                     f"▫️ وضعیت: {status}\n"
                     "-----------------------------------\n"
                 )
                 text += details
-                
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
-        
-        
-        
-        
-        
+
     def start_manage_profile_inbounds_flow(admin_id, message):
         """فرآیند مدیریت اینباندهای یک پروفایل را با نمایش لیست پروفایل‌ها شروع می‌کند."""
         profiles = _db_manager.get_all_profiles()
