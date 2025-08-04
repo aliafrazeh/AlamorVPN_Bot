@@ -50,6 +50,7 @@ class DatabaseManager:
             )
             """,
             """
+            DROP TABLE IF EXISTS profile_inbounds CASCADE;
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
                 profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
