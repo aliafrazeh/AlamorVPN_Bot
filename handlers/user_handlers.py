@@ -46,9 +46,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     def handle_main_callbacks(call):
         """هندل کردن دکمه‌های منوی اصلی کاربر"""
         user_id = call.from_user.id
-        state_info = _user_states[user_id]
         _bot.answer_callback_query(call.id)
-        current_state = state_info.get('state')
         # فقط در صورتی وضعیت را پاک کن که یک آیتم از منوی اصلی انتخاب شده باشد
         if call.data in ["user_main_menu", "user_buy_service", "user_my_services", "user_free_test", "user_support"]:
             _clear_user_state(user_id)
