@@ -377,3 +377,25 @@ def get_server_selection_menu_for_profile(servers, profile_id):
     
     markup.add(types.InlineKeyboardButton("🔙 بازگشت به انتخاب پروفایل", callback_data="admin_manage_profile_inbounds"))
     return markup
+
+
+
+def get_inbound_selection_menu_for_profile(profile_id, server_id, panel_inbounds, selected_inbound_ids):
+    """منوی چک‌لیست برای انتخاب اینباندها برای یک پروفایل خاص را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    for inbound in panel_inbounds:
+        inbound_id = inbound['id']
+        is_selected = inbound_id in selected_inbound_ids
+        emoji = "✅" if is_selected else "⬜️"
+        button_text = f"{emoji} {inbound.get('remark', f'Inbound {inbound_id}')}"
+        
+        # callback_data شامل آیدی پروفایل، سرور و اینباند است
+        callback_data = f"admin_pi_toggle_{profile_id}_{server_id}_{inbound_id}" # pi = Profile Inbound
+        markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+        
+    markup.add(
+        types.InlineKeyboardButton("✔️ ثبت تغییرات برای این سرور", callback_data=f"admin_pi_save_{profile_id}_{server_id}")
+    )
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به انتخاب سرور", callback_data=f"admin_select_profile_{profile_id}"))
+    return markup

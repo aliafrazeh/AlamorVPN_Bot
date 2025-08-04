@@ -475,7 +475,27 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("plan_type_"):
             process_add_plan_type_selection(call)
             return
-        
+        elif data.startswith("admin_ps_"): # Profile Server Selection
+            parts = data.split('_')
+            profile_id = int(parts[2])
+            server_id = int(parts[3])
+            handle_server_selection_for_profile(admin_id, message, profile_id, server_id)
+            return
+
+        elif data.startswith("admin_pi_toggle_"): # Profile Inbound Toggle
+            parts = data.split('_')
+            profile_id = int(parts[3])
+            server_id = int(parts[4])
+            inbound_id = int(parts[5])
+            handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
+            return
+            
+        elif data.startswith("admin_pi_save_"): # Profile Inbound Save
+            parts = data.split('_')
+            profile_id = int(parts[3])
+            server_id = int(parts[4])
+            execute_save_profile_inbounds(admin_id, message, profile_id, server_id)
+            return
         elif data.startswith("confirm_delete_server_"):
             execute_delete_server(admin_id, message, int(data.split('_')[-1]))
         elif data.startswith("inbound_"):
@@ -1580,3 +1600,85 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         markup = inline_keyboards.get_server_selection_menu_for_profile(servers, profile_id)
         _show_menu(admin_id, "بسیار خب. حالا سروری که می‌خواهید از آن اینباند اضافه کنید را انتخاب نمایید:", markup, message)
+        
+        
+        
+        
+        
+    def handle_server_selection_for_profile(admin_id, message, profile_id, server_id):
+        """
+        پس از انتخاب سرور، به پنل وصل شده و لیست اینباندها را به صورت چک‌لیست نمایش می‌دهد.
+        """
+        _bot.edit_message_text(messages.FETCHING_INBOUNDS, admin_id, message.message_id)
+        
+        server_data = _db_manager.get_server_by_id(server_id)
+        if not server_data:
+            _bot.answer_callback_query(message.id, "سرور یافت نشد.", show_alert=True)
+            return
+
+        api_client = get_api_client(server_data)
+        if not api_client or not api_client.check_login():
+            _bot.edit_message_text("❌ اتصال به پنل سرور ناموفق بود.", admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}"))
+            return
+
+        panel_inbounds = api_client.list_inbounds()
+        if not panel_inbounds:
+            _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}"))
+            return
+            
+        # دریافت اینباندهایی که از قبل برای این پروفایل (از همه سرورها) انتخاب شده‌اند
+        selected_inbound_ids = _db_manager.get_inbounds_for_profile(profile_id)
+        
+        # ذخیره اطلاعات در state برای استفاده در هنگام تیک زدن
+        _admin_states[admin_id] = {
+            'state': 'selecting_inbounds_for_profile',
+            'data': {
+                'profile_id': profile_id,
+                'server_id': server_id,
+                'panel_inbounds': panel_inbounds,
+                'selected_inbound_ids': selected_inbound_ids
+            }
+        }
+        
+        markup = inline_keyboards.get_inbound_selection_menu_for_profile(profile_id, server_id, panel_inbounds, selected_inbound_ids)
+        profile = _db_manager.get_profile_by_id(profile_id) # برای نمایش نام پروفایل
+        _show_menu(admin_id, f"اینباندها را برای پروفایل '{profile['name']}' از سرور '{server_data['name']}' انتخاب کنید:", markup, message)
+
+    def handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id):
+        """تیک زدن یا برداشتن تیک یک اینباند در چک‌لیست را مدیریت می‌کند."""
+        state_info = _admin_states.get(admin_id)
+        if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
+        
+        data = state_info['data']
+        # اطمینان از اینکه اطلاعات state با callback همخوانی دارد
+        if data['profile_id'] != profile_id or data['server_id'] != server_id: return
+
+        selected_ids = data['selected_inbound_ids']
+        if inbound_id in selected_ids:
+            selected_ids.remove(inbound_id)
+        else:
+            selected_ids.append(inbound_id)
+            
+        markup = inline_keyboards.get_inbound_selection_menu_for_profile(
+            profile_id, server_id, data['panel_inbounds'], selected_ids
+        )
+        try:
+            _bot.edit_message_reply_markup(chat_id=admin_id, message_id=message.message_id, reply_markup=markup)
+        except telebot.apihelper.ApiTelegramException as e:
+            if 'message is not modified' not in str(e):
+                logger.warning(f"Error updating profile inbound checklist: {e}")
+
+    def execute_save_profile_inbounds(admin_id, message, profile_id, server_id):
+        """تغییرات چک‌لیست اینباندها را در دیتابیس ذخیره می‌کند."""
+        state_info = _admin_states.get(admin_id)
+        if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
+            
+        selected_ids = state_info['data']['selected_inbound_ids']
+        
+        if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
+            _bot.answer_callback_query(message.id, "✅ تغییرات با موفقیت ذخیره شد.")
+        else:
+            _bot.answer_callback_query(message.id, "❌ خطایی در ذخیره تغییرات رخ داد.", show_alert=True)
+        
+        # کاربر را به مرحله انتخاب سرور برمی‌گردانیم تا بتواند از سرور دیگری هم اینباند اضافه کند
+        handle_profile_selection(admin_id, message, profile_id)

@@ -887,3 +887,47 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
+                
+                
+                
+    def get_inbounds_for_profile(self, profile_id):
+        """لیست ID اینباندهای متصل به یک پروفایل خاص را برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s", (profile_id,))
+                # نتیجه را به صورت یک لیست ساده از ID ها برمی‌گردانیم
+                return [row[0] for row in cur.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+
+    def update_inbounds_for_profile(self, profile_id, server_id, inbound_ids):
+        """
+        اینباندهای یک پروفایل برای یک سرور خاص را آپدیت می‌کند.
+        ابتدا رکوردهای قدیمی را حذف و سپس جدیدها را اضافه می‌کند.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # 1. حذف رکوردهای قدیمی برای این پروفایل و این سرور
+                cur.execute("DELETE FROM profile_inbounds WHERE profile_id = %s AND server_id = %s", (profile_id, server_id))
+                
+                # 2. اضافه کردن رکوردهای جدید
+                if inbound_ids:
+                    # آماده‌سازی داده‌ها برای executemany
+                    data_to_insert = [(profile_id, server_id, inbound_id) for inbound_id in inbound_ids]
+                    cur.executemany(
+                        "INSERT INTO profile_inbounds (profile_id, server_id, inbound_id) VALUES (%s, %s, %s)",
+                        data_to_insert
+                    )
+                conn.commit()
+                return True
+        except psycopg2.Error as e:
+            logger.error(f"Error updating inbounds for profile {profile_id} on server {server_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
