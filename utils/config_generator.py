@@ -6,13 +6,14 @@ import datetime
 import json
 from utils.helpers import generate_random_string
 import logging
+import uuid # Make sure uuid is imported
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigGenerator:
     def __init__(self, xui_api_client, db_manager):
-        self.xui_api = xui_api_client # This is kept for legacy compatibility if needed elsewhere
+        # This class no longer needs xui_api_client, but we keep it for backward compatibility
         self.db_manager = db_manager
 
     def create_client_and_configs(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int or None, custom_remark: str = None):

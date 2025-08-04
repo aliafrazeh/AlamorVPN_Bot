@@ -72,46 +72,24 @@ class XuiAPIClient:
             return None
     
     def login(self):
-        """
-        تلاش برای ورود به پنل X-UI/3X-UI.
-        بررسی می‌کنیم که آیا کوکی سشن '3x-ui' ذخیره شده است.
-        """
-        endpoint = "/login"
-        data = {
-            "username": self.username,
-            "password": self.password
-        }
-        if self.two_factor:
-            data["twoFactor"] = self.two_factor
+        """Logs into the panel and handles different possible session cookie names."""
+        self.session.cookies.clear()
+        payload = {'username': self.username, 'password': self.password}
+        response_data = self._request('post', '/login', data=payload)
         
-        logger.info(f"Attempting to login to X-UI panel at {self.panel_url}...")
-        
-        try:
-            res = self.session.post(f"{self.panel_url}{endpoint}", json=data, verify=False, timeout=10) 
-            res.raise_for_status() 
-
-            response_json = res.json()
-            
-            if res.status_code == 200 and response_json.get("success"):
-                # این مهم است: به دنبال کوکی '3x-ui' می‌گردیم
-                if '3x-ui' in self.session.cookies: 
-                    logger.info("Successfully logged in to X-UI panel. '3x-ui' cookie found.")
-                    return True
-                else:
-                    logger.warning("Login successful (API returned success) but no '3x-ui' cookie found in response.")
-                    # در این حالت، اگرچه API موفقیت را اعلام کرده، اما کوکی مورد نیاز برای احراز هویت را دریافت نکردیم.
-                    # ممکن است نیاز به بررسی دستی نام کوکی‌های دیگر در headers.
-                    return False
+        if response_data and response_data.get('success'):
+            # --- THE FIX IS HERE ---
+            # We now check for either of the common cookie names.
+            if '3x-ui' in self.session.cookies or 'session' in self.session.cookies:
+                self.is_logged_in = True
+                logger.info(f"Successfully logged in to {self.base_url} and found session cookie.")
+                return True
             else:
-                logger.error(f"Failed to login to X-UI panel: API returned unsuccessful. Message: {response_json.get('msg', 'No message')}. Status Code: {res.status_code}")
+                logger.warning(f"Login successful but no recognized session cookie ('3x-ui' or 'session') was found.")
                 return False
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Login request error: {e}")
+        else:
+            logger.error(f"Login failed for {self.base_url}.")
             return False
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON response from login. Response text: {res.text}")
-            return False
-
     def check_login(self):
         """
         بررسی می‌کند که آیا لاگین معتبر است یا خیر.

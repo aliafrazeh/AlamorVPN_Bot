@@ -52,18 +52,20 @@ class AlirezaAPIClient:
             return None
 
     def login(self):
-        """لاگین به پنل."""
+        """Logs into the panel and handles different possible session cookie names."""
         self.is_logged_in = False
         payload = {'username': self.username, 'password': self.password}
         response_data = self._request('post', '/login', data=payload)
         
         if response_data and response_data.get('success'):
-            if 'session' in self.session.cookies:
+            # --- THE FIX IS HERE ---
+            # We use the same robust check for either cookie name.
+            if '3x-ui' in self.session.cookies or 'session' in self.session.cookies:
                 self.is_logged_in = True
-                logger.info(f"Successfully logged in to {self.base_url}")
+                logger.info(f"Successfully logged in to {self.base_url} and found session cookie.")
                 return True
             else:
-                logger.warning(f"Login successful but no 'session' cookie found for Alireza panel.")
+                logger.warning(f"Login successful but no recognized session cookie ('3x-ui' or 'session') was found.")
                 return False
         else:
             logger.error(f"Login failed for {self.base_url}.")
