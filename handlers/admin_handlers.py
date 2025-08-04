@@ -426,6 +426,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
             "admin_list_profiles": list_all_profiles,
             "admin_add_profile": start_add_profile_flow,
             "admin_profile_management": _show_profile_management_menu,
@@ -1544,3 +1545,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 text += details
                 
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
+        
+        
+        
+        
+        
+    def start_manage_profile_inbounds_flow(admin_id, message):
+        """فرآیند مدیریت اینباندهای یک پروفایل را با نمایش لیست پروفایل‌ها شروع می‌کند."""
+        profiles = _db_manager.get_all_profiles()
+        if not profiles:
+            _bot.answer_callback_query(message.id, "ابتدا باید حداقل یک پروفایل بسازید.", show_alert=True)
+            return
+            
+        markup = inline_keyboards.get_profile_selection_menu(profiles)
+        _show_menu(admin_id, "لطفاً پروفایلی که می‌خواهید اینباندهای آن را مدیریت کنید، انتخاب نمایید:", markup, message)

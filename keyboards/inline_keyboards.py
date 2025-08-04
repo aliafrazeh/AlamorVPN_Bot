@@ -351,3 +351,16 @@ def get_profile_management_inline_menu():
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
     return markup
+
+
+
+def get_profile_selection_menu(profiles):
+    """یک منو برای انتخاب از بین پروفایل‌های موجود ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for profile in profiles:
+        btn_text = f"🗂️ {profile['name']} (ID: {profile['id']})"
+        callback_data = f"admin_select_profile_{profile['id']}"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_profile_management"))
+    return markup
