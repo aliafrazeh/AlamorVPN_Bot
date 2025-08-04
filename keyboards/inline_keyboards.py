@@ -364,3 +364,16 @@ def get_profile_selection_menu(profiles):
     
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_profile_management"))
     return markup
+
+
+def get_server_selection_menu_for_profile(servers, profile_id):
+    """یک منو برای انتخاب سرور جهت افزودن اینباند به پروفایل ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for server in servers:
+        btn_text = f"⚙️ {server['name']} (ID: {server['id']})"
+        # ما آیدی پروفایل را هم در callback_data پاس می‌دهیم تا در مرحله بعد به آن دسترسی داشته باشیم
+        callback_data = f"admin_ps_{profile_id}_{server['id']}" # ps = Profile Server
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به انتخاب پروفایل", callback_data="admin_manage_profile_inbounds"))
+    return markup

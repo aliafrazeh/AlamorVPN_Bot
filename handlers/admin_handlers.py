@@ -490,6 +490,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("panel_type_"):
             handle_panel_type_selection(call)
             return
+        elif data.startswith("admin_select_profile_"):
+            profile_id = int(data.split('_')[-1])
+            handle_profile_selection(admin_id, message, profile_id)
+            return
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id = int(parts[3])
@@ -1559,3 +1563,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         markup = inline_keyboards.get_profile_selection_menu(profiles)
         _show_menu(admin_id, "لطفاً پروفایلی که می‌خواهید اینباندهای آن را مدیریت کنید، انتخاب نمایید:", markup, message)
+
+    
+    def handle_profile_selection(admin_id, message, profile_id):
+        """
+        پس از انتخاب پروفایل، لیست سرورها را برای انتخاب نمایش می‌دهد.
+        """
+        _clear_admin_state(admin_id)
+        servers = _db_manager.get_all_servers(only_active=False)
+        if not servers:
+            _bot.answer_callback_query(message.id, "هیچ سروری ثبت نشده است. ابتدا یک سرور اضافه کنید.", show_alert=True)
+            return
+
+        # ذخیره کردن پروفایل انتخاب شده در وضعیت ادمین برای مراحل بعدی
+        _admin_states[admin_id] = {'state': 'selecting_server_for_profile', 'data': {'profile_id': profile_id}}
+        
+        markup = inline_keyboards.get_server_selection_menu_for_profile(servers, profile_id)
+        _show_menu(admin_id, "بسیار خب. حالا سروری که می‌خواهید از آن اینباند اضافه کنید را انتخاب نمایید:", markup, message)
