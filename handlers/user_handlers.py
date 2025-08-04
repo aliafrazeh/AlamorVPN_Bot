@@ -66,6 +66,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             handle_free_test_request(user_id, call.message)
         # --- پایان بخش اصلاح شده ---
 
+        elif data == "user_buy_profile": # <-- این بلاک را اضافه کنید
+            start_profile_purchase(user_id, call.message)
         elif data == "user_support":
             _bot.edit_message_text(f"📞 برای پشتیبانی با ما در ارتباط باشید: {SUPPORT_CHANNEL_LINK}", user_id, call.message.message_id)
         elif data.startswith("user_service_details_"):
@@ -723,3 +725,18 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         except Exception as e:
             logger.error(f"Failed to forward tutorial {tutorial_id} to user {user_id}: {e}")
             _bot.answer_callback_query(message.id, "خطا در ارسال آموزش. لطفاً به ادمین اطلاع دهید.", show_alert=True)
+            
+            
+            
+    def start_profile_purchase(user_id, message):
+        """فرآیند خرید پروفایل را با نمایش لیست پروفایل‌های فعال شروع می‌کند."""
+        active_profiles = _db_manager.get_all_profiles(only_active=True)
+        if not active_profiles:
+            _bot.edit_message_text(messages.NO_PROFILES_AVAILABLE, user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
+            return
+        
+        # پاک کردن وضعیت قبلی کاربر
+        _clear_user_state(user_id)
+        
+        markup = inline_keyboards.get_profile_selection_menu_for_user(active_profiles)
+        _bot.edit_message_text(messages.SELECT_PROFILE_PROMPT, user_id, message.message_id, reply_markup=markup)

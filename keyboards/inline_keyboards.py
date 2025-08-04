@@ -117,17 +117,16 @@ def get_confirmation_menu(confirm_callback: str, cancel_callback: str, confirm_t
 # --- توابع کیبورد کاربر ---
 
 def get_user_main_inline_menu(support_link: str):
-    """ --- SIMPLIFIED: Creates the user menu with only a support link --- """
+    """ --- نسخه آپدیت شده با دکمه پروفایل --- """
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("🛒 خرید سرویس", callback_data="user_buy_service"),
+        types.InlineKeyboardButton("🛒 خرید سرویس عادی", callback_data="user_buy_service"),
+        types.InlineKeyboardButton("🗂️ خرید پروفایل", callback_data="user_buy_profile"),
         types.InlineKeyboardButton("🎁 اکانت تست رایگان", callback_data="user_free_test"),
         types.InlineKeyboardButton("🗂️ سرویس‌های من", callback_data="user_my_services"),
         types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect")
     )
 
-    # --- Simplified Logic ---
-    # If a valid link exists, add the support button
     if support_link and support_link.startswith('http'):
         markup.add(types.InlineKeyboardButton("📞 پشتیبانی", url=support_link))
         
@@ -398,4 +397,17 @@ def get_inbound_selection_menu_for_profile(profile_id, server_id, panel_inbounds
         types.InlineKeyboardButton("✔️ ثبت تغییرات برای این سرور", callback_data=f"admin_pi_save_{profile_id}_{server_id}")
     )
     markup.add(types.InlineKeyboardButton("🔙 بازگشت به انتخاب سرور", callback_data=f"admin_select_profile_{profile_id}"))
+    return markup
+
+
+
+def get_profile_selection_menu_for_user(profiles):
+    """منوی انتخاب پروفایل برای خرید توسط کاربر را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for profile in profiles:
+        btn_text = f"🗂️ {profile['name']} - {profile['price']:,.0f} تومان"
+        callback_data = f"buy_select_profile_{profile['id']}"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data="user_main_menu"))
     return markup
