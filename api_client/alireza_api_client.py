@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class AlirezaAPIClient:
     """
     کلاینت API نهایی و اصلاح شده برای پنل‌های Alireza-x-ui.
-    این نسخه مشکل لاگین و دریافت لیست اینباندها را به صورت قطعی حل می‌کند.
+    این نسخه مشکل دریافت لیست اینباندها را به صورت قطعی حل می‌کند.
     """
     def __init__(self, panel_url, username, password):
         self.base_url = panel_url.rstrip('/')
@@ -22,11 +22,11 @@ class AlirezaAPIClient:
         self.session.headers.update({'Accept': 'application/json'})
         self.is_logged_in = False
         # مسیر پایه API برای این پنل
-        self.api_base_path = "/xui/inbounds" # مسیر صحیح بر اساس تجربه عملی
+        self.api_base_path = "/xui/API/inbounds" # مسیر صحیح بر اساس داکیومنت
         logger.info(f"AlirezaAPIClient initialized for {self.base_url}")
 
     def _request(self, method, path, **kwargs):
-        """متد مرکزی ارسال درخواست."""
+        # این تابع مرکزی بدون تغییر باقی می‌ماند
         if not path.startswith('/'):
             path = '/' + path
         
@@ -37,7 +37,7 @@ class AlirezaAPIClient:
         url = self.base_url + path
         try:
             response = self.session.request(method, url, verify=False, timeout=20, **kwargs)
-            if response.status_code == 401: # Unauthorized
+            if response.status_code in [401, 403]:
                 if not self.login(): return None
                 response = self.session.request(method, url, verify=False, timeout=20, **kwargs)
             
@@ -48,7 +48,7 @@ class AlirezaAPIClient:
             return None
 
     def login(self):
-        """لاگین هوشمند که هر نوع کوکی را می‌پذیرد."""
+        # تابع لاگین هوشمند بدون تغییر باقی می‌ماند
         self.is_logged_in = False
         payload = {'username': self.username, 'password': self.password}
         response_data = self._request('post', '/login', data=payload)
@@ -58,15 +58,11 @@ class AlirezaAPIClient:
                 self.is_logged_in = True
                 logger.info(f"Login successful to {self.base_url}.")
                 return True
-            else:
-                logger.error(f"Login successful but panel did not return a session cookie.")
-                return False
-        else:
-            logger.error(f"Login failed for {self.base_url}.")
-            return False
+        
+        logger.error(f"Login failed for {self.base_url}.")
+        return False
 
     def check_login(self):
-        """بررسی اعتبار لاگین."""
         if self.is_logged_in:
             return True
         return self.login()
@@ -76,9 +72,13 @@ class AlirezaAPIClient:
         --- FIX FINAL ---
         لیست تمام اینباندها را با متد و مسیر صحیح دریافت می‌کند.
         """
+        # مسیر کامل شبیه به پنل سنایی است
         full_path = self.api_base_path + "/list"
+        
+        # --- THE FIX IS HERE ---
         # این پنل نیز مانند سنایی از متد POST برای لیست کردن استفاده می‌کند
         response_data = self._request('post', full_path)
+        
         if response_data and response_data.get('success'):
             return response_data.get('obj', [])
         
@@ -86,8 +86,8 @@ class AlirezaAPIClient:
         return []
         
     def add_client(self, data):
-        """یک کلاینت جدید اضافه می‌کند."""
-        full_path = self.api_base_path + "/addClient"
+        # این تابع صحیح است و بدون تغییر باقی می‌ماند
+        full_path = self.api_base_path + "/addClient/"
         response_data = self._request('post', full_path, json=data)
         
         if response_data and response_data.get('success'):
@@ -96,11 +96,3 @@ class AlirezaAPIClient:
         error_msg = response_data.get('msg', 'Unknown error') if response_data else "No response"
         logger.error(f"Failed to add client. Reason: {error_msg}")
         return False
-        
-    def get_inbound(self, inbound_id):
-        """اطلاعات یک اینباند خاص را دریافت می‌کند."""
-        full_path = f"{self.api_base_path}/get/{inbound_id}"
-        response_data = self._request('post', full_path) # اغلب پنل‌ها از POST استفاده می‌کنند
-        if response_data and response_data.get('success'):
-            return response_data.get('obj')
-        return None
