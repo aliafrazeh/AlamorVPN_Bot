@@ -5,7 +5,8 @@ import logging
 from cryptography.fernet import Fernet
 import os
 import json
-
+import psycopg2
+import psycopg2.extras
 from config import ENCRYPTION_KEY, DATABASE_NAME
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ class DatabaseManager:
 
             conn.commit()
             logger.info("Database tables created or already exist.")
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error creating tables: {e}")
             raise e
         finally:
@@ -194,7 +195,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO users (telegram_id, first_name, last_name, username, last_activity)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT(telegram_id) DO UPDATE SET
                     first_name = excluded.first_name,
                     last_name = excluded.last_name,
@@ -204,7 +205,7 @@ class DatabaseManager:
             conn.commit()
             logger.info(f"User {telegram_id} added or updated.")
             return cursor.lastrowid
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding/updating user {telegram_id}: {e}")
             return None
         finally:
@@ -218,7 +219,7 @@ class DatabaseManager:
             cursor.execute("SELECT id, telegram_id, first_name, username, join_date FROM users ORDER BY id DESC")
             users = cursor.fetchall()
             return [dict(user) for user in users]
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting all users: {e}")
             return []
         finally:
@@ -229,10 +230,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
+            cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
             user = cursor.fetchone()
             return dict(user) if user else None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting user by telegram_id {telegram_id}: {e}")
             return None
         finally:
@@ -243,10 +244,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_db_id,))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_db_id,))
             user = cursor.fetchone()
             return dict(user) if user else None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting user by DB ID {user_db_id}: {e}")
             return None
         finally:
@@ -259,14 +260,14 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO servers (name, panel_type, panel_url, username, password, subscription_base_url, subscription_path_prefix) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO servers (name, panel_type, panel_url, username, password, subscription_base_url, subscription_path_prefix) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (name, panel_type, self._encrypt(panel_url), self._encrypt(username), self._encrypt(password), self._encrypt(sub_base_url), self._encrypt(sub_path_prefix))
             )
             new_server_id = cursor.lastrowid
             conn.commit()
             conn.close()
             return new_server_id
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding server '{name}': {e}")
             return None
 
@@ -296,7 +297,7 @@ class DatabaseManager:
         """
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM servers WHERE id = ?", (server_id,))
+        cursor.execute("SELECT * FROM servers WHERE id = %s", (server_id,))
         server_row = cursor.fetchone()
         conn.close()
         
@@ -307,11 +308,11 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             # Deleting a server will cascade and delete related inbounds
-            cursor.execute("DELETE FROM servers WHERE id = ?", (server_id,))
+            cursor.execute("DELETE FROM servers WHERE id = %s", (server_id,))
             conn.commit()
             logger.info(f"Server with ID {server_id} has been deleted.")
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error deleting server with ID {server_id}: {e}")
             return False
         finally:
@@ -323,11 +324,11 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE servers SET is_online = ?, last_checked = ? WHERE id = ?
+                UPDATE servers SET is_online = %s, last_checked = %s WHERE id = %s
             """, (is_online, last_checked, server_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating server status for ID {server_id}: {e}")
             return False
         finally:
@@ -339,14 +340,14 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            query = "SELECT * FROM server_inbounds WHERE server_id = ?"
+            query = "SELECT * FROM server_inbounds WHERE server_id = %s"
             params = [server_id]
             if only_active:
                 query += " AND is_active = TRUE"
             cursor.execute(query, params)
             inbounds = cursor.fetchall()
             return [dict(inbound) for inbound in inbounds]
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting inbounds for server {server_id}: {e}")
             return []
         finally:
@@ -358,7 +359,7 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             # First, remove all existing inbounds for this server
-            cursor.execute("DELETE FROM server_inbounds WHERE server_id = ?", (server_id,))
+            cursor.execute("DELETE FROM server_inbounds WHERE server_id = %s", (server_id,))
             # Then, insert the new selection
             if selected_inbounds:
                 inbounds_to_insert = [
@@ -367,12 +368,12 @@ class DatabaseManager:
                 ]
                 cursor.executemany("""
                     INSERT INTO server_inbounds (server_id, inbound_id, remark, is_active)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s)
                 """, inbounds_to_insert)
             conn.commit()
             logger.info(f"Updated inbounds for server ID {server_id}.")
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating inbounds for server ID {server_id}: {e}")
             conn.rollback()
             return False
@@ -386,7 +387,7 @@ class DatabaseManager:
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plans (name, plan_type, volume_gb, duration_days, price, per_gb_price, is_active) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (name, plan_type, volume_gb, duration_days, price, per_gb_price, True)
                 )
                 new_plan_id = cursor.lastrowid
@@ -397,7 +398,7 @@ class DatabaseManager:
             except sqlite3.IntegrityError:
                 logger.warning(f"Plan with name '{name}' already exists.")
                 return None
-            except sqlite3.Error as e:
+            except psycopg2.Error as e:
                 logger.error(f"A database error occurred while adding plan '{name}': {e}")
                 return None
 
@@ -413,7 +414,7 @@ class DatabaseManager:
             cursor.execute(query)
             plans = cursor.fetchall()
             return [dict(plan) for plan in plans]
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting plans: {e}")
             return []
         finally:
@@ -424,10 +425,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM plans WHERE id = ?", (plan_id,))
+            cursor.execute("SELECT * FROM plans WHERE id = %s", (plan_id,))
             plan = cursor.fetchone()
             return dict(plan) if plan else None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting plan by ID {plan_id}: {e}")
             return None
         finally:
@@ -449,7 +450,7 @@ class DatabaseManager:
 
             cursor.execute("""
                 INSERT INTO payment_gateways (name, type, card_number, card_holder_name, merchant_id, description, is_active, priority)
-                VALUES (?, ?, ?, ?, ?, ?, TRUE, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
             """, (name, gateway_type, encrypted_card_number, encrypted_card_holder_name, encrypted_merchant_id, description, priority))
             conn.commit()
             logger.info(f"Payment Gateway '{name}' ({gateway_type}) added successfully.")
@@ -457,7 +458,7 @@ class DatabaseManager:
         except sqlite3.IntegrityError:
             logger.warning(f"Payment Gateway with name '{name}' already exists.")
             return None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding payment gateway '{name}': {e}")
             return None
         finally:
@@ -503,7 +504,7 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM payment_gateways WHERE id = ?", (gateway_id,))
+            cursor.execute("SELECT * FROM payment_gateways WHERE id = %s", (gateway_id,))
             gateway = cursor.fetchone()
             if gateway:
                 gateway_dict = dict(gateway)
@@ -532,10 +533,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("UPDATE payment_gateways SET is_active = ? WHERE id = ?", (is_active, gateway_id))
+            cursor.execute("UPDATE payment_gateways SET is_active = %s WHERE id = %s", (is_active, gateway_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating gateway status for ID {gateway_id}: {e}")
             return False
         finally:
@@ -549,11 +550,11 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO payments (user_id, amount, receipt_message_id, order_details_json, is_confirmed)
-                VALUES (?, ?, ?, ?, FALSE)
+                VALUES (%s, %s, %s, %s, FALSE)
             """, (user_id, amount, receipt_message_id, order_details_json))
             conn.commit()
             return cursor.lastrowid
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding payment request for user {user_id}: {e}")
             return None
         finally:
@@ -564,10 +565,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM payments WHERE id = ?", (payment_id,))
+            cursor.execute("SELECT * FROM payments WHERE id = %s", (payment_id,))
             payment = cursor.fetchone()
             return dict(payment) if payment else None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting payment {payment_id}: {e}")
             return None
         finally:
@@ -580,12 +581,12 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE payments 
-                SET is_confirmed = ?, admin_confirmed_by = ?, confirmation_date = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET is_confirmed = %s, admin_confirmed_by = %s, confirmation_date = CURRENT_TIMESTAMP
+                WHERE id = %s
             """, (is_confirmed, admin_id, payment_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating payment status for ID {payment_id}: {e}")
             return False
         finally:
@@ -596,10 +597,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("UPDATE payments SET admin_notification_message_id = ? WHERE id = ?", (message_id, payment_id))
+            cursor.execute("UPDATE payments SET admin_notification_message_id = %s WHERE id = %s", (message_id, payment_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating admin notification message ID for payment {payment_id}: {e}")
             return False
         finally:
@@ -613,11 +614,11 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO purchases (user_id, server_id, plan_id, expire_date, initial_volume_gb, xui_client_uuid, xui_client_email, subscription_id, single_configs_json, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
             """, (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, json.dumps(single_configs)))
             conn.commit()
             return cursor.lastrowid
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding purchase for user {user_id}: {e}")
             return None
         finally:
@@ -632,12 +633,12 @@ class DatabaseManager:
                 SELECT p.id, p.purchase_date, p.expire_date, p.initial_volume_gb, p.is_active, s.name as server_name
                 FROM purchases p
                 JOIN servers s ON p.server_id = s.id
-                WHERE p.user_id = ?
+                WHERE p.user_id = %s
                 ORDER BY p.id DESC
             """, (user_db_id,))
             purchases = cursor.fetchall()
             return [dict(p) for p in purchases]
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting purchases for user DB ID {user_db_id}: {e}")
             return []
         finally:
@@ -648,14 +649,14 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM purchases WHERE id = ?", (purchase_id,))
+            cursor.execute("SELECT * FROM purchases WHERE id = %s", (purchase_id,))
             purchase = cursor.fetchone()
             if purchase:
                 purchase_dict = dict(purchase)
                 purchase_dict['single_configs_json'] = json.loads(purchase_dict['single_configs_json'] or '[]')
                 return purchase_dict
             return None
-        except (sqlite3.Error, json.JSONDecodeError) as e:
+        except (psycopg2.Error, json.JSONDecodeError) as e:
             logger.error(f"Error getting purchase by ID {purchase_id}: {e}")
             return None
         finally:
@@ -668,9 +669,9 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM free_test_usage WHERE user_id = ?", (user_db_id,))
+            cursor.execute("SELECT 1 FROM free_test_usage WHERE user_id = %s", (user_db_id,))
             return cursor.fetchone() is not None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error checking free test usage for user {user_db_id}: {e}")
             return True # در صورت خطا، فرض می‌کنیم استفاده کرده تا از سوءاستفاده جلوگیری شود
         finally:
@@ -682,10 +683,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO free_test_usage (user_id) VALUES (?)", (user_db_id,))
+            cursor.execute("INSERT INTO free_test_usage (user_id) VALUES (%s)", (user_db_id,))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error recording free test usage for user {user_db_id}: {e}")
             return False
 
@@ -695,10 +696,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM free_test_usage WHERE user_id = ?", (user_db_id,))
+            cursor.execute("DELETE FROM free_test_usage WHERE user_id = %s", (user_db_id,))
             conn.commit()
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error resetting free test usage for user {user_db_id}: {e}")
             return False
         
@@ -712,10 +713,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM payments WHERE authority = ?", (authority,))
+            cursor.execute("SELECT * FROM payments WHERE authority = %s", (authority,))
             payment = cursor.fetchone()
             return dict(payment) if payment else None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error getting payment by authority {authority}: {e}")
             return None
         finally:
@@ -729,12 +730,12 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE payments 
-                SET is_confirmed = TRUE, ref_id = ?, confirmation_date = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET is_confirmed = TRUE, ref_id = %s, confirmation_date = CURRENT_TIMESTAMP
+                WHERE id = %s
             """, (ref_id, payment_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error confirming online payment for ID {payment_id}: {e}")
             return False
         finally:
@@ -748,10 +749,10 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("UPDATE payments SET authority = ? WHERE id = ?", (authority, payment_id))
+            cursor.execute("UPDATE payments SET authority = %s WHERE id = %s", (authority, payment_id))
             conn.commit()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error setting authority for payment ID {payment_id}: {e}")
             return False
         finally:
@@ -762,12 +763,12 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+            cursor.execute("DELETE FROM plans WHERE id = %s", (plan_id,))
             conn.commit()
             conn.close()
             logger.info(f"Plan with ID {plan_id} has been deleted.")
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error deleting plan with ID {plan_id}: {e}")
             return False
 
@@ -777,14 +778,14 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE plans SET name = ?, price = ?, volume_gb = ?, duration_days = ?
-                WHERE id = ?
+                UPDATE plans SET name = %s, price = %s, volume_gb = %s, duration_days = %s
+                WHERE id = %s
             """, (name, price, volume_gb, duration_days, plan_id))
             conn.commit()
             conn.close()
             logger.info(f"Plan with ID {plan_id} has been updated.")
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating plan {plan_id}: {e}")
             return False
         
@@ -794,7 +795,7 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM plans WHERE server_id = ? AND plan_type = ? AND is_active = TRUE ORDER BY price",
+            "SELECT * FROM plans WHERE server_id = %s AND plan_type = %s AND is_active = TRUE ORDER BY price",
             (server_id, plan_type)
         )
         plans = [dict(row) for row in cursor.fetchall()]
@@ -807,7 +808,7 @@ class DatabaseManager:
         """Reads a setting from the database."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        cursor.execute("SELECT value FROM settings WHERE key = %s", (key,))
         result = cursor.fetchone()
         conn.close()
         return result[0] if result else None
@@ -816,7 +817,7 @@ class DatabaseManager:
         """Updates or creates a setting in the database."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (%s, %s)", (key, value))
         conn.commit()
         conn.close()
 
@@ -832,11 +833,11 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+            cursor.execute("DELETE FROM purchases WHERE id = %s", (purchase_id,))
             conn.commit()
             conn.close()
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error deleting purchase {purchase_id}: {e}")
             return False
         
@@ -847,7 +848,7 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO tutorials (platform, app_name, forward_chat_id, forward_message_id) VALUES (?, ?, ?, ?)",
+                "INSERT INTO tutorials (platform, app_name, forward_chat_id, forward_message_id) VALUES (%s, %s, %s, %s)",
                 (platform, app_name, chat_id, message_id)
             )
             conn.commit()
@@ -856,7 +857,7 @@ class DatabaseManager:
         except sqlite3.IntegrityError:
             logger.warning(f"Tutorial for {platform} - {app_name} already exists.")
             return None
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error adding tutorial: {e}")
             return None
 
@@ -875,11 +876,11 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM tutorials WHERE id = ?", (tutorial_id,))
+            cursor.execute("DELETE FROM tutorials WHERE id = %s", (tutorial_id,))
             conn.commit()
             conn.close()
             return cursor.rowcount > 0
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error deleting tutorial {tutorial_id}: {e}")
             return False
 
@@ -897,7 +898,7 @@ class DatabaseManager:
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tutorials WHERE platform = ? ORDER BY app_name", (platform,))
+        cursor.execute("SELECT * FROM tutorials WHERE platform = %s ORDER BY app_name", (platform,))
         tutorials = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return tutorials
@@ -908,7 +909,7 @@ class DatabaseManager:
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tutorials WHERE id = ?", (tutorial_id,))
+        cursor.execute("SELECT * FROM tutorials WHERE id = %s", (tutorial_id,))
         tutorial = cursor.fetchone()
         conn.close()
         return dict(tutorial) if tutorial else None
@@ -925,18 +926,18 @@ class DatabaseManager:
             conn = self._get_connection()
             cursor = conn.cursor()
             # First, deactivate all inbounds for this server
-            cursor.execute("UPDATE server_inbounds SET is_active = FALSE WHERE server_id = ?", (server_id,))
+            cursor.execute("UPDATE server_inbounds SET is_active = FALSE WHERE server_id = %s", (server_id,))
             # Then, activate only the selected ones
             if active_inbound_ids:
                 # Create placeholders for the query string
-                placeholders = ', '.join('?' for _ in active_inbound_ids)
-                query = f"UPDATE server_inbounds SET is_active = TRUE WHERE server_id = ? AND inbound_id IN ({placeholders})"
+                placeholders = ', '.join('%s' for _ in active_inbound_ids)
+                query = f"UPDATE server_inbounds SET is_active = TRUE WHERE server_id = %s AND inbound_id IN ({placeholders})"
                 params = [server_id] + active_inbound_ids
                 cursor.execute(query, params)
             conn.commit()
             conn.close()
             return True
-        except sqlite3.Error as e:
+        except psycopg2.Error as e:
             logger.error(f"Error updating active inbounds for server {server_id}: {e}")
             return False
         

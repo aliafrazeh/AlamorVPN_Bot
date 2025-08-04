@@ -99,3 +99,14 @@ BOT_USERNAME_ALAMOR = os.getenv("BOT_USERNAME_ALAMOR", "YourBotUsername")
 
 
 
+DB_TYPE = os.getenv("DB_TYPE", "sqlite")
+if DB_TYPE == "postgres":
+    # خواندن متغیرهای جدید برای PostgreSQL
+    DB_NAME = os.getenv("DB_NAME")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+else:
+    # منطق قدیمی برای SQLite (برای سازگاری در آینده)
+    DATABASE_NAME = os.getenv("DATABASE_NAME_ALAMOR", "database/alamor_vpn.db")
