@@ -412,13 +412,3 @@ def get_profile_selection_menu_for_user(profiles):
     return markup
 
 
-def process_profile_gigabyte_input(message):
-    user_id = message.from_user.id
-    state_data = _user_states[user_id]
-    
-    if not is_float_or_int(message.text) or float(message.text) <= 0:
-        _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ENTER_PROFILE_GIGABYTES_PROMPT}", user_id, state_data['prompt_message_id'])
-        return
-            
-    state_data['data']['requested_gb'] = float(message.text)
-    show_order_summary(user_id, message)
