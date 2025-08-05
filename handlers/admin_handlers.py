@@ -18,8 +18,9 @@ from handlers.user_handlers import _user_states
 from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
 from api_client.factory import get_api_client
 from utils.helpers import normalize_panel_inbounds
-from utils.system_helpers import setup_domain_nginx_and_ssl, remove_domain_nginx_files , check_ssl_certificate_exists
 from utils.bot_helpers import finalize_profile_purchase
+from handlers.domain_handlers import register_domain_handlers # <-- ایمپورت جدید
+
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -30,7 +31,7 @@ _config_generator: ConfigGenerator = None
 _admin_states = {}
 
 def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance):
-    global _bot, _db_manager, _xui_api, _config_generator
+    global _bot, _db_manager, _xui_api, _config_generator , _admin_states
     _bot = bot_instance
     _db_manager = db_manager_instance
     _xui_api = xui_api_instance
@@ -39,6 +40,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     # =============================================================================
     # SECTION: Helper and Menu Functions
     # =============================================================================
+    register_domain_handlers(bot=_bot, db_manager=_db_manager, admin_states=_admin_states)
 
     def _clear_admin_state(admin_id):
         """وضعیت ادمین را فقط از دیکشنری پاک می‌کند."""
@@ -291,33 +293,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['merchant_id'] = text
             state_info['state'] = 'waiting_for_gateway_description'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
-        elif state == 'waiting_for_domain_name':
-            domain_name = text.lower()
-            state_info['state'] = 'waiting_for_letsencrypt_email'
-            state_info['data']['domain_name'] = domain_name
-            _bot.edit_message_text(
-                "برای دریافت گواهی SSL، لطفاً آدرس ایمیل خود را وارد کنید:",
-                admin_id, prompt_id
-            )
-            
-        elif state == 'waiting_for_letsencrypt_email':
-            admin_email = text
-            _db_manager.update_setting('letsencrypt_email', admin_email)
-            domain_name = data['domain_name']
-            _bot.edit_message_text(
-                f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.",
-                admin_id, prompt_id
-            )
-            success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
-            if success:
-                if _db_manager.add_subscription_domain(domain_name):
-                     _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
-                else:
-                     _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
-            else:
-                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
-            _clear_admin_state(admin_id)
-            _show_domain_management_menu(admin_id)
+        
         elif state == 'waiting_for_card_number':
             if not text.isdigit() or len(text) not in [16]:
                 _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
@@ -458,8 +434,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         actions = {
             "admin_sync_configs": start_sync_configs_flow,
-            "admin_domain_management": _show_domain_management_menu,
-            "admin_add_domain": start_add_domain_flow,
             "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
             "admin_list_profiles": list_all_profiles,
             "admin_add_profile": start_add_profile_flow,
@@ -523,13 +497,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             inbound_id = int(parts[5])
             handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
             return
-        elif data.startswith("admin_activate_domain_"):
-            _bot.answer_callback_query(call.id)
-            domain_id = int(data.split('_')[-1])
-            _db_manager.set_active_subscription_domain(domain_id)
-            _show_domain_management_menu(admin_id, message)
-            return
-
+        
         elif data.startswith("admin_pi_save_"): # Profile Inbound Save
 
             _bot.answer_callback_query(call.id, "⏳ در حال ذخیره تغییرات...")
@@ -1744,12 +1712,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
    
-    def start_add_domain_flow(admin_id, message):
-        """فرآیند افزودن دامنه جدید را شروع می‌کند."""
-        _clear_admin_state(admin_id)
-        prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
-
+    
     def start_sync_configs_flow(admin_id, message):
         """
         فرآیند همگام‌سازی هوشمند کانفیگ‌ها از تمام سرورها با پنل‌های مختلف را اجرا می‌کند.
@@ -1800,28 +1763,5 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _show_admin_main_menu(admin_id)
         
         
-    def execute_delete_domain(admin_id, message, domain_id):
-        """منطق اصلی حذف دامنه از سیستم و دیتابیس را اجرا می‌کند."""
-        domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
-        if not domain:
-            _show_domain_management_menu(admin_id, message)
-            return
-
-        domain_name = domain['domain_name']
-        remove_domain_nginx_files(domain_name)
-        _db_manager.delete_subscription_domain(domain_id)
-        _show_domain_management_menu(admin_id, message)
-        
-    def _show_domain_management_menu(admin_id, message=None):
-        """منوی مدیریت دامنه‌ها را به همراه وضعیت SSL هر دامنه نمایش می‌دهد."""
-        domains = _db_manager.get_all_subscription_domains()
-        
-        domains_with_status = []
-        for row in domains:
-            domain_dict = dict(row)
-            domain_dict['ssl_status'] = check_ssl_certificate_exists(domain_dict['domain_name'])
-            domains_with_status.append(domain_dict)
-            
-        markup = inline_keyboards.get_domain_management_menu(domains_with_status)
-        text = "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید."
-        _show_menu(admin_id, text, markup, message)
+    
+    
