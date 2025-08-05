@@ -207,16 +207,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_SUB_PATH_PREFIX, admin_id, prompt_id)
         elif state == 'waiting_for_sub_path_prefix':
             data['sub_path_prefix'] = text; execute_add_server(admin_id, data)
-        elif state == 'waiting_for_domain_name':
-            domain_name = text.strip().lower()
-            # اینجا باید منطق certbot اضافه شود که برای سرعت فعلا حذف می‌کنیم
-            result = _db_manager.add_subscription_domain(domain_name)
-            if result:
-                _bot.edit_message_text(messages.DOMAIN_ADDED_SUCCESS, admin_id, prompt_id)
-            else:
-                _bot.send_message(admin_id, "❌ خطایی در افزودن دامنه رخ داد (ممکن است تکراری باشد).")
-            _clear_admin_state(admin_id)
-            _show_domain_management_menu(admin_id)
         elif state == 'waiting_for_server_id_to_delete':
             if not text.isdigit() or not (server := _db_manager.get_server_by_id(int(text))):
                 _bot.edit_message_text(f"{messages.SERVER_NOT_FOUND}\n\n{messages.DELETE_SERVER_PROMPT}", admin_id, prompt_id); return
@@ -302,38 +292,32 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             state_info['state'] = 'waiting_for_gateway_description'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
         elif state == 'waiting_for_domain_name':
-            domain_name = text.strip().lower()
+            domain_name = text.lower()
             state_info['state'] = 'waiting_for_letsencrypt_email'
             state_info['data']['domain_name'] = domain_name
             _bot.edit_message_text(
-                "برای دریافت گواهی SSL از Let's Encrypt، لطفاً آدرس ایمیل خود را وارد کنید:",
-                admin_id,
-                prompt_id
+                "برای دریافت گواهی SSL، لطفاً آدرس ایمیل خود را وارد کنید:",
+                admin_id, prompt_id
             )
             
         elif state == 'waiting_for_letsencrypt_email':
-            admin_email = text.strip()
+            admin_email = text
             _db_manager.update_setting('letsencrypt_email', admin_email)
-            
             domain_name = data['domain_name']
             _bot.edit_message_text(
                 f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.",
-                admin_id,
-                prompt_id
+                admin_id, prompt_id
             )
-
             success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
-
             if success:
                 if _db_manager.add_subscription_domain(domain_name):
-                    _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و گواهی SSL برای آن فعال گردید.")
+                     _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
                 else:
-                    _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
+                     _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
             else:
                 _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
-
             _clear_admin_state(admin_id)
-            _show_domain_management_menu(admin_id) # ارسال منوی جدید
+            _show_domain_management_menu(admin_id)
         elif state == 'waiting_for_card_number':
             if not text.isdigit() or len(text) not in [16]:
                 _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
