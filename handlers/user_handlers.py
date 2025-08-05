@@ -38,7 +38,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     _bot = bot_instance
     _db_manager = db_manager_instance
     _xui_api = xui_api_instance
-    _config_generator = ConfigGenerator(_xui_api, _db_manager)
+    _config_generator = ConfigGenerator(db_manager_instance)
 
     # --- هندلرهای اصلی ---
     @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith('user_'))
