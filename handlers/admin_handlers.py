@@ -314,44 +314,42 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _db_manager.update_setting('letsencrypt_email', admin_email)
             
             domain_name = data['domain_name']
-            _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
+            _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate. This might take up to 2 minutes.", admin_id, prompt_id)
 
             success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
 
             if success:
                 if _db_manager.add_subscription_domain(domain_name):
-                    _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
+                    _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
                 else:
-                    _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
+                    _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
             else:
-                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
+                _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
 
             _clear_admin_state(admin_id)
-            # پاس دادن message برای جلوگیری از خطا
-            _show_domain_management_menu(admin_id, message)
+            _show_domain_management_menu(admin_id) # FIX: Called without the message object to send a new menu
             
         elif state == 'waiting_for_domain_name':
             domain_name = text.strip().lower()
             admin_email = _db_manager.get_setting('letsencrypt_email')
             
             if admin_email:
-                _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL با ایمیل {admin_email}. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
+                _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate with email {admin_email}. This might take up to 2 minutes.", admin_id, prompt_id)
                 success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
                 if success:
                     if _db_manager.add_subscription_domain(domain_name):
-                        _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
+                        _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
                     else:
-                        _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
+                        _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
                 else:
-                    _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
+                    _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
                 _clear_admin_state(admin_id)
-                # پاس دادن message برای جلوگیری از خطا
-                _show_domain_management_menu(admin_id, message)
+                _show_domain_management_menu(admin_id) # FIX: Called without the message object to send a new menu
             else:
                 state_info['state'] = 'waiting_for_letsencrypt_email'
                 state_info['data']['domain_name'] = domain_name
-                _bot.edit_message_text("برای دریافت گواهی SSL، به یک آدرس ایمیل نیاز است. لطفاً ایمیل خود را وارد کنید (فقط یک بار پرسیده می‌شود):", admin_id, prompt_id)
-                
+                _bot.edit_message_text("An email address is required to obtain an SSL certificate from Let's Encrypt. Please enter your email (this will only be asked once):", admin_id, prompt_id)
+
         elif state == 'waiting_for_card_holder_name':
                 data['card_holder_name'] = text
                 state_info['state'] = 'waiting_for_gateway_description'
@@ -1853,17 +1851,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # نمایش مجدد منو (که به کاربر موفقیت عملیات را نشان می‌دهد)
         _show_domain_management_menu(admin_id, message)
         
-    def _show_domain_management_menu(admin_id, message):
-        """Displays the domain management menu with the SSL status for each domain."""
-        domain_rows = _db_manager.get_all_subscription_domains()
+    def _show_domain_management_menu(admin_id, message=None):
+        """
+        Displays the domain management menu.
+        If a message is provided, it edits it. Otherwise, it sends a new message.
+        """
+        domains = _db_manager.get_all_subscription_domains()
         
-        # --- FIX IS HERE ---
-        # Convert read-only database rows to mutable dictionaries before modifying them
         domains_with_status = []
-        for row in domain_rows:
-            domain_dict = dict(row) # Convert to a standard dictionary
+        for row in domains:
+            domain_dict = dict(row)
             domain_dict['ssl_status'] = check_ssl_certificate_exists(domain_dict['domain_name'])
             domains_with_status.append(domain_dict)
             
         markup = inline_keyboards.get_domain_management_menu(domains_with_status)
-        _show_menu(admin_id, "🌐 In this section, you can manage the anti-filter domains for subscription links.", markup, message)
+        text = "🌐 In this section, you can manage the anti-filter domains for subscription links."
+        
+        # The _show_menu helper function already handles if message is None or not.
+        # We just pass it along.
+        _show_menu(admin_id, text, markup, message)
