@@ -137,11 +137,11 @@ class DatabaseManager:
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
                 plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL, -- ستون جدید
+                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
                 purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 expire_date TIMESTAMPTZ,
                 initial_volume_gb REAL NOT NULL,
-                client_uuid TEXT,
+                client_uuid TEXT, -- این ستون باید وجود داشته باشد
                 client_email TEXT,
                 sub_id TEXT,
                 is_active BOOLEAN DEFAULT TRUE,
@@ -193,6 +193,8 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cursor:
+                    logger.info("Dropping old 'purchases' table if it exists...")
+                    cursor.execute("DROP TABLE IF EXISTS purchases CASCADE;")
                     for command in commands:
                         cursor.execute(command)
                 conn.commit()
