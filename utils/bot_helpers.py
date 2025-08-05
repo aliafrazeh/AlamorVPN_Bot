@@ -8,6 +8,7 @@ import uuid
 from utils import messages, helpers
 import datetime
 logger = logging.getLogger(__name__)
+from utils.config_generator import ConfigGenerator
 
 def send_subscription_info(bot: telebot.TeleBot, user_id: int, sub_link: str):
     """
@@ -38,33 +39,35 @@ def send_subscription_info(bot: telebot.TeleBot, user_id: int, sub_link: str):
         
 def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     """
-    فرآیند خرید پروفایل را نهایی کرده، کانفیگ‌ها را ساخته و لینک را به کاربر تحویل می‌دهد.
+    فرآیند خرید پروفایل را با استفاده از کلاس ConfigGenerator نهایی می‌کند.
     """
-    from utils.config_generator import create_configs_for_profile
-
     bot.send_message(user_telegram_id, "✅ پرداخت شما تایید شد. لطفاً صبر کنید، در حال ساخت کانفیگ‌های پروفایل شما هستیم...")
 
     profile_details = order_details['profile_details']
     requested_gb = order_details['requested_gb']
     
-    # ۱. ساخت کانفیگ‌ها با استفاده از موتور جنریتور
-    generated_configs, client_uuids = create_configs_for_profile(db_manager, user_telegram_id, profile_details['id'], requested_gb)
+    # ۱. ساخت یک نمونه از کلاس ConfigGenerator
+    config_gen = ConfigGenerator(db_manager)
+    
+    # ۲. فراخوانی متد کلاس برای ساخت کانفیگ‌ها
+    generated_configs, client_details = config_gen.create_subscription_for_profile(
+        user_telegram_id=user_telegram_id,
+        profile_id=profile_details['id'],
+        total_gb=requested_gb
+    )
     
     if not generated_configs:
         bot.send_message(user_telegram_id, "❌ متاسفانه در ساخت کانفیگ‌های پروفایل شما خطایی رخ داد. لطفاً با پشتیبانی تماس بگیرید.")
         return
 
-    # ۲. ثبت خرید در دیتابیس
     user_db_info = db_manager.get_user_by_telegram_id(user_telegram_id)
     duration_days = profile_details['duration_days']
     expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days))
     
-    # ساخت یک شناسه اشتراک یکتا برای لینک جدید
     new_sub_id = str(uuid.uuid4().hex)
     
-    # چون پروفایل ممکن است چند سروری باشد، server_id اولین سرور را به عنوان نماینده ذخیره می‌کنیم
-    # این بخش در آینده می‌تواند بهتر شود
-    representative_server_id = db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)[0]['server']['id']
+    profile_inbounds = db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
+    representative_server_id = profile_inbounds[0]['server']['id'] if profile_inbounds else None
 
     db_manager.add_purchase(
         user_id=user_db_info['id'],
@@ -73,13 +76,12 @@ def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
         profile_id=profile_details['id'],
         expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S"),
         initial_volume_gb=requested_gb,
-        client_uuid=client_uuids[0] if client_uuids else None, # UUID مشترک
-        client_email=f"profile-{profile_details['id']}",
+        client_uuid=client_details['uuid'],
+        client_email=client_details['email'],
         sub_id=new_sub_id,
-        single_configs=generated_configs # لیست کانفیگ‌های تکی را ذخیره می‌کنیم
+        single_configs=generated_configs
     )
     
-    # ۳. ساخت و تحویل لینک اشتراک هوشمند
     active_domain = db_manager.get_active_subscription_domain()
     if not active_domain:
         bot.send_message(user_telegram_id, "❌ دامنه فعالی برای لینک اشتراک تنظیم نشده است. لطفاً به پشتیبانی اطلاع دهید.")
