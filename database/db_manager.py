@@ -36,42 +36,12 @@ class DatabaseManager:
         return self.fernet.decrypt(encrypted_data.encode('utf-8')).decode('utf-8')
 
     def create_tables(self):
-        """Creates the necessary tables in the PostgreSQL database if they do not exist."""
+        """
+        جداول لازم را با ترتیب صحیح وابستگی‌ها در دیتاب斯 PostgreSQL ایجاد می‌کند. (نسخه نهایی و کامل)
+        """
+        # --- لیست کامل دستورات ساخت جداول با ترتیب صحیح ---
         commands = [
-            """
-        
-            CREATE TABLE IF NOT EXISTS profiles (
-                id SERIAL PRIMARY KEY,
-                name TEXT UNIQUE NOT NULL,
-                per_gb_price REAL NOT NULL, 
-                duration_days INTEGER NOT NULL,
-                description TEXT,
-                is_active BOOLEAN DEFAULT TRUE
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS synced_configs (
-                id SERIAL PRIMARY KEY,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                inbound_id INTEGER NOT NULL,
-                remark TEXT,
-                port INTEGER,
-                protocol TEXT,
-                settings TEXT, -- JSON string
-                stream_settings TEXT, -- JSON string
-                UNIQUE (server_id, inbound_id)
-            )
-            """,
-            """
-            
-            CREATE TABLE IF NOT EXISTS profile_inbounds (
-                id SERIAL PRIMARY KEY,
-                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                inbound_id INTEGER NOT NULL,
-                UNIQUE (profile_id, server_id, inbound_id)
-            )
-            """,
+            # --- بخش ۱: جداول پایه (بدون وابستگی به جداول دیگر پروژه) ---
             """
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -82,21 +52,14 @@ class DatabaseManager:
                 is_admin BOOLEAN DEFAULT FALSE,
                 join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """
-            CREATE TABLE IF NOT EXISTS tutorials (
-                id SERIAL PRIMARY KEY,
-                platform TEXT NOT NULL,
-                app_name TEXT NOT NULL,
-                forward_chat_id BIGINT NOT NULL,
-                forward_message_id BIGINT NOT NULL,
-                UNIQUE (platform, app_name)
-            )""",
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
-            )""",
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS servers (
                 id SERIAL PRIMARY KEY,
@@ -110,7 +73,8 @@ class DatabaseManager:
                 is_active BOOLEAN DEFAULT TRUE,
                 last_checked TIMESTAMPTZ,
                 is_online BOOLEAN DEFAULT FALSE
-            )""",
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS plans (
                 id SERIAL PRIMARY KEY,
@@ -121,31 +85,34 @@ class DatabaseManager:
                 price REAL,
                 per_gb_price REAL,
                 is_active BOOLEAN DEFAULT TRUE
-            )""",
+            )
+            """,
             """
-            CREATE TABLE IF NOT EXISTS server_inbounds (
+            CREATE TABLE IF NOT EXISTS tutorials (
                 id SERIAL PRIMARY KEY,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                inbound_id INTEGER NOT NULL,
-                remark TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                UNIQUE (server_id, inbound_id)
-            )""",
+                platform TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                forward_chat_id BIGINT NOT NULL,
+                forward_message_id BIGINT NOT NULL,
+                UNIQUE (platform, app_name)
+            )
+            """,
             """
-            CREATE TABLE IF NOT EXISTS purchases (
+            CREATE TABLE IF NOT EXISTS profiles (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
-                purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                expire_date TIMESTAMPTZ,
-                initial_volume_gb REAL NOT NULL,
-                client_uuid TEXT, -- این ستون باید وجود داشته باشد
-                client_email TEXT,
-                sub_id TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                single_configs_json TEXT
+                name TEXT UNIQUE NOT NULL,
+                per_gb_price REAL NOT NULL,
+                duration_days INTEGER NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS subscription_domains (
+                id SERIAL PRIMARY KEY,
+                domain_name TEXT UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )
             """,
             """
@@ -159,48 +126,104 @@ class DatabaseManager:
                 description TEXT,
                 is_active BOOLEAN DEFAULT TRUE,
                 priority INTEGER DEFAULT 0
-            )""",
+            )
+            """,
+            # --- بخش ۲: جداول وابسته (دارای Foreign Key به جداول پایه) ---
+            """
+            CREATE TABLE IF NOT EXISTS synced_configs (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                port INTEGER,
+                protocol TEXT,
+                settings TEXT,
+                stream_settings TEXT,
+                UNIQUE (server_id, inbound_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS server_inbounds (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                UNIQUE (server_id, inbound_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profile_inbounds (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                UNIQUE (profile_id, server_id, inbound_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+                purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expire_date TIMESTAMPTZ,
+                initial_volume_gb REAL NOT NULL,
+                client_uuid TEXT,
+                client_email TEXT,
+                sub_id TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                single_configs_json TEXT
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS free_test_usage (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 usage_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            )""",
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS payments (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 amount REAL NOT NULL,
                 payment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                receipt_message_id BIGINT, -- از INTEGER به BIGINT تغییر کرد
+                receipt_message_id BIGINT,
                 is_confirmed BOOLEAN DEFAULT FALSE,
-                admin_confirmed_by BIGINT, -- از INTEGER به BIGINT تغییر کرد
+                admin_confirmed_by BIGINT,
                 confirmation_date TIMESTAMPTZ,
                 order_details_json TEXT,
-                admin_notification_message_id BIGINT, -- از INTEGER به BIGINT تغییر کرد
+                admin_notification_message_id BIGINT,
                 authority TEXT,
                 ref_id TEXT
             )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS subscription_domains (
-                id SERIAL PRIMARY KEY,
-                domain_name TEXT UNIQUE NOT NULL,
-                is_active BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            )
             """
         ]
+        
+        conn = None
         try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cursor:
-              
-                    for command in commands:
-                        cursor.execute(command)
-                conn.commit()
-            logger.info("Database tables created or already exist.")
+            conn = self._get_connection()
+            with conn.cursor() as cur:
+                logger.info("Dropping potentially outdated tables (purchases, payments) to ensure schema is up-to-date...")
+                cur.execute("DROP TABLE IF EXISTS purchases CASCADE;")
+                cur.execute("DROP TABLE IF EXISTS payments CASCADE;")
+
+                logger.info("Creating all tables in the correct order...")
+                for command in commands:
+                    cur.execute(command)
+
+            conn.commit()
+            logger.info("Database tables created or updated successfully.")
         except psycopg2.Error as e:
-            logger.error(f"Error creating tables: {e}")
-            raise
+            logger.error(f"Error creating PostgreSQL tables: {e}")
+            if conn:
+                conn.rollback()
+            raise e
+        finally:
+            if conn:
+                conn.close()
 
     def _decrypt_server_row(self, server_row: psycopg2.extras.DictRow) -> dict or None:
         """Helper function to decrypt a single server record."""
