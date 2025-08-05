@@ -98,74 +98,73 @@ class ConfigGenerator:
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """
-        Generates the final config link by correctly parsing all VLESS variations (TCP, WS, TLS, Reality)
-        based on the panel's exact JSON structure. (Final Version)
+        لینک کانفیگ را با خواندن صحیح ساختار تودرتوی JSON برای تمام انواع VLESS تولید می‌کند.
+        (نسخه نهایی بر اساس خروجی واقعی پنل)
         """
         try:
             protocol = inbound_details.get('protocol')
             if protocol != 'vless':
-                logger.warning(f"Config generation for protocol '{protocol}' is not currently supported.")
+                logger.warning(f"Config generation for protocol '{protocol}' is not supported yet.")
                 return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
-            # Extract the address from the subscription URL, removing protocol and port
             address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
             
-            # Load the main settings objects
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
             protocol_settings = json.loads(inbound_details.get('settings', '{}'))
             
-            # --- Start building the parameters for the config link ---
+            # پارامترهای پایه را استخراج می‌کنیم
             params = {
                 'type': stream_settings.get('network', 'tcp'),
                 'security': stream_settings.get('security', 'none')
             }
 
-            # Extract 'flow' from the main settings
+            # استخراج 'flow' از تنظیمات اصلی پروتکل
             client_in_settings = protocol_settings.get('clients', [{}])[0]
             flow = client_in_settings.get('flow', '')
             if flow:
                 params['flow'] = flow
 
-            # Handle TLS settings
+            # مدیریت تنظیمات TLS
             if params['security'] == 'tls':
                 tls_settings = stream_settings.get('tlsSettings', {})
-                # The 'fingerprint' is nested inside a 'settings' object within 'tlsSettings'
                 nested_tls_settings = tls_settings.get('settings', {})
                 params['fp'] = nested_tls_settings.get('fingerprint', '')
                 params['sni'] = tls_settings.get('serverName', address)
 
-            # Handle Reality settings
+            # مدیریت کامل تنظیمات Reality
             if params['security'] == 'reality':
                 reality_settings = stream_settings.get('realitySettings', {})
-                # The main parameters are nested inside a 'settings' object within 'realitySettings'
                 nested_reality_settings = reality_settings.get('settings', {})
                 
                 params['pbk'] = nested_reality_settings.get('publicKey', '')
                 params['fp'] = nested_reality_settings.get('fingerprint', '')
                 params['spiderX'] = nested_reality_settings.get('spiderX', '')
                 
-                # Other parameters are directly under 'realitySettings'
                 sni_list = reality_settings.get('serverNames', [''])
                 params['sni'] = sni_list[0] if sni_list else ''
                 
                 short_ids_list = reality_settings.get('shortIds', [''])
                 params['sid'] = short_ids_list[0] if short_ids_list else ''
 
-            # Handle Network/Transport settings
+            # مدیریت تنظیمات نوع شبکه (Transport)
             if params['type'] == 'ws':
                 ws_settings = stream_settings.get('wsSettings', {})
                 params['path'] = ws_settings.get('path', '')
-                # The 'host' is directly under 'wsSettings', not in 'headers'
                 params['host'] = ws_settings.get('host', '')
             
             elif params['type'] == 'grpc':
                 grpc_settings = stream_settings.get('grpcSettings', {})
                 params['serviceName'] = grpc_settings.get('serviceName', '')
+                
+            elif params['type'] == 'httpupgrade':
+                upg_settings = stream_settings.get('httpupgradeSettings', {})
+                params['path'] = upg_settings.get('path', '')
+                params['host'] = upg_settings.get('host', '')
 
-            # --- Finish building the link ---
-            # Remove any empty parameters before creating the query string
+
+            # ساخت رشته نهایی و حذف پارامترهای خالی
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
             
             config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
