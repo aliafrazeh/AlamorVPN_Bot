@@ -175,4 +175,4 @@ class ConfigGenerator:
         if not generated_configs:
             return None, None
             
-        return generated_configs, [shared_uuid] # Return the shared UUID in a list
+        return generated_configs, [shared_uuid]
