@@ -166,18 +166,19 @@ class DatabaseManager:
             """
             CREATE TABLE IF NOT EXISTS payments (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 amount REAL NOT NULL,
                 payment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                receipt_message_id BIGINT,
+                receipt_message_id BIGINT, -- از INTEGER به BIGINT تغییر کرد
                 is_confirmed BOOLEAN DEFAULT FALSE,
-                admin_confirmed_by INTEGER,
+                admin_confirmed_by BIGINT, -- از INTEGER به BIGINT تغییر کرد
                 confirmation_date TIMESTAMPTZ,
                 order_details_json TEXT,
-                admin_notification_message_id BIGINT,
+                admin_notification_message_id BIGINT, -- از INTEGER به BIGINT تغییر کرد
                 authority TEXT,
                 ref_id TEXT
-            )""",
+            )
+            """,,
             """
             CREATE TABLE IF NOT EXISTS subscription_domains (
                 id SERIAL PRIMARY KEY,
