@@ -614,6 +614,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             return
 
         elif data.startswith("confirm_delete_domain_"):
+            # ۱. بلافاصله به کلیک پاسخ می‌دهیم
+            _bot.answer_callback_query(call.id, "⏳ در حال حذف دامنه و فایل‌های مربوطه...")
+            
+            # ۲. سپس منطق اصلی را اجرا می‌کنیم
             domain_id = int(data.split('_')[-1])
             execute_delete_domain(admin_id, message, domain_id)
             return
@@ -1836,21 +1840,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def execute_delete_domain(admin_id, message, domain_id):
+        """منطق اصلی حذف دامنه از سیستم و دیتابیس را اجرا می‌کند."""
         domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
         if not domain:
-            _bot.answer_callback_query(message.id, "دامنه یافت نشد.", show_alert=True)
+            # اگر دامنه یافت نشد، فقط منو را نمایش بده
+            _show_domain_management_menu(admin_id, message)
             return
 
         domain_name = domain['domain_name']
         
         # حذف فایل‌های سیستمی
         remove_domain_nginx_files(domain_name)
-        # اینجا می‌توان دستور certbot delete را هم اضافه کرد اما فعلا برای سادگی حذف فایل کافیست
         
         # حذف از دیتابیس
-        if _db_manager.delete_subscription_domain(domain_id):
-            _bot.answer_callback_query(message.id, f"دامنه {domain_name} با موفقیت حذف شد.")
-        else:
-            _bot.answer_callback_query(message.id, "خطا در حذف دامنه از دیتابیس.", show_alert=True)
+        _db_manager.delete_subscription_domain(domain_id)
             
+        # نمایش مجدد منو (که به کاربر موفقیت عملیات را نشان می‌دهد)
         _show_domain_management_menu(admin_id, message)
