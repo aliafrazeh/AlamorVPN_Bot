@@ -164,7 +164,15 @@ class DatabaseManager:
                 admin_notification_message_id BIGINT,
                 authority TEXT,
                 ref_id TEXT
-            )"""
+            )""",
+            """
+            CREATE TABLE IF NOT EXISTS subscription_domains (
+                id SERIAL PRIMARY KEY,
+                domain_name TEXT UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+            """
         ]
         try:
             with self._get_connection() as conn:
@@ -948,3 +956,63 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
+                
+                
+    def add_subscription_domain(self, domain_name):
+        sql = "INSERT INTO subscription_domains (domain_name) VALUES (%s) RETURNING id;"
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (domain_name,))
+                domain_id = cur.fetchone()[0]
+                conn.commit()
+                return domain_id
+        except psycopg2.IntegrityError:
+            return None # دامنه تکراری
+        except psycopg2.Error as e:
+            logger.error(f"Error adding subscription domain {domain_name}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_all_subscription_domains(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM subscription_domains ORDER BY id")
+                return cur.fetchall()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all subscription domains: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+
+    def set_active_subscription_domain(self, domain_id):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # ابتدا همه را غیرفعال کن
+                cur.execute("UPDATE subscription_domains SET is_active = FALSE")
+                # سپس دامنه مورد نظر را فعال کن
+                cur.execute("UPDATE subscription_domains SET is_active = TRUE WHERE id = %s", (domain_id,))
+                conn.commit()
+                return True
+        except psycopg2.Error as e:
+            logger.error(f"Error setting active domain for ID {domain_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_active_subscription_domain(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM subscription_domains WHERE is_active = TRUE LIMIT 1")
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting active subscription domain: {e}")
+            return None
+        finally:
+            if conn: conn.close()

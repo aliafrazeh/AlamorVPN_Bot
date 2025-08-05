@@ -205,6 +205,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_SUB_PATH_PREFIX, admin_id, prompt_id)
         elif state == 'waiting_for_sub_path_prefix':
             data['sub_path_prefix'] = text; execute_add_server(admin_id, data)
+        elif state == 'waiting_for_domain_name':
+            domain_name = text.strip().lower()
+            # اینجا باید منطق certbot اضافه شود که برای سرعت فعلا حذف می‌کنیم
+            result = _db_manager.add_subscription_domain(domain_name)
+            if result:
+                _bot.edit_message_text(messages.DOMAIN_ADDED_SUCCESS, admin_id, prompt_id)
+            else:
+                _bot.send_message(admin_id, "❌ خطایی در افزودن دامنه رخ داد (ممکن است تکراری باشد).")
+            _clear_admin_state(admin_id)
+            _show_domain_management_menu(admin_id)
         elif state == 'waiting_for_server_id_to_delete':
             if not text.isdigit() or not (server := _db_manager.get_server_by_id(int(text))):
                 _bot.edit_message_text(f"{messages.SERVER_NOT_FOUND}\n\n{messages.DELETE_SERVER_PROMPT}", admin_id, prompt_id); return
@@ -428,6 +438,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_domain_management": _show_domain_management_menu,
+            "admin_add_domain": start_add_domain_flow,
             "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
             "admin_list_profiles": list_all_profiles,
             "admin_add_profile": start_add_profile_flow,
@@ -491,7 +503,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             inbound_id = int(parts[5])
             handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
             return
-            
+        elif data.startswith("admin_activate_domain_"):
+            domain_id = int(data.split('_')[-1])
+            execute_activate_domain(admin_id, message, domain_id)
+            return
         elif data.startswith("admin_pi_save_"): # Profile Inbound Save
 
             _bot.answer_callback_query(call.id, "⏳ در حال ذخیره تغییرات...")
@@ -1676,3 +1691,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         # کاربر را به مرحله انتخاب سرور برمی‌گردانیم تا بتواند از سرور دیگری هم اینباند اضافه کند
         handle_profile_selection(admin_id, message, profile_id)
+        
+        
+    def _show_domain_management_menu(admin_id, message):
+        domains = _db_manager.get_all_subscription_domains()
+        markup = inline_keyboards.get_domain_management_menu(domains)
+        _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
+
+    def start_add_domain_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'prompt_message_id': prompt.message_id}
+
+    def execute_activate_domain(admin_id, message, domain_id):
+        if _db_manager.set_active_subscription_domain(domain_id):
+            domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
+            _bot.answer_callback_query(message.id, messages.DOMAIN_ACTIVATED_SUCCESS.format(domain_name=domain['domain_name'] if domain else ''))
+        else:
+            _bot.answer_callback_query(message.id, "❌ خطایی در فعال‌سازی دامنه رخ داد.", show_alert=True)
+        _show_domain_management_menu(admin_id, message)

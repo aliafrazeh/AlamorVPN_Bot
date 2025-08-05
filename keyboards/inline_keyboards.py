@@ -19,6 +19,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("💡 مدیریت آموزش‌ها", callback_data="admin_tutorial_management"),
         types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"),
         types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
+        types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"), 
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -412,3 +413,18 @@ def get_profile_selection_menu_for_user(profiles):
     return markup
 
 
+
+
+def get_domain_management_menu(domains):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("➕ افزودن دامنه جدید", callback_data="admin_add_domain"))
+    
+    if domains:
+        markup.add(types.InlineKeyboardButton("--- دامنه‌های ثبت شده ---", callback_data="no_action"))
+        for domain in domains:
+            status = " (فعال ✅)" if domain['is_active'] else ""
+            btn_text = f"فعال‌سازی: {domain['domain_name']}{status}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_activate_domain_{domain['id']}"))
+
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
