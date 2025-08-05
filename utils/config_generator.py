@@ -28,6 +28,9 @@ class ConfigGenerator:
         return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
+        """
+        موتور اصلی ساخت کانفیگ با تنظیم صحیح پارامتر flow. (نسخه نهایی)
+        """
         all_generated_configs = []
         generated_uuids = []
         
@@ -49,6 +52,11 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
+            panel_inbounds_details = {i['id']: i for i in api_client.list_inbounds()}
+            if not panel_inbounds_details:
+                logger.error(f"Could not retrieve inbound details from server {server_id}.")
+                continue
+
             expiry_time_ms = 0
             if duration_days and duration_days > 0:
                 expire_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
@@ -58,15 +66,27 @@ class ConfigGenerator:
 
             for s_inbound in inbounds:
                 inbound_id_on_panel = s_inbound['inbound_id']
+                inbound_details = panel_inbounds_details.get(inbound_id_on_panel)
+                if not inbound_details:
+                    logger.warning(f"Details for inbound ID {inbound_id_on_panel} not found on panel. Skipping.")
+                    continue
+
                 remark_base = custom_remark or f"AlamorBot-{user_telegram_id}"
-                
                 client_uuid = str(uuid.uuid4())
                 unique_client_email = f"in{inbound_id_on_panel}.{base_client_email}"
 
+                # --- اصلاح اصلی اینجاست: خواندن flow از اینباند الگو ---
+                try:
+                    protocol_settings = json.loads(inbound_details.get('settings', '{}'))
+                    template_flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
+                except (json.JSONDecodeError, IndexError):
+                    template_flow = ''
+                
                 client_settings = {
                     "id": client_uuid, "email": unique_client_email,
                     "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id
+                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id,
+                    "flow": template_flow # <-- تنظیم کردن flow برای کاربر جدید
                 }
                 
                 add_client_payload = {"id": inbound_id_on_panel, "settings": json.dumps({"clients": [client_settings]})}
@@ -77,25 +97,15 @@ class ConfigGenerator:
 
                 generated_uuids.append(client_uuid)
 
-                # --- اصلاح اصلی و نهایی اینجاست ---
-                # ما برای هر اینباند، جزئیات کامل آن را به صورت جداگانه دریافت می‌کنیم
-                inbound_details = api_client.get_inbound(inbound_id_on_panel)
-                if inbound_details:
-                    single_config = self._generate_single_config_url(
-                        client_uuid, server_data, inbound_details, remark_base
-                    )
-                    if single_config:
-                        all_generated_configs.append(single_config)
-                else:
-                    logger.warning(f"Could not fetch full details for inbound ID {inbound_id_on_panel}.")
-
+                single_config = self._generate_single_config_url(
+                    client_uuid, server_data, inbound_details, remark_base
+                )
+                if single_config:
+                    all_generated_configs.append(single_config)
 
         client_details_for_db = { 'uuids': generated_uuids, 'email': base_client_email, 'sub_id': shared_sub_id }
         
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
-    
-    # utils/config_generator.py
-
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """
         لینک کانفیگ را با خواندن صحیح ساختار تودرتوی JSON برای تمام انواع VLESS تولید می‌کند.
