@@ -94,10 +94,16 @@ class ConfigGenerator:
         
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
     
+    # utils/config_generator.py
+
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
+        """
+        لینک کانفیگ را با خواندن صحیح ساختار تودرتوی Reality تولید می‌کند. (نسخه نهایی)
+        """
         try:
             protocol = inbound_details.get('protocol')
             if protocol != 'vless':
+                logger.warning(f"Config generation for protocol '{protocol}' is not supported yet.")
                 return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
@@ -121,22 +127,38 @@ class ConfigGenerator:
                 params['sni'] = tls_settings.get('serverName', address)
                 params['fp'] = tls_settings.get('fingerprint', '')
 
+            # --- اصلاح اصلی و نهایی اینجاست ---
             if params['security'] == 'reality':
                 reality_settings = stream_settings.get('realitySettings', {})
-                params['sni'] = reality_settings.get('serverNames', [''])[0]
-                params['pbk'] = reality_settings.get('publicKey', '')
-                params['sid'] = reality_settings.get('shortId', '')
-                params['fp'] = reality_settings.get('fingerprint', '')
-                params['spiderX'] = reality_settings.get('spiderX', '')
+                # خواندن از آبجکت settings داخلی
+                nested_settings = reality_settings.get('settings', {})
+                
+                params['pbk'] = nested_settings.get('publicKey', '')
+                params['fp'] = nested_settings.get('fingerprint', '')
+                params['spiderX'] = nested_settings.get('spiderX', '')
+                
+                # خواندن از آبجکت realitySettings اصلی
+                sni_list = reality_settings.get('serverNames', [''])
+                params['sni'] = sni_list[0] if sni_list else ''
+                
+                short_ids_list = reality_settings.get('shortIds', [''])
+                params['sid'] = short_ids_list[0] if short_ids_list else ''
                 
             if params['type'] == 'ws':
                 ws_settings = stream_settings.get('wsSettings', {})
                 params['path'] = ws_settings.get('path', '/')
                 params['host'] = ws_settings.get('headers', {}).get('Host', address)
             
+            elif params['type'] == 'grpc':
+                grpc_settings = stream_settings.get('grpcSettings', {})
+                params['serviceName'] = grpc_settings.get('serviceName', '')
+
+            # حذف پارامترهای خالی قبل از ساخت لینک
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
             
-            return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            
+            return config_url
 
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
