@@ -100,3 +100,19 @@ server {{
         run_shell_command(['rm', '-f', nginx_enabled_path])
         run_shell_command(['systemctl', 'reload', 'nginx'])
         return False, str(e)
+    
+    
+def remove_domain_nginx_files(domain_name):
+    """فایل‌های کانفیگ Nginx برای یک دامنه را حذف می‌کند."""
+    nginx_config_path = f"/etc/nginx/sites-available/{domain_name}"
+    nginx_enabled_path = f"/etc/nginx/sites-enabled/{domain_name}"
+    
+    logger.info(f"Attempting to remove Nginx files for domain: {domain_name}")
+    
+    success1, _ = run_shell_command(['rm', '-f', nginx_config_path])
+    success2, _ = run_shell_command(['rm', '-f', nginx_enabled_path])
+    
+    # ریلود کردن Nginx برای اعمال تغییرات
+    reload_success, error = run_shell_command(['systemctl', 'reload', 'nginx'])
+    
+    return (success1 or success2) and reload_success

@@ -1110,3 +1110,21 @@ class DatabaseManager:
             return []
         finally:
             if conn: conn.close()
+            
+            
+    def delete_subscription_domain(self, domain_id):
+        sql = "DELETE FROM subscription_domains WHERE id = %s;"
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (domain_id,))
+                conn.commit()
+                return cur.rowcount > 0 # اگر سطری حذف شده باشد True برمی‌گرداند
+        except psycopg2.Error as e:
+            logger.error(f"Error deleting subscription domain {domain_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+            
+            

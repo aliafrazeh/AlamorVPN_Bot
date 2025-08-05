@@ -417,15 +417,20 @@ def get_profile_selection_menu_for_user(profiles):
 
 
 def get_domain_management_menu(domains):
-    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup = types.InlineKeyboardMarkup(row_width=2) # عرض ردیف را به ۲ تغییر می‌دهیم
     markup.add(types.InlineKeyboardButton("➕ افزودن دامنه جدید", callback_data="admin_add_domain"))
     
     if domains:
         markup.add(types.InlineKeyboardButton("--- دامنه‌های ثبت شده ---", callback_data="no_action"))
         for domain in domains:
             status = " (فعال ✅)" if domain['is_active'] else ""
-            btn_text = f"فعال‌سازی: {domain['domain_name']}{status}"
-            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_activate_domain_{domain['id']}"))
+            btn_text_activate = f"فعال‌سازی: {domain['domain_name']}{status}"
+            btn_text_delete = "❌ حذف"
+            
+            markup.add(
+                types.InlineKeyboardButton(btn_text_activate, callback_data=f"admin_activate_domain_{domain['id']}"),
+                types.InlineKeyboardButton(btn_text_delete, callback_data=f"admin_delete_domain_{domain['id']}")
+            )
 
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup
