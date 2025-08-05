@@ -417,14 +417,18 @@ def get_profile_selection_menu_for_user(profiles):
 
 
 def get_domain_management_menu(domains):
-    markup = types.InlineKeyboardMarkup(row_width=2) # عرض ردیف را به ۲ تغییر می‌دهیم
+    markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("➕ افزودن دامنه جدید", callback_data="admin_add_domain"))
     
     if domains:
         markup.add(types.InlineKeyboardButton("--- دامنه‌های ثبت شده ---", callback_data="no_action"))
         for domain in domains:
             status = " (فعال ✅)" if domain['is_active'] else ""
-            btn_text_activate = f"فعال‌سازی: {domain['domain_name']}{status}"
+            
+            # --- منطق جدید برای نمایش وضعیت SSL ---
+            ssl_emoji = "🌐" if domain.get('ssl_status') else "⚠️"
+            
+            btn_text_activate = f"{ssl_emoji} فعال‌سازی: {domain['domain_name']}{status}"
             btn_text_delete = "❌ حذف"
             
             markup.add(

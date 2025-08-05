@@ -18,7 +18,7 @@ from handlers.user_handlers import _user_states
 from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
 from api_client.factory import get_api_client
 from utils.helpers import normalize_panel_inbounds
-from utils.system_helpers import setup_domain_nginx_and_ssl, remove_domain_nginx_files
+from utils.system_helpers import setup_domain_nginx_and_ssl, remove_domain_nginx_files , check_ssl_certificate_exists
 from utils.bot_helpers import finalize_profile_purchase
 logger = logging.getLogger(__name__)
 
@@ -1857,3 +1857,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         # نمایش مجدد منو (که به کاربر موفقیت عملیات را نشان می‌دهد)
         _show_domain_management_menu(admin_id, message)
+        
+    def _show_domain_management_menu(admin_id, message):
+        """منوی مدیریت دامنه‌ها را به همراه وضعیت SSL هر دامنه نمایش می‌دهد."""
+        domains = _db_manager.get_all_subscription_domains()
+        
+        # اضافه کردن وضعیت SSL به هر دامنه
+        for domain in domains:
+            domain['ssl_status'] = check_ssl_certificate_exists(domain['domain_name'])
+            
+        markup = inline_keyboards.get_domain_management_menu(domains)
+        _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)

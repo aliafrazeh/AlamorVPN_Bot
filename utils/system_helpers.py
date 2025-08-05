@@ -116,3 +116,19 @@ def remove_domain_nginx_files(domain_name):
     reload_success, error = run_shell_command(['systemctl', 'reload', 'nginx'])
     
     return (success1 or success2) and reload_success
+
+
+def check_ssl_certificate_exists(domain_name):
+    """
+    بررسی می‌کند آیا گواهی SSL برای یک دامنه خاص در مسیر استاندارد Certbot وجود دارد یا خیر.
+    """
+    cert_path = f"/etc/letsencrypt/live/{domain_name}/fullchain.pem"
+    key_path = f"/etc/letsencrypt/live/{domain_name}/privkey.pem"
+    
+    # os.path.exists نیاز به sudo ندارد و برای این بررسی کافی است
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        logger.info(f"SSL certificate found for domain {domain_name}.")
+        return True
+    else:
+        logger.warning(f"SSL certificate NOT found for domain {domain_name}.")
+        return False
