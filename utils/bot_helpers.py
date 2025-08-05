@@ -40,7 +40,7 @@ def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     """
     فرآیند خرید پروفایل را نهایی کرده، کانفیگ‌ها را ساخته و لینک را به کاربر تحویل می‌دهد.
     """
-    from .config_generator import create_configs_for_profile
+    from utils.config_generator import create_configs_for_profile
 
     bot.send_message(user_telegram_id, "✅ پرداخت شما تایید شد. لطفاً صبر کنید، در حال ساخت کانفیگ‌های پروفایل شما هستیم...")
 

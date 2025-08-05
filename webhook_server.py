@@ -29,7 +29,7 @@ app = Flask(__name__)
 db_manager = DatabaseManager()
 bot = telebot.TeleBot(BOT_TOKEN)
 # یک نمونه از کانفیگ جنریتور برای خرید عادی
-config_gen_normal = ConfigGenerator(XuiAPIClient, db_manager)
+config_gen_normal = ConfigGenerator(db_manager)
 
 ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
 BOT_USERNAME = BOT_USERNAME_ALAMOR
