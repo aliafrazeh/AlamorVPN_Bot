@@ -314,41 +314,44 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _db_manager.update_setting('letsencrypt_email', admin_email)
             
             domain_name = data['domain_name']
-            _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate. This might take up to 2 minutes.", admin_id, prompt_id)
+            _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
 
             success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
 
             if success:
                 if _db_manager.add_subscription_domain(domain_name):
-                    _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
+                    _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
                 else:
-                    _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
+                    _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
             else:
-                _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
+                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
 
             _clear_admin_state(admin_id)
-            _show_domain_management_menu(admin_id, message) # FIX: Pass the 'message' object
+            # پاس دادن message برای جلوگیری از خطا
+            _show_domain_management_menu(admin_id, message)
             
         elif state == 'waiting_for_domain_name':
             domain_name = text.strip().lower()
             admin_email = _db_manager.get_setting('letsencrypt_email')
             
             if admin_email:
-                _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate with email {admin_email}. This might take up to 2 minutes.", admin_id, prompt_id)
+                _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL با ایمیل {admin_email}. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
                 success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
                 if success:
                     if _db_manager.add_subscription_domain(domain_name):
-                        _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
+                        _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
                     else:
-                        _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
+                        _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
                 else:
-                    _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
+                    _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
                 _clear_admin_state(admin_id)
-                _show_domain_management_menu(admin_id, message) # FIX: Pass the 'message' object
+                # پاس دادن message برای جلوگیری از خطا
+                _show_domain_management_menu(admin_id, message)
             else:
                 state_info['state'] = 'waiting_for_letsencrypt_email'
                 state_info['data']['domain_name'] = domain_name
-                _bot.edit_message_text("An email address is required to obtain an SSL certificate from Let's Encrypt. Please enter your email (this will only be asked once):", admin_id, prompt_id)
+                _bot.edit_message_text("برای دریافت گواهی SSL، به یک آدرس ایمیل نیاز است. لطفاً ایمیل خود را وارد کنید (فقط یک بار پرسیده می‌شود):", admin_id, prompt_id)
+                
         elif state == 'waiting_for_card_holder_name':
                 data['card_holder_name'] = text
                 state_info['state'] = 'waiting_for_gateway_description'
