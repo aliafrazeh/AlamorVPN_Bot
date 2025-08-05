@@ -63,3 +63,43 @@ def generate_random_string(length=10) -> str:
     """
     characters = string.ascii_lowercase + string.digits
     return ''.join(random.choice(characters) for i in range(length))
+
+
+
+def normalize_panel_inbounds(panel_type, raw_inbounds):
+    """
+    اطلاعات خام اینباندها از پنل‌های مختلف را گرفته و به یک فرمت استاندارد و یکسان تبدیل می‌کند.
+    این تابع قلب معماری چند پنلی ماست.
+    """
+    if not raw_inbounds:
+        return []
+
+    normalized_list = []
+    
+    # --- منطق تبدیل برای هر نوع پنل ---
+    
+    # پنل‌های سنایی (x-ui) و علیرضا (alireza) فرمت خروجی یکسانی برای list_inbounds دارند.
+    # اگر در آینده پنلی با خروجی متفاوت اضافه شود، فقط کافیست یک بلوک elif جدید در اینجا برای آن بنویسیم.
+    if panel_type in ['x-ui', 'alireza']:
+        for inbound in raw_inbounds:
+            # ما تمام اطلاعات را به صورت کامل ذخیره می‌کنیم
+            normalized_list.append({
+                'id': inbound.get('id'),
+                'remark': inbound.get('remark', ''),
+                'port': inbound.get('port'),
+                'protocol': inbound.get('protocol'),
+                'settings': inbound.get('settings', '{}'),
+                'streamSettings': inbound.get('streamSettings', '{}'),
+                # می‌توانیم فیلدهای بیشتری را نیز در صورت نیاز اینجا اضافه کنیم
+            })
+            
+    # مثال برای آینده:
+    # elif panel_type == 'hiddify':
+    #     for config in raw_inbounds:
+    #         normalized_list.append({
+    #             'id': config.get('uuid'),
+    #             'remark': config.get('name'),
+    #             ...
+    #         })
+
+    return normalized_list

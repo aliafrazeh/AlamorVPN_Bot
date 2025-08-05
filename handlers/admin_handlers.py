@@ -17,7 +17,7 @@ from utils.bot_helpers import send_subscription_info # این ایمپورت ج�
 from handlers.user_handlers import _user_states
 from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
 from api_client.factory import get_api_client
-# handlers/admin_handlers.py
+from utils.helpers import normalize_panel_inbounds
 from utils.system_helpers import setup_domain_nginx_and_ssl
 logger = logging.getLogger(__name__)
 
@@ -1761,13 +1761,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
     def start_sync_configs_flow(admin_id, message):
         """
-        فرآیند همگام‌سازی کانفیگ‌ها از تمام سرورها به دیتابیس محلی را اجرا می‌کند.
+        فرآیند همگام‌سازی هوشمند کانفیگ‌ها از تمام سرورها با پنل‌های مختلف را اجرا می‌کند.
         """
-        _bot.edit_message_text("⏳ شروع فرآیند همگام‌سازی کانفیگ‌ها از تمام سرورها... لطفاً صبر کنید.", admin_id, message.message_id)
-        
+        try:
+            _bot.edit_message_text("⏳ شروع فرآیند همگام‌سازی... این عملیات ممکن است کمی طول بکشد.", admin_id, message.message_id)
+        except Exception:
+            pass
+
         servers = _db_manager.get_all_servers(only_active=False)
         if not servers:
             _bot.send_message(admin_id, "هیچ سروری برای همگام‌سازی یافت نشد.")
+            _show_admin_main_menu(admin_id)
             return
 
         report = "📊 **گزارش همگام‌سازی کانفیگ‌ها:**\n\n"
@@ -1775,16 +1779,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         for server in servers:
             server_name = server['name']
-            api_client = get_api_client(server)
+            panel_type = server['panel_type']
             
+            # ۱. اتصال به پنل با کلاینت مناسب
+            api_client = get_api_client(server)
             if not api_client or not api_client.check_login():
                 report += f"❌ **{helpers.escape_markdown_v1(server_name)}**: اتصال ناموفق بود.\n"
                 continue
                 
-            panel_inbounds = api_client.list_inbounds()
+            # ۲. دریافت لیست خام اینباندها
+            panel_inbounds_raw = api_client.list_inbounds()
             
-            # این تابع تعداد کانفیگ‌های همگام شده یا -1 در صورت خطا را برمی‌گرداند
-            sync_result = _db_manager.sync_configs_for_server(server['id'], panel_inbounds)
+            # ۳. تبدیل داده‌های خام به فرمت استاندارد با استفاده از نرمالایزر
+            normalized_configs = normalize_panel_inbounds(panel_type, panel_inbounds_raw)
+            
+            # ۴. ذخیره داده‌های استاندارد شده در دیتابیس محلی
+            sync_result = _db_manager.sync_configs_for_server(server['id'], normalized_configs)
             
             if sync_result > 0:
                 report += f"✅ **{helpers.escape_markdown_v1(server_name)}**: {sync_result} کانفیگ با موفقیت همگام‌سازی شد.\n"

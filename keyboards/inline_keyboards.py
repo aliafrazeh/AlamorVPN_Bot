@@ -19,7 +19,8 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("💡 مدیریت آموزش‌ها", callback_data="admin_tutorial_management"),
         types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"),
         types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
-        types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"), 
+        types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"),
+        types.InlineKeyboardButton("🔄 همگام‌سازی کانفیگ‌ها", callback_data="admin_sync_configs"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup

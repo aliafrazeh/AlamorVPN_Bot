@@ -1029,3 +1029,45 @@ class DatabaseManager:
             return None
         finally:
             if conn: conn.close()
+            
+            
+    def sync_configs_for_server(self, server_id, configs_data):
+        """کانفیگ‌های یک سرور را در دیتابیس محلی همگام‌سازی می‌کند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # 1. حذف تمام رکوردهای قدیمی برای این سرور
+                cur.execute("DELETE FROM synced_configs WHERE server_id = %s", (server_id,))
+                
+                # 2. آماده‌سازی و درج رکوردهای جدید
+                if not configs_data:
+                    conn.commit()
+                    return 0 # هیچ کانفیگی برای افزودن وجود نداشت
+
+                data_to_insert = []
+                for config in configs_data:
+                    data_to_insert.append((
+                        server_id,
+                        config.get('id'),
+                        config.get('remark'),
+                        config.get('port'),
+                        config.get('protocol'),
+                        config.get('settings', '{}'),
+                        config.get('streamSettings', '{}')
+                    ))
+                
+                cur.executemany(
+                    """
+                    INSERT INTO synced_configs (server_id, inbound_id, remark, port, protocol, settings, stream_settings)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    data_to_insert
+                )
+                conn.commit()
+                return len(data_to_insert)
+        except psycopg2.Error as e:
+            logger.error(f"Error syncing configs for server {server_id}: {e}")
+            if conn: conn.rollback()
+            return -1 # نشان‌دهنده خطا
+        finally:
+            if conn: conn.close()
