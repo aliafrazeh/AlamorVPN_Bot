@@ -626,7 +626,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id))
     def handle_admin_stateful_messages(message):
-        _handle_stateful_message(message.from_user.id, message)
+            (message.from_user.id, message)
         
         
 
@@ -1775,11 +1775,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
    
     def start_add_domain_flow(admin_id, message):
+        """Initiates the process for adding a new domain."""
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'prompt_message_id': prompt.message_id}
-
-    
+        
+        # --- FIX IS HERE ---
+        # We now correctly initialize the 'data' dictionary.
+        _admin_states[admin_id]
         
         
     def start_sync_configs_flow(admin_id, message):
