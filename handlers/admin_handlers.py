@@ -301,18 +301,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['merchant_id'] = text
             state_info['state'] = 'waiting_for_gateway_description'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
-        
-        elif state == 'waiting_for_card_number':
-            if not text.isdigit() or len(text) not in [16]:
-                _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
-                return
-            data['card_number'] = text
-            state_info['state'] = 'waiting_for_card_holder_name'
-            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
-        if state == 'waiting_for_domain_name':
+        elif state == 'waiting_for_domain_name':
             domain_name = text.strip().lower()
-            
-            # ۱. همیشه به مرحله پرسیدن ایمیل می‌رویم
             state_info['state'] = 'waiting_for_letsencrypt_email'
             state_info['data']['domain_name'] = domain_name
             _bot.edit_message_text(
@@ -323,22 +313,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         elif state == 'waiting_for_letsencrypt_email':
             admin_email = text.strip()
-            # ایمیل را در دیتابیس ذخیره می‌کنیم تا برای دفعات بعد به عنوان پیش‌فرض پیشنهاد داده شود (اما همیشه پرسیده می‌شود)
             _db_manager.update_setting('letsencrypt_email', admin_email)
             
             domain_name = data['domain_name']
-            
-            # ۲. به ادمین اطلاع می‌دهیم که فرآیند شروع شده
             _bot.edit_message_text(
                 f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.",
                 admin_id,
                 prompt_id
             )
 
-            # ۳. تابع اصلی دریافت SSL را فراخوانی می‌کنیم
             success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
 
-            # ۴. نتیجه نهایی را به ادمین گزارش می‌دهیم
             if success:
                 if _db_manager.add_subscription_domain(domain_name):
                     _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و گواهی SSL برای آن فعال گردید.")
@@ -348,8 +333,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
 
             _clear_admin_state(admin_id)
-            # منوی مدیریت دامنه‌ها را به صورت یک پیام جدید ارسال می‌کنیم
-            _show_domain_management_menu(admin_id)
+            _show_domain_management_menu(admin_id) # ارسال منوی جدید
+        elif state == 'waiting_for_card_number':
+            if not text.isdigit() or len(text) not in [16]:
+                _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
+                return
+            data['card_number'] = text
+            state_info['state'] = 'waiting_for_card_holder_name'
+            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
+        
         elif state == 'waiting_for_card_holder_name':
                 data['card_holder_name'] = text
                 state_info['state'] = 'waiting_for_gateway_description'
@@ -548,17 +540,12 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
             return
         elif data.startswith("admin_activate_domain_"):
-            # ۱. بلافاصله به کلیک کاربر پاسخ می‌دهیم تا خطا ندهد
             _bot.answer_callback_query(call.id)
-            
             domain_id = int(data.split('_')[-1])
-            
-            # ۲. عملیات دیتابیس را انجام می‌دهیم
             _db_manager.set_active_subscription_domain(domain_id)
-            
-            # ۳. منو را مجدداً نمایش می‌دهیم. تغییر وضعیت دکمه به کاربر موفقیت را نشان می‌دهد
             _show_domain_management_menu(admin_id, message)
             return
+
         elif data.startswith("admin_pi_save_"): # Profile Inbound Save
 
             _bot.answer_callback_query(call.id, "⏳ در حال ذخیره تغییرات...")
@@ -599,9 +586,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("inbound_save_"):
             server_id = int(data.split('_')[-1])
             execute_save_inbounds(admin_id, message, server_id)
-        elif data.startswith("admin_delete_domain_"): 
+        elif data.startswith("admin_delete_domain_"):
             domain_id = int(data.split('_')[-1])
-            # نمایش پیام تایید قبل از حذف
             domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
             if domain:
                 confirm_markup = inline_keyboards.get_confirmation_menu(
@@ -611,10 +597,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             return
 
         elif data.startswith("confirm_delete_domain_"):
-            # ۱. بلافاصله به کلیک پاسخ می‌دهیم
-            _bot.answer_callback_query(call.id, "⏳ در حال حذف دامنه و فایل‌های مربوطه...")
-            
-            # ۲. سپس منطق اصلی را اجرا می‌کنیم
+            _bot.answer_callback_query(call.id, "⏳ در حال حذف دامنه...")
             domain_id = int(data.split('_')[-1])
             execute_delete_domain(admin_id, message, domain_id)
             return
@@ -1778,13 +1761,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
    
     def start_add_domain_flow(admin_id, message):
-        """Initiates the process for adding a new domain."""
+        """فرآیند افزودن دامنه جدید را شروع می‌کند."""
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
-        
-        # This line creates the new state for the admin user.
         _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
-            
+
     def start_sync_configs_flow(admin_id, message):
         """
         فرآیند همگام‌سازی هوشمند کانفیگ‌ها از تمام سرورها با پنل‌های مختلف را اجرا می‌کند.
@@ -1839,26 +1820,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         """منطق اصلی حذف دامنه از سیستم و دیتابیس را اجرا می‌کند."""
         domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
         if not domain:
-            # اگر دامنه یافت نشد، فقط منو را نمایش بده
             _show_domain_management_menu(admin_id, message)
             return
 
         domain_name = domain['domain_name']
-        
-        # حذف فایل‌های سیستمی
         remove_domain_nginx_files(domain_name)
-        
-        # حذف از دیتابیس
         _db_manager.delete_subscription_domain(domain_id)
-            
-        # نمایش مجدد منو (که به کاربر موفقیت عملیات را نشان می‌دهد)
         _show_domain_management_menu(admin_id, message)
         
     def _show_domain_management_menu(admin_id, message=None):
-        """
-        Displays the domain management menu.
-        If a message is provided, it edits it. Otherwise, it sends a new message.
-        """
+        """منوی مدیریت دامنه‌ها را به همراه وضعیت SSL هر دامنه نمایش می‌دهد."""
         domains = _db_manager.get_all_subscription_domains()
         
         domains_with_status = []
@@ -1868,8 +1839,5 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             domains_with_status.append(domain_dict)
             
         markup = inline_keyboards.get_domain_management_menu(domains_with_status)
-        text = "🌐 In this section, you can manage the anti-filter domains for subscription links."
-        
-        # The _show_menu helper function already handles if message is None or not.
-        # We just pass it along.
+        text = "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید."
         _show_menu(admin_id, text, markup, message)

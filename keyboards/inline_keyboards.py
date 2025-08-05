@@ -424,8 +424,6 @@ def get_domain_management_menu(domains):
         markup.add(types.InlineKeyboardButton("--- دامنه‌های ثبت شده ---", callback_data="no_action"))
         for domain in domains:
             status = " (فعال ✅)" if domain['is_active'] else ""
-            
-            # --- منطق جدید برای نمایش وضعیت SSL ---
             ssl_emoji = "🌐" if domain.get('ssl_status') else "⚠️"
             
             btn_text_activate = f"{ssl_emoji} فعال‌سازی: {domain['domain_name']}{status}"
