@@ -1779,11 +1779,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
         
-        # --- FIX IS HERE ---
-        # We now correctly initialize the 'data' dictionary.
-        _admin_states[admin_id]
-        
-        
+        # This line creates the new state for the admin user.
+        _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
+            
     def start_sync_configs_flow(admin_id, message):
         """
         فرآیند همگام‌سازی هوشمند کانفیگ‌ها از تمام سرورها با پنل‌های مختلف را اجرا می‌کند.
