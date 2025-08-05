@@ -56,9 +56,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _show_user_main_menu(user_id, message_to_edit=call.message)
         elif data == "user_buy_service":
             start_purchase(user_id, call.message)
-        elif data.startswith("buy_select_profile_"):
-            profile_id = int(data.replace("buy_select_profile_", ""))
-            select_profile_for_purchase(user_id, profile_id, message)
         elif data == "user_my_services":
             show_my_services_list(user_id, call.message)
         
@@ -131,6 +128,9 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("select_gateway_"):
             gateway_id = int(data.replace("select_gateway_", ""))
             select_payment_gateway(user_id, gateway_id, call.message)
+        elif data.startswith("buy_select_profile_"):
+            profile_id = int(data.replace("buy_select_profile_", ""))
+            select_profile_for_purchase(user_id, profile_id, message)
         elif data == "cancel_order":
             _clear_user_state(user_id)
             _bot.edit_message_text(messages.ORDER_CANCELED, user_id, call.message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
