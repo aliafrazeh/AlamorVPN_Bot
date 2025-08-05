@@ -309,47 +309,47 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['card_number'] = text
             state_info['state'] = 'waiting_for_card_holder_name'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
+        if state == 'waiting_for_domain_name':
+            domain_name = text.strip().lower()
+            
+            # ۱. همیشه به مرحله پرسیدن ایمیل می‌رویم
+            state_info['state'] = 'waiting_for_letsencrypt_email'
+            state_info['data']['domain_name'] = domain_name
+            _bot.edit_message_text(
+                "برای دریافت گواهی SSL از Let's Encrypt، لطفاً آدرس ایمیل خود را وارد کنید:",
+                admin_id,
+                prompt_id
+            )
+            
         elif state == 'waiting_for_letsencrypt_email':
             admin_email = text.strip()
+            # ایمیل را در دیتابیس ذخیره می‌کنیم تا برای دفعات بعد به عنوان پیش‌فرض پیشنهاد داده شود (اما همیشه پرسیده می‌شود)
             _db_manager.update_setting('letsencrypt_email', admin_email)
             
             domain_name = data['domain_name']
-            _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate. This might take up to 2 minutes.", admin_id, prompt_id)
+            
+            # ۲. به ادمین اطلاع می‌دهیم که فرآیند شروع شده
+            _bot.edit_message_text(
+                f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.",
+                admin_id,
+                prompt_id
+            )
 
+            # ۳. تابع اصلی دریافت SSL را فراخوانی می‌کنیم
             success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
 
+            # ۴. نتیجه نهایی را به ادمین گزارش می‌دهیم
             if success:
                 if _db_manager.add_subscription_domain(domain_name):
-                    _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
+                    _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و گواهی SSL برای آن فعال گردید.")
                 else:
-                    _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
+                    _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
             else:
-                _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
+                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message_text}")
 
             _clear_admin_state(admin_id)
-            _show_domain_management_menu(admin_id) # FIX: Called without the message object to send a new menu
-            
-        elif state == 'waiting_for_domain_name':
-            domain_name = text.strip().lower()
-            admin_email = _db_manager.get_setting('letsencrypt_email')
-            
-            if admin_email:
-                _bot.edit_message_text(f"⏳ Please wait...\nSetting up domain {domain_name} and obtaining SSL certificate with email {admin_email}. This might take up to 2 minutes.", admin_id, prompt_id)
-                success, message_text = setup_domain_nginx_and_ssl(domain_name, admin_email)
-                if success:
-                    if _db_manager.add_subscription_domain(domain_name):
-                        _bot.send_message(admin_id, f"✅ Operation completed successfully!\nDomain {domain_name} has been added and SSL is activated for it.")
-                    else:
-                        _bot.send_message(admin_id, "❌ The domain was configured in Nginx, but an error occurred while saving to the database.")
-                else:
-                    _bot.send_message(admin_id, f"❌ Operation failed.\nReason: {message_text}")
-                _clear_admin_state(admin_id)
-                _show_domain_management_menu(admin_id) # FIX: Called without the message object to send a new menu
-            else:
-                state_info['state'] = 'waiting_for_letsencrypt_email'
-                state_info['data']['domain_name'] = domain_name
-                _bot.edit_message_text("An email address is required to obtain an SSL certificate from Let's Encrypt. Please enter your email (this will only be asked once):", admin_id, prompt_id)
-
+            # منوی مدیریت دامنه‌ها را به صورت یک پیام جدید ارسال می‌کنیم
+            _show_domain_management_menu(admin_id)
         elif state == 'waiting_for_card_holder_name':
                 data['card_holder_name'] = text
                 state_info['state'] = 'waiting_for_gateway_description'
@@ -624,7 +624,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
-    @_bot.message_handler(func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id))
+    @_bot.message_handler(
+    content_types=['text'],
+    func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id, {}).get('state')
+            )
     def handle_admin_stateful_messages(message):
             (message.from_user.id, message)
         
