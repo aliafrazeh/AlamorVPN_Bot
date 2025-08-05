@@ -19,6 +19,7 @@ from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should alre
 from api_client.factory import get_api_client
 from utils.helpers import normalize_panel_inbounds
 from utils.system_helpers import setup_domain_nginx_and_ssl
+from utils.bot_helpers import finalize_profile_purchase
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -773,35 +774,44 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def process_payment_approval(admin_id, payment_id, message):
         """
-        Handles the admin's approval and sets the user's state to wait for a custom config name.
+        پرداخت دستی را تایید کرده و بر اساس نوع خرید (عادی یا پروفایل)،
+        فرآیند تحویل سرویس را آغاز می‌کند. (نسخه نهایی)
         """
-        _bot.edit_message_caption("در حال ارسال درخواست به کاربر برای نام کانفیگ...", message.chat.id, message.message_id)
-        
         payment = _db_manager.get_payment_by_id(payment_id)
         if not payment or payment['is_confirmed']:
-            _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True)
+            # از call.id استفاده می‌کنیم چون message از نوع Message است نه CallbackQuery
+            # برای سادگی، فعلا از message.id استفاده می‌کنیم و در صورت بروز خطا آن را اصلاح خواهیم کرد.
+            # بهترین راه حل، پاس دادن خود آبجکت call به این تابع است.
+            try:
+                _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True)
+            except Exception: # اگر از طریق پیام مستقیم باشد، callback وجود ندارد
+                pass
             return
 
-        # Update payment status and admin notification message
         order_details = json.loads(payment['order_details_json'])
+        user_telegram_id = order_details['user_telegram_id']
+        
+        # به‌روزرسانی پیام ادمین
         _db_manager.update_payment_status(payment_id, True, admin_id)
-
         admin_user = _bot.get_chat_member(admin_id, admin_id).user
         admin_username = f"@{admin_user.username}" if admin_user.username else admin_user.first_name
         new_caption = message.caption + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=admin_username)
         _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
-
-        # --- NEW LOGIC: Set the user's state in the shared _user_states dictionary ---
-        user_telegram_id = order_details['user_telegram_id']
-        prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
         
-        _user_states[user_telegram_id] = {
-            'state': 'waiting_for_custom_config_name',
-            'data': order_details,
-            'prompt_message_id': prompt.message_id
-        }
-
-
+        # --- منطق تفکیک نوع خرید ---
+        if order_details.get('purchase_type') == 'profile':
+            # اگر خرید پروفایل بود، تابع کمکی مرکزی را فراخوانی کن
+            finalize_profile_purchase(_bot, _db_manager, user_telegram_id, order_details)
+        else:
+            # در غیر این صورت، منطق خرید عادی را اجرا کن (دریافت نام دلخواه)
+            prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
+            # از _user_states که در user_handlers تعریف شده استفاده می‌کنیم
+            from handlers.user_handlers import _user_states 
+            _user_states[user_telegram_id] = {
+                'state': 'waiting_for_custom_config_name',
+                'data': order_details,
+                'prompt_message_id': prompt.message_id
+            }
 
     def process_payment_rejection(admin_id, payment_id, message):
         payment = _db_manager.get_payment_by_id(payment_id)

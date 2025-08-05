@@ -664,23 +664,29 @@ class DatabaseManager:
             return False
 
     # --- Purchase Functions ---
-    def add_purchase(self, user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs):
-        sql = """
-            INSERT INTO purchases (user_id, server_id, plan_id, expire_date, initial_volume_gb, xui_client_uuid, xui_client_email, subscription_id, single_configs_json, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
-            RETURNING id;
+    def add_purchase(self, user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs, profile_id=None):
         """
+        یک خرید جدید را ثبت می‌کند (نسخه جدید با پشتیبانی از profile_id)
+        """
+        conn = self._get_connection()
         try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cursor:
-                    params = (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, json.dumps(single_configs))
-                    cursor.execute(sql, params)
-                    purchase_id = cursor.fetchone()[0]
-                    conn.commit()
-                    return purchase_id
+            with conn.cursor() as cur:
+                sql = """
+                    INSERT INTO purchases (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs_json, is_active, profile_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                    RETURNING id;
+                """
+                single_configs_str = json.dumps(single_configs) if single_configs else None
+                cur.execute(sql, (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs_str, profile_id))
+                purchase_id = cur.fetchone()[0]
+                conn.commit()
+                return purchase_id
         except psycopg2.Error as e:
             logger.error(f"Error adding purchase for user {user_id}: {e}")
+            if conn: conn.rollback()
             return None
+        finally:
+            if conn: conn.close()
 
     def get_user_purchases(self, user_db_id):
         try:
