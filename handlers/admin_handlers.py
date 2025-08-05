@@ -1715,7 +1715,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     
     def start_sync_configs_flow(admin_id, message):
         """
-        فرآیند همگام‌سازی هوشمند کانفیگ‌ها از تمام سرورها با پنل‌های مختلف را اجرا می‌کند.
+        فرآیند همگام‌سازی را با دریافت جزئیات کامل هر اینباند به صورت جداگانه اجرا می‌کند. (نسخه نهایی)
         """
         try:
             _bot.edit_message_text("⏳ شروع فرآیند همگام‌سازی... این عملیات ممکن است کمی طول بکشد.", admin_id, message.message_id)
@@ -1735,26 +1735,40 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_name = server['name']
             panel_type = server['panel_type']
             
-            # ۱. اتصال به پنل با کلاینت مناسب
             api_client = get_api_client(server)
             if not api_client or not api_client.check_login():
                 report += f"❌ **{helpers.escape_markdown_v1(server_name)}**: اتصال ناموفق بود.\n"
                 continue
                 
-            # ۲. دریافت لیست خام اینباندها
-            panel_inbounds_raw = api_client.list_inbounds()
-            
-            # ۳. تبدیل داده‌های خام به فرمت استاندارد با استفاده از نرمالایزر
-            normalized_configs = normalize_panel_inbounds(panel_type, panel_inbounds_raw)
-            
-            # ۴. ذخیره داده‌های استاندارد شده در دیتابیس محلی
+            # ۱. ابتدا لیست خلاصه را برای گرفتن ID ها دریافت می‌کنیم
+            panel_inbounds_summary = api_client.list_inbounds()
+            if not panel_inbounds_summary:
+                report += f"⚠️ **{helpers.escape_markdown_v1(server_name)}**: هیچ اینباندی در پنل یافت نشد.\n"
+                continue
+
+            # ۲. حالا برای هر اینباند، جزئیات کامل آن را جداگانه می‌گیریم
+            full_inbounds_details = []
+            for inbound_summary in panel_inbounds_summary:
+                inbound_id = inbound_summary.get('id')
+                if not inbound_id:
+                    continue
+                
+                # فراخوانی get_inbound برای دریافت دیتای کامل
+                detailed_inbound = api_client.get_inbound(inbound_id)
+                if detailed_inbound:
+                    full_inbounds_details.append(detailed_inbound)
+                else:
+                    logger.warning(f"Could not fetch details for inbound {inbound_id} on server {server_name}")
+
+            # ۳. داده‌های کامل و نرمالایز شده را در دیتابیس ذخیره می‌کنیم
+            normalized_configs = normalize_panel_inbounds(panel_type, full_inbounds_details)
             sync_result = _db_manager.sync_configs_for_server(server['id'], normalized_configs)
             
             if sync_result > 0:
                 report += f"✅ **{helpers.escape_markdown_v1(server_name)}**: {sync_result} کانفیگ با موفقیت همگام‌سازی شد.\n"
                 total_synced += sync_result
             elif sync_result == 0:
-                report += f"⚠️ **{helpers.escape_markdown_v1(server_name)}**: هیچ کانفیگی برای همگام‌سازی یافت نشد.\n"
+                report += f"⚠️ **{helpers.escape_markdown_v1(server_name)}**: هیچ کانفیگ کاملی برای همگام‌سازی یافت نشد.\n"
             else:
                 report += f"❌ **{helpers.escape_markdown_v1(server_name)}**: خطایی در پردازش دیتابیس رخ داد.\n"
 

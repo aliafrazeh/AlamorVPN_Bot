@@ -35,26 +35,61 @@ ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
 BOT_USERNAME = BOT_USERNAME_ALAMOR
 
 # --- تابع کمکی برای ساخت کانفیگ ---
-def build_config_link(synced_config, client_uuid, client_remark, active_domain):
+def build_config_link(synced_config, client_uuid, client_remark):
+    """
+    با استفاده از اطلاعات خام همگام‌سازی شده و آدرس اصلی سرور، لینک کانفیگ نهایی را می‌سازد.
+    """
     try:
-        address = active_domain
+        # --- اصلاح اصلی اینجاست ---
+        # آدرس را از اطلاعات خود کانفیگ می‌خوانیم، نه از دامنه ضد فیلتر
+        server_address = synced_config['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
+        
         port = synced_config['port']
         remark = f"{client_remark} - {synced_config['remark']}"
         
         if synced_config['protocol'] == 'vless':
             stream_settings = json.loads(synced_config['stream_settings'])
-            link = (
-                f"vless://{client_uuid}@{address}:{port}"
-                f"?type={stream_settings.get('network', 'tcp')}"
-                f"&security={stream_settings.get('security', 'none')}"
-                f"#{remark}"
-            )
-            return link
-        return None
+            protocol_settings = json.loads(synced_config['settings'])
+            
+            params = {
+                'type': stream_settings.get('network', 'tcp'),
+                'security': stream_settings.get('security', 'none')
+            }
+
+            flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
+            if flow:
+                params['flow'] = flow
+
+            if params['security'] == 'tls':
+                tls_settings = stream_settings.get('tlsSettings', {})
+                nested_tls_settings = tls_settings.get('settings', {})
+                params['fp'] = nested_tls_settings.get('fingerprint', '')
+                params['sni'] = tls_settings.get('serverName', server_address)
+
+            if params['security'] == 'reality':
+                reality_settings = stream_settings.get('realitySettings', {})
+                nested_reality_settings = reality_settings.get('settings', {})
+                params['pbk'] = nested_reality_settings.get('publicKey', '')
+                params['fp'] = nested_reality_settings.get('fingerprint', '')
+                params['spiderX'] = nested_reality_settings.get('spiderX', '')
+                sni_list = reality_settings.get('serverNames', [''])
+                params['sni'] = sni_list[0] if sni_list else ''
+                short_ids_list = reality_settings.get('shortIds', [''])
+                params['sid'] = short_ids_list[0] if short_ids_list else ''
+
+            if params['type'] == 'ws':
+                ws_settings = stream_settings.get('wsSettings', {})
+                params['path'] = ws_settings.get('path', '')
+                params['host'] = ws_settings.get('host', '')
+            
+            query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
+            
+            # --- استفاده از server_address به جای active_domain ---
+            return f"vless://{client_uuid}@{server_address}:{port}?{query_string}#{quote(remark)}"
+            
     except Exception as e:
         logger.error(f"Error building config link for inbound {synced_config.get('inbound_id')}: {e}")
         return None
-
 # --- Endpoint جدید برای سرور اشتراک ---
 @app.route('/sub/<sub_id>', methods=['GET'])
 def serve_subscription(sub_id):

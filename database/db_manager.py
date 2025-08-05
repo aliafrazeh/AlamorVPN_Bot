@@ -1118,24 +1118,34 @@ class DatabaseManager:
             if conn: conn.close()
             
     def get_synced_configs_for_profile(self, profile_id):
-        """تمام کانفیگ‌های همگام‌سازی شده برای یک پروفایل خاص را برمی‌گرداند."""
+        """
+        تمام کانفیگ‌های همگام‌سازی شده برای یک پروفایل خاص را به همراه آدرس سرورشان برمی‌گرداند.
+        """
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                # با JOIN کردن جداول، کانفیگ‌های مربوط به یک پروفایل را پیدا می‌کنیم
+                # با JOIN کردن جداول، اطلاعات سرور را نیز استخراج می‌کنیم
                 sql = """
-                    SELECT sc.* FROM synced_configs sc
+                    SELECT sc.*, s.subscription_base_url 
+                    FROM synced_configs sc
                     JOIN profile_inbounds pi ON sc.server_id = pi.server_id AND sc.inbound_id = pi.inbound_id
+                    JOIN servers s ON sc.server_id = s.id
                     WHERE pi.profile_id = %s;
                 """
                 cur.execute(sql, (profile_id,))
-                return cur.fetchall()
+                
+                # قبل از بازگرداندن، اطلاعات حساس سرور را رمزگشایی می‌کنیم
+                configs = []
+                for row in cur.fetchall():
+                    config_dict = dict(row)
+                    config_dict['subscription_base_url'] = self._decrypt(config_dict['subscription_base_url'])
+                    configs.append(config_dict)
+                return configs
         except psycopg2.Error as e:
             logger.error(f"Error getting synced configs for profile {profile_id}: {e}")
             return []
         finally:
             if conn: conn.close()
-            
             
     def delete_subscription_domain(self, domain_id):
         sql = "DELETE FROM subscription_domains WHERE id = %s;"
