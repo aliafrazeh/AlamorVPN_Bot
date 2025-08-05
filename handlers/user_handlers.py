@@ -568,7 +568,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 plan_details_for_admin = f"{gb_plan['name']} ({requested_gb}GB, {duration_text})"
         
         summary_text += messages.ORDER_SUMMARY_DURATION.format(duration_days=duration_text)
-        summary_text += messages.ORDER_SUMMARY_TOTAL_PRICE.format(total_price=f"{total_price:,.0f}")
+        summary_text += messages.ORDER_SUMMARY_TOTAL_PRICE.format(total_price=total_price)
         summary_text += messages.ORDER_SUMMARY_CONFIRM_PROMPT
         
         order_data['total_price'] = total_price
