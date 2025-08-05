@@ -1859,12 +1859,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _show_domain_management_menu(admin_id, message)
         
     def _show_domain_management_menu(admin_id, message):
-        """منوی مدیریت دامنه‌ها را به همراه وضعیت SSL هر دامنه نمایش می‌دهد."""
-        domains = _db_manager.get_all_subscription_domains()
+        """Displays the domain management menu with the SSL status for each domain."""
+        domain_rows = _db_manager.get_all_subscription_domains()
         
-        # اضافه کردن وضعیت SSL به هر دامنه
-        for domain in domains:
-            domain['ssl_status'] = check_ssl_certificate_exists(domain['domain_name'])
+        # --- FIX IS HERE ---
+        # Convert read-only database rows to mutable dictionaries before modifying them
+        domains_with_status = []
+        for row in domain_rows:
+            domain_dict = dict(row) # Convert to a standard dictionary
+            domain_dict['ssl_status'] = check_ssl_certificate_exists(domain_dict['domain_name'])
+            domains_with_status.append(domain_dict)
             
-        markup = inline_keyboards.get_domain_management_menu(domains)
-        _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
+        markup = inline_keyboards.get_domain_management_menu(domains_with_status)
+        _show_menu(admin_id, "🌐 In this section, you can manage the anti-filter domains for subscription links.", markup, message)
