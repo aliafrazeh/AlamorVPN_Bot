@@ -43,19 +43,13 @@ class ConfigGenerator:
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
         """
-        موتور اصلی ساخت کانفیگ با ایمیل‌های منحصر به فرد و خروجی صحیح.
+        موتور اصلی ساخت کانفیگ با UUID و ایمیل منحصر به فرد برای هر کانفیگ.
         """
         all_generated_configs = []
+        generated_uuids = [] # لیستی برای نگهداری تمام UUID های ساخته شده
         
-        master_client_uuid = str(uuid.uuid4())
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
-        
-        # --- اصلاح مشکل KeyError: 'uuids' ---
-        # خروجی باید شامل کلید 'uuids' به صورت لیست باشد
-        client_details_for_db = {
-            'uuids': [master_client_uuid], # UUID را به صورت لیست برمی‌گردانیم
-            'email': base_client_email 
-        }
+        shared_sub_id = generate_random_string(16) # subId یکسان برای همه
 
         inbounds_by_server = {}
         for inbound_info in inbounds_list:
@@ -69,12 +63,12 @@ class ConfigGenerator:
             api_client = get_api_client(server_data)
             
             if not api_client or not api_client.check_login():
-                logger.error(f"Could not connect to server {server_data['name']} (ID: {server_id}). Skipping.")
+                logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
             panel_inbounds_details = {i['id']: i for i in api_client.list_inbounds()}
             if not panel_inbounds_details:
-                logger.error(f"Could not retrieve any inbound details from server {server_id}.")
+                logger.error(f"Could not retrieve inbound details from server {server_id}.")
                 continue
 
             expiry_time_ms = 0
@@ -88,34 +82,39 @@ class ConfigGenerator:
                 inbound_id_on_panel = s_inbound['inbound_id']
                 remark = custom_remark or f"AlamorBot-{user_telegram_id}"
                 
-                # --- اصلاح مشکل Duplicate email ---
-                # برای هر اینباند یک ایمیل منحصر به فرد می‌سازیم
+                # --- اصلاح اصلی اینجاست: ساخت UUID و ایمیل جدید برای هر کانفیگ ---
+                client_uuid = str(uuid.uuid4())
                 unique_client_email = f"in{inbound_id_on_panel}.{base_client_email}"
 
                 client_settings = {
-                    "id": master_client_uuid, 
-                    "email": unique_client_email, # استفاده از ایمیل منحصر به فرد
+                    "id": client_uuid, "email": unique_client_email,
                     "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                    "enable": True, "tgId": str(user_telegram_id)
+                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id
                 }
                 
-                add_client_payload = {
-                    "id": inbound_id_on_panel,
-                    "settings": json.dumps({"clients": [client_settings]})
-                }
+                add_client_payload = {"id": inbound_id_on_panel, "settings": json.dumps({"clients": [client_settings]})}
                 
                 if not api_client.add_client(add_client_payload):
                     logger.error(f"Failed to add client to inbound {inbound_id_on_panel} on server {server_id}.")
                     continue
 
+                generated_uuids.append(client_uuid) # UUID جدید را به لیست اضافه می‌کنیم
+
                 inbound_details = panel_inbounds_details.get(inbound_id_on_panel)
                 if inbound_details:
                     single_config = self._generate_single_config_url(
-                        master_client_uuid, server_data, inbound_details, remark
+                        client_uuid, server_data, inbound_details, remark
                     )
                     if single_config:
                         all_generated_configs.append(single_config)
 
+        # اطلاعات لازم برای دیتابیس
+        client_details_for_db = {
+            'uuids': generated_uuids, # لیست تمام UUID ها
+            'email': base_client_email,
+            'sub_id': shared_sub_id
+        }
+        
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """

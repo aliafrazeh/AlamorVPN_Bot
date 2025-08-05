@@ -667,9 +667,9 @@ class DatabaseManager:
             return False
 
     # --- Purchase Functions ---
-    def add_purchase(self, user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs, profile_id=None):
+    def add_purchase(self, user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuids, client_email, sub_id, single_configs, profile_id=None):
         """
-        یک خرید جدید را ثبت می‌کند (نسخه جدید با پشتیبانی از profile_id)
+        یک خرید جدید را ثبت می‌کند (نسخه نهایی با نام صحیح client_uuids)
         """
         conn = self._get_connection()
         try:
@@ -679,8 +679,10 @@ class DatabaseManager:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
                     RETURNING id;
                 """
+                client_uuids_str = json.dumps(client_uuids) if client_uuids else None
                 single_configs_str = json.dumps(single_configs) if single_configs else None
-                cur.execute(sql, (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuid, client_email, sub_id, single_configs_str, profile_id))
+                
+                cur.execute(sql, (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuids_str, client_email, sub_id, single_configs_str, profile_id))
                 purchase_id = cur.fetchone()[0]
                 conn.commit()
                 return purchase_id
