@@ -551,8 +551,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
             return
         elif data.startswith("admin_activate_domain_"):
+            # ۱. بلافاصله به کلیک کاربر پاسخ می‌دهیم تا خطا ندهد
+            _bot.answer_callback_query(call.id)
+            
             domain_id = int(data.split('_')[-1])
-            execute_activate_domain(admin_id, message, domain_id)
+            
+            # ۲. عملیات دیتابیس را انجام می‌دهیم
+            _db_manager.set_active_subscription_domain(domain_id)
+            
+            # ۳. منو را مجدداً نمایش می‌دهیم. تغییر وضعیت دکمه به کاربر موفقیت را نشان می‌دهد
+            _show_domain_management_menu(admin_id, message)
             return
         elif data.startswith("admin_pi_save_"): # Profile Inbound Save
 
@@ -1750,13 +1758,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'prompt_message_id': prompt.message_id}
 
-    def execute_activate_domain(admin_id, message, domain_id):
-        if _db_manager.set_active_subscription_domain(domain_id):
-            domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
-            _bot.answer_callback_query(message.id, messages.DOMAIN_ACTIVATED_SUCCESS.format(domain_name=domain['domain_name'] if domain else ''))
-        else:
-            _bot.answer_callback_query(message.id, "❌ خطایی در فعال‌سازی دامنه رخ داد.", show_alert=True)
-        _show_domain_management_menu(admin_id, message)
+    
         
         
     def start_sync_configs_flow(admin_id, message):
