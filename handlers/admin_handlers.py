@@ -35,12 +35,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     _bot = bot_instance
     _db_manager = db_manager_instance
     _xui_api = xui_api_instance
-    _config_generator = ConfigGenerator(xui_api_instance, db_manager_instance)
+    _config_generator = ConfigGenerator(db_manager_instance)
 
     # =============================================================================
     # SECTION: Helper and Menu Functions
     # =============================================================================
     register_domain_handlers(bot=_bot, db_manager=_db_manager, admin_states=_admin_states)
+
 
     def _clear_admin_state(admin_id):
         """وضعیت ادمین را فقط از دیکشنری پاک می‌کند."""
