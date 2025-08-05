@@ -1853,4 +1853,4 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         else:
             _bot.answer_callback_query(message.id, "خطا در حذف دامنه از دیتابیس.", show_alert=True)
             
-    _show_domain_management_menu(admin_id, message)
+        _show_domain_management_menu(admin_id, message)
