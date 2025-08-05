@@ -17,7 +17,8 @@ from utils.bot_helpers import send_subscription_info # این ایمپورت ج�
 from handlers.user_handlers import _user_states
 from config import REQUIRED_CHANNEL_ID, REQUIRED_CHANNEL_LINK # This should already be there
 from api_client.factory import get_api_client
-
+# handlers/admin_handlers.py
+from utils.system_helpers import setup_domain_nginx_and_ssl
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -299,7 +300,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['merchant_id'] = text
             state_info['state'] = 'waiting_for_gateway_description'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
-
+        
         elif state == 'waiting_for_card_number':
             if not text.isdigit() or len(text) not in [16]:
                 _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
@@ -307,6 +308,51 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['card_number'] = text
             state_info['state'] = 'waiting_for_card_holder_name'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
+        elif state == 'waiting_for_letsencrypt_email':
+            admin_email = text.strip()
+            # ذخیره ایمیل برای استفاده‌های بعدی
+            _db_manager.update_setting('letsencrypt_email', admin_email)
+            
+            domain_name = data['domain_name']
+            _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
+
+            success, message = setup_domain_nginx_and_ssl(domain_name, admin_email)
+
+            if success:
+                if _db_manager.add_subscription_domain(domain_name):
+                    _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
+                else:
+                    _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
+            else:
+                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message}")
+
+            _clear_admin_state(admin_id)
+            _show_domain_management_menu(admin_id)
+        elif state == 'waiting_for_domain_name':
+            domain_name = text.strip().lower()
+            
+            # چک می‌کنیم آیا ایمیل ادمین از قبل ذخیره شده یا نه
+            admin_email = _db_manager.get_setting('letsencrypt_email')
+            
+            if admin_email:
+                # اگر ایمیل موجود بود، مستقیم به سراغ نصب می‌رویم
+                _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL. این فرآیند ممکن است تا ۲ دقیقه طول بکشد.", admin_id, prompt_id)
+                success, message = setup_domain_nginx_and_ssl(domain_name, admin_email)
+                if success:
+                    if _db_manager.add_subscription_domain(domain_name):
+                        _bot.send_message(admin_id, f"✅ عملیات با موفقیت کامل شد!\nدامنه {domain_name} اضافه و SSL برای آن فعال گردید.")
+                    else:
+                        _bot.send_message(admin_id, "❌ دامنه در Nginx تنظیم شد، اما در ذخیره در دیتابیس خطایی رخ داد.")
+                else:
+                    _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {message}")
+                _clear_admin_state(admin_id)
+                _show_domain_management_menu(admin_id)
+
+            else:
+                # اگر ایمیل موجود نبود، ابتدا آن را از ادمین می‌پرسیم
+                state_info['state'] = 'waiting_for_letsencrypt_email'
+                state_info['data']['domain_name'] = domain_name
+                _bot.edit_message_text("برای دریافت گواهی SSL از Let's Encrypt، به یک آدرس ایمیل نیاز است. لطفاً ایمیل خود را وارد کنید (این سوال فقط یک بار پرسیده می‌شود):", admin_id, prompt_id)
         elif state == 'waiting_for_card_holder_name':
             data['card_holder_name'] = text
             state_info['state'] = 'waiting_for_gateway_description'
@@ -438,6 +484,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_sync_configs": start_sync_configs_flow,
             "admin_domain_management": _show_domain_management_menu,
             "admin_add_domain": start_add_domain_flow,
             "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
@@ -1710,3 +1757,43 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         else:
             _bot.answer_callback_query(message.id, "❌ خطایی در فعال‌سازی دامنه رخ داد.", show_alert=True)
         _show_domain_management_menu(admin_id, message)
+        
+        
+    def start_sync_configs_flow(admin_id, message):
+        """
+        فرآیند همگام‌سازی کانفیگ‌ها از تمام سرورها به دیتابیس محلی را اجرا می‌کند.
+        """
+        _bot.edit_message_text("⏳ شروع فرآیند همگام‌سازی کانفیگ‌ها از تمام سرورها... لطفاً صبر کنید.", admin_id, message.message_id)
+        
+        servers = _db_manager.get_all_servers(only_active=False)
+        if not servers:
+            _bot.send_message(admin_id, "هیچ سروری برای همگام‌سازی یافت نشد.")
+            return
+
+        report = "📊 **گزارش همگام‌سازی کانفیگ‌ها:**\n\n"
+        total_synced = 0
+        
+        for server in servers:
+            server_name = server['name']
+            api_client = get_api_client(server)
+            
+            if not api_client or not api_client.check_login():
+                report += f"❌ **{helpers.escape_markdown_v1(server_name)}**: اتصال ناموفق بود.\n"
+                continue
+                
+            panel_inbounds = api_client.list_inbounds()
+            
+            # این تابع تعداد کانفیگ‌های همگام شده یا -1 در صورت خطا را برمی‌گرداند
+            sync_result = _db_manager.sync_configs_for_server(server['id'], panel_inbounds)
+            
+            if sync_result > 0:
+                report += f"✅ **{helpers.escape_markdown_v1(server_name)}**: {sync_result} کانفیگ با موفقیت همگام‌سازی شد.\n"
+                total_synced += sync_result
+            elif sync_result == 0:
+                report += f"⚠️ **{helpers.escape_markdown_v1(server_name)}**: هیچ کانفیگی برای همگام‌سازی یافت نشد.\n"
+            else:
+                report += f"❌ **{helpers.escape_markdown_v1(server_name)}**: خطایی در پردازش دیتابیس رخ داد.\n"
+
+        report += f"\n---\n**مجموع:** {total_synced} کانفیگ در دیتابیس محلی ذخیره شد."
+        _bot.send_message(admin_id, report, parse_mode='Markdown')
+        _show_admin_main_menu(admin_id)

@@ -50,6 +50,19 @@ class DatabaseManager:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS synced_configs (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                port INTEGER,
+                protocol TEXT,
+                settings TEXT, -- JSON string
+                stream_settings TEXT, -- JSON string
+                UNIQUE (server_id, inbound_id)
+            )
+            """,
+            """
             
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
