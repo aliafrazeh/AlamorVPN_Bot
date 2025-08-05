@@ -19,10 +19,19 @@ class ConfigGenerator:
         logger.info("ConfigGenerator initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
+        """کانفیگ‌های یک پروفایل را بر اساس اینباندهای تعریف شده برای آن می‌سازد."""
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details: return None, None
         inbounds_to_create = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
         duration_days = profile_details['duration_days']
+        return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
+
+    def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
+        """کانفیگ‌ها را برای یک سرور خاص بر اساس اینباندهای فعال آن می‌سازد."""
+        inbounds_list_raw = self.db_manager.get_server_inbounds(server_id, only_active=True)
+        if not inbounds_list_raw: return None, None
+        server_data = self.db_manager.get_server_by_id(server_id)
+        inbounds_to_create = [{'inbound_id': i['inbound_id'], 'server': server_data} for i in inbounds_list_raw]
         return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
@@ -86,45 +95,33 @@ class ConfigGenerator:
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
-        """
-        لینک کانفیگ را با خواندن هوشمند تمام پارامترها از ساختار JSON پنل تولید می‌کند.
-        """
         try:
             protocol = inbound_details.get('protocol')
-            if protocol != 'vless': return None
+            if protocol not in ['vless', 'vmess']: return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
             address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
             
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
-            protocol_settings = json.loads(inbound_details.get('settings', '{}'))
             
-            params = {
-                'type': stream_settings.get('network', 'tcp'),
-                'security': stream_settings.get('security', 'none')
-            }
+            params = { 'type': stream_settings.get('network', 'tcp') }
             
-            client_in_settings = protocol_settings.get('clients', [{}])[0]
-            if client_in_settings.get('flow'):
-                params['flow'] = client_in_settings['flow']
-
-            # --- استخراج هوشمند پارامترها از الگو ---
+            # استخراج هوشمند پارامترها از الگو
             transport_settings = stream_settings.get(f"{params['type']}Settings", {})
             if 'path' in transport_settings: params['path'] = transport_settings['path']
-            if 'host' in transport_settings: params['host'] = transport_settings['host']
+            if 'host' in transport_settings: params['host'] = transport_settings.get('headers', {}).get('Host') or transport_settings.get('host')
             if 'serviceName' in transport_settings: params['serviceName'] = transport_settings['serviceName']
             
+            params['security'] = stream_settings.get('security', 'none')
             if params['security'] != 'none':
                 security_settings = stream_settings.get(f"{params['security']}Settings", {})
                 if 'serverName' in security_settings: params['sni'] = security_settings['serverName']
                 if 'publicKey' in security_settings: params['pbk'] = security_settings['publicKey']
-                if 'shortId' in security_settings: 
+                if 'shortIds' in security_settings:
                     sid_list = security_settings['shortIds']
                     if sid_list: params['sid'] = random.choice(sid_list)
-                if 'spiderX' in security_settings: params['spiderX'] = security_settings['spiderX']
 
-                # استخراج تودرتو
                 nested_security_settings = security_settings.get('settings', {})
                 if 'fingerprint' in nested_security_settings: params['fp'] = nested_security_settings['fingerprint']
                 if 'publicKey' in nested_security_settings: params['pbk'] = nested_security_settings['publicKey']
@@ -132,7 +129,17 @@ class ConfigGenerator:
 
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v and k != 'security' or (k == 'security' and v != 'none')])
             
-            return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            if protocol == 'vless':
+                protocol_settings = json.loads(inbound_details.get('settings', '{}'))
+                flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
+                if flow:
+                    query_string += f"&flow={flow}"
+                return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            
+            elif protocol == 'vmess':
+                # منطق ساخت لینک VMess در آینده می‌تواند اینجا اضافه شود
+                return None
+
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
-            return None
+        return None
