@@ -132,7 +132,6 @@ class DatabaseManager:
                 UNIQUE (server_id, inbound_id)
             )""",
             """
-            DROP TABLE IF EXISTS purchases;
             CREATE TABLE IF NOT EXISTS purchases (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
