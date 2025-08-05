@@ -349,7 +349,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 state_info['state'] = 'waiting_for_letsencrypt_email'
                 state_info['data']['domain_name'] = domain_name
                 _bot.edit_message_text("An email address is required to obtain an SSL certificate from Let's Encrypt. Please enter your email (this will only be asked once):", admin_id, prompt_id)
-            elif state == 'waiting_for_card_holder_name':
+        elif state == 'waiting_for_card_holder_name':
                 data['card_holder_name'] = text
                 state_info['state'] = 'waiting_for_gateway_description'
                 _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
