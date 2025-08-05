@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با روش الگوسازی)
+# utils/config_generator.py (نسخه نهایی با فراخوانی get_inbound برای هر کانفیگ)
 
 import json
 import logging
@@ -49,11 +49,6 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
-            panel_inbounds_details = {i['id']: i for i in api_client.list_inbounds()}
-            if not panel_inbounds_details:
-                logger.error(f"Could not retrieve inbound details from server {server_id}.")
-                continue
-
             expiry_time_ms = 0
             if duration_days and duration_days > 0:
                 expire_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
@@ -82,26 +77,27 @@ class ConfigGenerator:
 
                 generated_uuids.append(client_uuid)
 
-                inbound_details = panel_inbounds_details.get(inbound_id_on_panel)
+                # --- اصلاح اصلی و نهایی اینجاست ---
+                # ما برای هر اینباند، جزئیات کامل آن را به صورت جداگانه دریافت می‌کنیم
+                inbound_details = api_client.get_inbound(inbound_id_on_panel)
                 if inbound_details:
                     single_config = self._generate_single_config_url(
                         client_uuid, server_data, inbound_details, remark_base
                     )
                     if single_config:
                         all_generated_configs.append(single_config)
+                else:
+                    logger.warning(f"Could not fetch full details for inbound ID {inbound_id_on_panel}.")
+
 
         client_details_for_db = { 'uuids': generated_uuids, 'email': base_client_email, 'sub_id': shared_sub_id }
         
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
     
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
-        """
-        لینک کانفیگ را با استفاده از دیتای کامل اینباند به عنوان الگو تولید می‌کند.
-        """
         try:
             protocol = inbound_details.get('protocol')
             if protocol != 'vless':
-                logger.warning(f"Config generation for protocol '{protocol}' is not supported yet.")
                 return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
@@ -111,18 +107,15 @@ class ConfigGenerator:
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
             protocol_settings = json.loads(inbound_details.get('settings', '{}'))
             
-            # --- منطق جدید: استخراج مستقیم پارامترها از الگو ---
             params = {
                 'type': stream_settings.get('network', 'tcp'),
                 'security': stream_settings.get('security', 'none')
             }
 
-            # استخراج flow از بخش settings
             flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
             if flow:
                 params['flow'] = flow
 
-            # استخراج تنظیمات specific بر اساس نوع transport و security
             if params['security'] == 'tls':
                 tls_settings = stream_settings.get('tlsSettings', {})
                 params['sni'] = tls_settings.get('serverName', address)
@@ -135,23 +128,15 @@ class ConfigGenerator:
                 params['sid'] = reality_settings.get('shortId', '')
                 params['fp'] = reality_settings.get('fingerprint', '')
                 params['spiderX'] = reality_settings.get('spiderX', '')
-                params['key'] = reality_settings.get('privateKey', '') # for some versions
                 
             if params['type'] == 'ws':
                 ws_settings = stream_settings.get('wsSettings', {})
                 params['path'] = ws_settings.get('path', '/')
                 params['host'] = ws_settings.get('headers', {}).get('Host', address)
             
-            elif params['type'] == 'grpc':
-                grpc_settings = stream_settings.get('grpcSettings', {})
-                params['serviceName'] = grpc_settings.get('serviceName', '')
-
-            # حذف پارامترهای خالی قبل از ساخت لینک
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
             
-            config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
-            
-            return config_url
+            return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
 
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
