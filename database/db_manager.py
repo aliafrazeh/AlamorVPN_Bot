@@ -164,7 +164,6 @@ class DatabaseManager:
                 usage_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )""",
             """
-            DROP TABLE IF EXISTS payments CASCADE;
             CREATE TABLE IF NOT EXISTS payments (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
