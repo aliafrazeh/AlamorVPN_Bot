@@ -132,20 +132,23 @@ class DatabaseManager:
                 UNIQUE (server_id, inbound_id)
             )""",
             """
+            DROP TABLE IF EXISTS purchases;
             CREATE TABLE IF NOT EXISTS purchases (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                server_id INTEGER NOT NULL REFERENCES servers(id),
-                plan_id INTEGER REFERENCES plans(id),
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL, -- ستون جدید
                 purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 expire_date TIMESTAMPTZ,
                 initial_volume_gb REAL NOT NULL,
-                xui_client_uuid TEXT,
-                xui_client_email TEXT,
-                subscription_id TEXT,
+                client_uuid TEXT,
+                client_email TEXT,
+                sub_id TEXT,
                 is_active BOOLEAN DEFAULT TRUE,
                 single_configs_json TEXT
-            )""",
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS payment_gateways (
                 id SERIAL PRIMARY KEY,

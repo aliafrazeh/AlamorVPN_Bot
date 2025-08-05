@@ -733,34 +733,33 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         """
         payment = _db_manager.get_payment_by_id(payment_id)
         if not payment or payment['is_confirmed']:
-            # از call.id استفاده می‌کنیم چون message از نوع Message است نه CallbackQuery
-            # برای سادگی، فعلا از message.id استفاده می‌کنیم و در صورت بروز خطا آن را اصلاح خواهیم کرد.
-            # بهترین راه حل، پاس دادن خود آبجکت call به این تابع است.
             try:
+                # message.id در اینجا شناسه پیام است، نه کلیک. برای سادگی خطا را نادیده می‌گیریم.
                 _bot.answer_callback_query(message.id, "این پرداخت قبلاً پردازش شده است.", show_alert=True)
-            except Exception: # اگر از طریق پیام مستقیم باشد، callback وجود ندارد
+            except Exception:
                 pass
             return
 
         order_details = json.loads(payment['order_details_json'])
         user_telegram_id = order_details['user_telegram_id']
         
-        # به‌روزرسانی پیام ادمین
+        # به‌روزرسانی وضعیت پرداخت در دیتابیس و ویرایش پیام ادمین
         _db_manager.update_payment_status(payment_id, True, admin_id)
-        admin_user = _bot.get_chat_member(admin_id, admin_id).user
-        admin_username = f"@{admin_user.username}" if admin_user.username else admin_user.first_name
-        new_caption = message.caption + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=admin_username)
-        _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
-        
-        # --- منطق تفکیک نوع خرید ---
+        try:
+            admin_user = _bot.get_chat_member(admin_id, admin_id).user
+            admin_username = f"@{admin_user.username}" if admin_user.username else admin_user.first_name
+            new_caption = (message.caption or "") + "\n\n" + messages.ADMIN_PAYMENT_CONFIRMED_DISPLAY.format(admin_username=admin_username)
+            _bot.edit_message_caption(new_caption, message.chat.id, message.message_id, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"امکان ویرایش کپشن پیام ادمین برای پرداخت {payment_id} وجود نداشت: {e}")
+
+        # --- منطق اصلی: تفکیک نوع خرید ---
         if order_details.get('purchase_type') == 'profile':
-            # اگر خرید پروفایل بود، تابع کمکی مرکزی را فراخوانی کن
+            # اگر خرید پروفایل بود، تابع مرکزی و خودکار را فراخوانی کن
             finalize_profile_purchase(_bot, _db_manager, user_telegram_id, order_details)
         else:
-            # در غیر این صورت، منطق خرید عادی را اجرا کن (دریافت نام دلخواه)
+            # اگر خرید عادی بود، از کاربر نام دلخواه کانفیگ را بپرس
             prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
-            # از _user_states که در user_handlers تعریف شده استفاده می‌کنیم
-            from handlers.user_handlers import _user_states 
             _user_states[user_telegram_id] = {
                 'state': 'waiting_for_custom_config_name',
                 'data': order_details,
