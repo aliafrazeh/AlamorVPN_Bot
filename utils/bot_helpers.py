@@ -1,4 +1,4 @@
-# utils/bot_helpers.py (نسخه نهایی و خودکار)
+# utils/bot_helpers.py (نسخه نهایی و کامل)
 
 import telebot
 import qrcode
@@ -8,7 +8,7 @@ import datetime
 import uuid
 
 # ایمپورت‌های پروژه
-from .config_generator import create_configs_for_profile
+from .config_generator import ConfigGenerator # کلاس را وارد می‌کنیم
 from . import messages, helpers
 
 logger = logging.getLogger(__name__)
@@ -29,18 +29,25 @@ def send_subscription_info(bot: telebot.TeleBot, user_id: int, sub_link: str):
 
 def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     """
-    فرآیند خرید پروفایل را به صورت کاملاً خودکار نهایی می‌کند.
+    فرآیند خرید پروفایل را با استفاده از کلاس ConfigGenerator نهایی می‌کند.
     """
     bot.send_message(user_telegram_id, "✅ پرداخت شما تایید شد. لطفاً صبر کنید، در حال ساخت کانفیگ‌های پروفایل شما هستیم...")
     
     profile_details = order_details['profile_details']
     requested_gb = order_details['requested_gb']
     
+    # ۱. ساخت یک نمونه از کلاس ConfigGenerator
+    config_gen = ConfigGenerator(db_manager)
+    
     # یک نام پیش‌فرض برای کانفیگ‌ها می‌سازیم
     default_config_name = f"Profile-{profile_details['id']}-{user_telegram_id}"
-
-    generated_configs, client_details = create_configs_for_profile(
-        db_manager, user_telegram_id, profile_details['id'], requested_gb, default_config_name
+    
+    # ۲. فراخوانی متد کلاس برای ساخت کانفیگ‌ها
+    generated_configs, client_details = config_gen.create_subscription_for_profile(
+        user_telegram_id=user_telegram_id,
+        profile_id=profile_details['id'],
+        total_gb=requested_gb,
+        custom_remark=default_config_name
     )
     
     if not generated_configs:
@@ -57,10 +64,15 @@ def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     representative_server_id = profile_inbounds[0]['server']['id'] if profile_inbounds else None
 
     db_manager.add_purchase(
-        user_id=user_db_info['id'], server_id=representative_server_id, plan_id=None,
-        profile_id=profile_details['id'], expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S"),
-        initial_volume_gb=requested_gb, client_uuids=client_details['uuids'],
-        client_email=client_details['email'], sub_id=new_sub_id,
+        user_id=user_db_info['id'], 
+        server_id=representative_server_id, 
+        plan_id=None,
+        profile_id=profile_details['id'], 
+        expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S"),
+        initial_volume_gb=requested_gb, 
+        client_uuids=client_details['uuids'],
+        client_email=client_details['email'], 
+        sub_id=new_sub_id,
         single_configs=generated_configs
     )
     
@@ -73,11 +85,9 @@ def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     
     bot.send_message(user_telegram_id, "🎉 پروفایل شما با موفقیت فعال شد!")
     
-    # تحویل کانفیگ‌ها به صورت لیست متنی
     configs_text = "\n".join(generated_configs)
     bot.send_message(user_telegram_id, "کانفیگ‌های خود را کپی کرده و در اپلیکیشن خود وارد کنید:")
     bot.send_message(user_telegram_id, f"```{configs_text}```", parse_mode="MarkdownV2")
 
-    # تحویل لینک اشتراک هوشمند
     bot.send_message(user_telegram_id, "همچنین می‌توانید از لینک اشتراک هوشمند زیر استفاده کنید:")
     send_subscription_info(bot, user_telegram_id, final_sub_link)
