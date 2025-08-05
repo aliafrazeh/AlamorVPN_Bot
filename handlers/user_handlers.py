@@ -107,7 +107,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         _bot.answer_callback_query(call.id)
         user_id = call.from_user.id
         data = call.data
-        
+        messages = call.data
         # پاک کردن پیام قبلی
         try:
             _bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=None)
@@ -129,7 +129,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             select_payment_gateway(user_id, gateway_id, call.message)
         elif data.startswith("buy_select_profile_"):
             profile_id = int(data.replace("buy_select_profile_", ""))
-            select_profile_for_purchase(user_id, profile_id, message)
+            select_profile_for_purchase(user_id, profile_id, call.message)
         elif data == "cancel_order":
             _clear_user_state(user_id)
             _bot.edit_message_text(messages.ORDER_CANCELED, user_id, call.message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
@@ -756,6 +756,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         """
         اطلاعات پروفایل انتخاب شده را آماده کرده و از کاربر مقدار حجم را می‌پرسد.
         """
+        
         profile = _db_manager.get_profile_by_id(profile_id)
         if not profile:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
