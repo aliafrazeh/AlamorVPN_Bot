@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با پشتیبانی کامل از VLESS/Reality)
+# utils/config_generator.py (نسخه نهایی با روش الگوسازی)
 
 import json
 import logging
@@ -24,16 +24,6 @@ class ConfigGenerator:
         
         inbounds_to_create = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
         duration_days = profile_details['duration_days']
-        
-        return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
-
-    def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        inbounds_list_raw = self.db_manager.get_server_inbounds(server_id, only_active=True)
-        if not inbounds_list_raw:
-            return None, None
-        
-        server_data = self.db_manager.get_server_by_id(server_id)
-        inbounds_to_create = [{'inbound_id': i['inbound_id'], 'server': server_data} for i in inbounds_list_raw]
         
         return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
 
@@ -106,10 +96,14 @@ class ConfigGenerator:
     
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """
-        لینک کانفیگ تکی را با پشتیبانی کامل از پارامترهای VLESS/Reality تولید می‌کند.
+        لینک کانفیگ را با استفاده از دیتای کامل اینباند به عنوان الگو تولید می‌کند.
         """
         try:
             protocol = inbound_details.get('protocol')
+            if protocol != 'vless':
+                logger.warning(f"Config generation for protocol '{protocol}' is not supported yet.")
+                return None
+
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
             address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
@@ -117,43 +111,48 @@ class ConfigGenerator:
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
             protocol_settings = json.loads(inbound_details.get('settings', '{}'))
             
-            network = stream_settings.get('network', 'tcp')
-            security = stream_settings.get('security', 'none')
-            config_url = ""
+            # --- منطق جدید: استخراج مستقیم پارامترها از الگو ---
+            params = {
+                'type': stream_settings.get('network', 'tcp'),
+                'security': stream_settings.get('security', 'none')
+            }
 
-            if protocol == 'vless':
-                client_in_settings = protocol_settings.get('clients', [{}])[0]
-                flow = client_in_settings.get('flow', '')
+            # استخراج flow از بخش settings
+            flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
+            if flow:
+                params['flow'] = flow
 
-                params = {'type': network, 'security': security}
+            # استخراج تنظیمات specific بر اساس نوع transport و security
+            if params['security'] == 'tls':
+                tls_settings = stream_settings.get('tlsSettings', {})
+                params['sni'] = tls_settings.get('serverName', address)
+                params['fp'] = tls_settings.get('fingerprint', '')
+
+            if params['security'] == 'reality':
+                reality_settings = stream_settings.get('realitySettings', {})
+                params['sni'] = reality_settings.get('serverNames', [''])[0]
+                params['pbk'] = reality_settings.get('publicKey', '')
+                params['sid'] = reality_settings.get('shortId', '')
+                params['fp'] = reality_settings.get('fingerprint', '')
+                params['spiderX'] = reality_settings.get('spiderX', '')
+                params['key'] = reality_settings.get('privateKey', '') # for some versions
                 
-                if security == 'reality':
-                    reality_settings = stream_settings.get('realitySettings', {})
-                    # استخراج تمام پارامترهای Reality
-                    params['fp'] = reality_settings.get('fingerprint', '')
-                    params['pbk'] = reality_settings.get('publicKey', '')
-                    params['sid'] = reality_settings.get('shortId', '')
-                    params['sni'] = reality_settings.get('serverNames', [''])[0]
-                    params['spiderX'] = reality_settings.get('spiderX', '/') # افزودن Spider X
-                
-                if security == 'tls':
-                    tls_settings = stream_settings.get('tlsSettings', {})
-                    params['sni'] = tls_settings.get('serverName', address)
-
-                if network == 'ws':
-                    ws_settings = stream_settings.get('wsSettings', {})
-                    params['path'] = ws_settings.get('path', '/')
-                    params['host'] = ws_settings.get('headers', {}).get('Host', address)
-
-                if flow:
-                    params['flow'] = flow
-
-                # حذف پارامترهای خالی قبل از ساخت لینک
-                query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
-                config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            if params['type'] == 'ws':
+                ws_settings = stream_settings.get('wsSettings', {})
+                params['path'] = ws_settings.get('path', '/')
+                params['host'] = ws_settings.get('headers', {}).get('Host', address)
             
-            if config_url:
-                return config_url
+            elif params['type'] == 'grpc':
+                grpc_settings = stream_settings.get('grpcSettings', {})
+                params['serviceName'] = grpc_settings.get('serviceName', '')
+
+            # حذف پارامترهای خالی قبل از ساخت لینک
+            query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
+            
+            config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
+            
+            return config_url
+
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
         return None
