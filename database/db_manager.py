@@ -918,19 +918,38 @@ class DatabaseManager:
                 
                 
                 
-    def get_inbounds_for_profile(self, profile_id):
-        """لیست ID اینباندهای متصل به یک پروفایل خاص را برمی‌گرداند."""
+    def get_inbounds_for_profile(self, profile_id, with_server_info=False):
+        """Returns the list of inbounds connected to a specific profile."""
         conn = self._get_connection()
         try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s", (profile_id,))
-                # نتیجه را به صورت یک لیست ساده از ID ها برمی‌گردانیم
-                return [row[0] for row in cur.fetchall()]
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                if with_server_info:
+                    # More complex query to get complete server information
+                    sql = """
+                        SELECT pi.inbound_id, s.* FROM profile_inbounds pi
+                        JOIN servers s ON pi.server_id = s.id
+                        WHERE pi.profile_id = %s;
+                    """
+                    cur.execute(sql, (profile_id,))
+                    results = []
+                    for row in cur.fetchall():
+                        server_info = self._decrypt_server_row(row)
+                        if server_info:
+                            results.append({
+                                'inbound_id': row['inbound_id'],
+                                'server': server_info
+                            })
+                    return results
+                else:
+                    # The same simple query as before
+                    cur.execute("SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s", (profile_id,))
+                    return [row['inbound_id'] for row in cur.fetchall()]
         except psycopg2.Error as e:
             logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
             return []
         finally:
-            if conn: conn.close()
+            if conn:
+                conn.close()
 
     def update_inbounds_for_profile(self, profile_id, server_id, inbound_ids):
         """
