@@ -193,8 +193,7 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cursor:
-                    logger.info("Dropping old 'purchases' table if it exists...")
-                    cursor.execute("DROP TABLE IF EXISTS purchases CASCADE;")
+              
                     for command in commands:
                         cursor.execute(command)
                 conn.commit()

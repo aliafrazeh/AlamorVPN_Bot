@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی و یکپارچه)
+# utils/config_generator.py (نسخه نهایی با پشتیبانی کامل از VLESS/Reality)
 
 import json
 import logging
@@ -14,12 +14,10 @@ logger = logging.getLogger(__name__)
 
 class ConfigGenerator:
     def __init__(self, db_manager):
-        """سازنده کلاس که فقط به db_manager نیاز دارد."""
         self.db_manager = db_manager
         logger.info("ConfigGenerator initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
-        """کانفیگ‌های یک پروفایل را بر اساس اینباندهای تعریف شده برای آن می‌سازد."""
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details:
             return None, None
@@ -30,26 +28,21 @@ class ConfigGenerator:
         return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        """کانفیگ‌ها را برای یک سرور خاص بر اساس اینباندهای فعال آن می‌سازد."""
         inbounds_list_raw = self.db_manager.get_server_inbounds(server_id, only_active=True)
         if not inbounds_list_raw:
             return None, None
         
         server_data = self.db_manager.get_server_by_id(server_id)
-        # تبدیل به فرمتی که _build_configs انتظار دارد
         inbounds_to_create = [{'inbound_id': i['inbound_id'], 'server': server_data} for i in inbounds_list_raw]
         
         return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
-        """
-        موتور اصلی ساخت کانفیگ با UUID و ایمیل منحصر به فرد برای هر کانفیگ.
-        """
         all_generated_configs = []
-        generated_uuids = [] # لیستی برای نگهداری تمام UUID های ساخته شده
+        generated_uuids = []
         
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
-        shared_sub_id = generate_random_string(16) # subId یکسان برای همه
+        shared_sub_id = generate_random_string(16)
 
         inbounds_by_server = {}
         for inbound_info in inbounds_list:
@@ -80,9 +73,8 @@ class ConfigGenerator:
 
             for s_inbound in inbounds:
                 inbound_id_on_panel = s_inbound['inbound_id']
-                remark = custom_remark or f"AlamorBot-{user_telegram_id}"
+                remark_base = custom_remark or f"AlamorBot-{user_telegram_id}"
                 
-                # --- اصلاح اصلی اینجاست: ساخت UUID و ایمیل جدید برای هر کانفیگ ---
                 client_uuid = str(uuid.uuid4())
                 unique_client_email = f"in{inbound_id_on_panel}.{base_client_email}"
 
@@ -98,43 +90,38 @@ class ConfigGenerator:
                     logger.error(f"Failed to add client to inbound {inbound_id_on_panel} on server {server_id}.")
                     continue
 
-                generated_uuids.append(client_uuid) # UUID جدید را به لیست اضافه می‌کنیم
+                generated_uuids.append(client_uuid)
 
                 inbound_details = panel_inbounds_details.get(inbound_id_on_panel)
                 if inbound_details:
                     single_config = self._generate_single_config_url(
-                        client_uuid, server_data, inbound_details, remark
+                        client_uuid, server_data, inbound_details, remark_base
                     )
                     if single_config:
                         all_generated_configs.append(single_config)
 
-        # اطلاعات لازم برای دیتابیس
-        client_details_for_db = {
-            'uuids': generated_uuids, # لیست تمام UUID ها
-            'email': base_client_email,
-            'sub_id': shared_sub_id
-        }
+        client_details_for_db = { 'uuids': generated_uuids, 'email': base_client_email, 'sub_id': shared_sub_id }
         
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
+    
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """
-        این تابع نسخه کامل شده شما برای ساخت لینک‌های پیچیده VLESS است.
+        لینک کانفیگ تکی را با پشتیبانی کامل از پارامترهای VLESS/Reality تولید می‌کند.
         """
         try:
             protocol = inbound_details.get('protocol')
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
-            # آدرس را از subscription_base_url استخراج می‌کنیم
             address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
             
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
+            protocol_settings = json.loads(inbound_details.get('settings', '{}'))
+            
             network = stream_settings.get('network', 'tcp')
             security = stream_settings.get('security', 'none')
             config_url = ""
 
             if protocol == 'vless':
-                # استخراج flow از settings به جای streamSettings
-                protocol_settings = json.loads(inbound_details.get('settings', '{}'))
                 client_in_settings = protocol_settings.get('clients', [{}])[0]
                 flow = client_in_settings.get('flow', '')
 
@@ -142,12 +129,12 @@ class ConfigGenerator:
                 
                 if security == 'reality':
                     reality_settings = stream_settings.get('realitySettings', {})
+                    # استخراج تمام پارامترهای Reality
                     params['fp'] = reality_settings.get('fingerprint', '')
                     params['pbk'] = reality_settings.get('publicKey', '')
                     params['sid'] = reality_settings.get('shortId', '')
-                    # SNI ممکن است لیستی از دامنه‌ها باشد
-                    sni_list = reality_settings.get('serverNames', [''])
-                    params['sni'] = sni_list[0] if sni_list else ''
+                    params['sni'] = reality_settings.get('serverNames', [''])[0]
+                    params['spiderX'] = reality_settings.get('spiderX', '/') # افزودن Spider X
                 
                 if security == 'tls':
                     tls_settings = stream_settings.get('tlsSettings', {})
@@ -161,6 +148,7 @@ class ConfigGenerator:
                 if flow:
                     params['flow'] = flow
 
+                # حذف پارامترهای خالی قبل از ساخت لینک
                 query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
                 config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
             
