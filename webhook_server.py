@@ -99,31 +99,43 @@ def serve_subscription(sub_id):
     if not purchase or not purchase['is_active']:
         return Response("Subscription not found or is inactive.", status=404)
         
-    active_domain_record = db_manager.get_active_subscription_domain()
-    if not active_domain_record:
-        return Response("No active subscription domain is configured.", status=500)
-    active_domain = active_domain_record['domain_name']
-
     synced_configs = []
     if purchase.get('profile_id'):
         synced_configs = db_manager.get_synced_configs_for_profile(purchase['profile_id'])
     else:
-        # TODO: منطق برای خرید عادی در آینده باید از synced_configs استفاده کند
-        # فعلا لینک‌های تکی ذخیره شده را برمی‌گردانیم
-        single_configs = json.loads(purchase.get('single_configs_json') or '[]')
-        final_subscription_content = "\n".join(single_configs)
-        encoded_content = base64.b64encode(final_subscription_content.encode('utf-8')).decode('utf-8')
-        return Response(encoded_content, mimetype='text/plain')
-
+        # برای خرید عادی، از کانفیگ‌های تکی ذخیره شده استفاده می‌کنیم
+        single_configs_str = purchase.get('single_configs_json')
+        if single_configs_str:
+            try:
+                # چون single_configs_str ممکن است خودش یک رشته JSON از لیست باشد
+                # ابتدا آن را به لیست پایتون تبدیل می‌کنیم
+                config_list = json.loads(single_configs_str)
+                final_subscription_content = "\n".join(config_list)
+                encoded_content = base64.b64encode(final_subscription_content.encode('utf-8')).decode('utf-8')
+                return Response(encoded_content, mimetype='text/plain')
+            except (json.JSONDecodeError, TypeError):
+                 return Response("Error processing normal subscription configs.", status=500)
+        
     if not synced_configs:
         return Response("No configurations found for this subscription.", status=404)
         
     all_config_links = []
-    client_uuid = purchase['client_uuid']
+    client_uuid_list_str = purchase.get('client_uuid')
+    try:
+        # UUID ها به صورت رشته JSON ذخیره شده‌اند
+        client_uuids = json.loads(client_uuid_list_str)
+    except (json.JSONDecodeError, TypeError):
+        client_uuids = []
+
     client_remark = f"AlamorVPN-{purchase['id']}"
     
     for config_data in synced_configs:
-        link = build_config_link(config_data, client_uuid, client_remark, active_domain)
+        # برای پروفایل‌ها، از اولین UUID در لیست استفاده می‌کنیم (چون همه یکی هستند)
+        # در آینده می‌توان این منطق را برای UUID های متفاوت نیز توسعه داد
+        current_uuid = client_uuids[0] if client_uuids else ''
+        
+        # --- اصلاح اصلی اینجاست: آرگومان چهارم حذف شد ---
+        link = build_config_link(config_data, current_uuid, client_remark)
         if link:
             all_config_links.append(link)
             
@@ -131,7 +143,6 @@ def serve_subscription(sub_id):
     encoded_content = base64.b64encode(final_subscription_content.encode('utf-8')).decode('utf-8')
     
     return Response(encoded_content, mimetype='text/plain')
-
 # --- Endpoint زرین‌پال ---
 @app.route('/zarinpal/verify', methods=['GET'])
 def handle_zarinpal_callback():
