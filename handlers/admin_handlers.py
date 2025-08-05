@@ -1775,11 +1775,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         handle_profile_selection(admin_id, message, profile_id)
         
         
-    def _show_domain_management_menu(admin_id, message):
-        domains = _db_manager.get_all_subscription_domains()
-        markup = inline_keyboards.get_domain_management_menu(domains)
-        _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
-
+   
     def start_add_domain_flow(admin_id, message):
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
