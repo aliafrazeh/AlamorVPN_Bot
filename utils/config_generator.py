@@ -98,62 +98,74 @@ class ConfigGenerator:
 
     def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
         """
-        لینک کانفیگ را با خواندن صحیح ساختار تودرتوی Reality تولید می‌کند. (نسخه نهایی)
+        Generates the final config link by correctly parsing all VLESS variations (TCP, WS, TLS, Reality)
+        based on the panel's exact JSON structure. (Final Version)
         """
         try:
             protocol = inbound_details.get('protocol')
             if protocol != 'vless':
-                logger.warning(f"Config generation for protocol '{protocol}' is not supported yet.")
+                logger.warning(f"Config generation for protocol '{protocol}' is not currently supported.")
                 return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
+            # Extract the address from the subscription URL, removing protocol and port
             address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
             port = inbound_details.get('port')
             
+            # Load the main settings objects
             stream_settings = json.loads(inbound_details.get('streamSettings', '{}'))
             protocol_settings = json.loads(inbound_details.get('settings', '{}'))
             
+            # --- Start building the parameters for the config link ---
             params = {
                 'type': stream_settings.get('network', 'tcp'),
                 'security': stream_settings.get('security', 'none')
             }
 
-            flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
+            # Extract 'flow' from the main settings
+            client_in_settings = protocol_settings.get('clients', [{}])[0]
+            flow = client_in_settings.get('flow', '')
             if flow:
                 params['flow'] = flow
 
+            # Handle TLS settings
             if params['security'] == 'tls':
                 tls_settings = stream_settings.get('tlsSettings', {})
+                # The 'fingerprint' is nested inside a 'settings' object within 'tlsSettings'
+                nested_tls_settings = tls_settings.get('settings', {})
+                params['fp'] = nested_tls_settings.get('fingerprint', '')
                 params['sni'] = tls_settings.get('serverName', address)
-                params['fp'] = tls_settings.get('fingerprint', '')
 
-            # --- اصلاح اصلی و نهایی اینجاست ---
+            # Handle Reality settings
             if params['security'] == 'reality':
                 reality_settings = stream_settings.get('realitySettings', {})
-                # خواندن از آبجکت settings داخلی
-                nested_settings = reality_settings.get('settings', {})
+                # The main parameters are nested inside a 'settings' object within 'realitySettings'
+                nested_reality_settings = reality_settings.get('settings', {})
                 
-                params['pbk'] = nested_settings.get('publicKey', '')
-                params['fp'] = nested_settings.get('fingerprint', '')
-                params['spiderX'] = nested_settings.get('spiderX', '')
+                params['pbk'] = nested_reality_settings.get('publicKey', '')
+                params['fp'] = nested_reality_settings.get('fingerprint', '')
+                params['spiderX'] = nested_reality_settings.get('spiderX', '')
                 
-                # خواندن از آبجکت realitySettings اصلی
+                # Other parameters are directly under 'realitySettings'
                 sni_list = reality_settings.get('serverNames', [''])
                 params['sni'] = sni_list[0] if sni_list else ''
                 
                 short_ids_list = reality_settings.get('shortIds', [''])
                 params['sid'] = short_ids_list[0] if short_ids_list else ''
-                
+
+            # Handle Network/Transport settings
             if params['type'] == 'ws':
                 ws_settings = stream_settings.get('wsSettings', {})
-                params['path'] = ws_settings.get('path', '/')
-                params['host'] = ws_settings.get('headers', {}).get('Host', address)
+                params['path'] = ws_settings.get('path', '')
+                # The 'host' is directly under 'wsSettings', not in 'headers'
+                params['host'] = ws_settings.get('host', '')
             
             elif params['type'] == 'grpc':
                 grpc_settings = stream_settings.get('grpcSettings', {})
                 params['serviceName'] = grpc_settings.get('serviceName', '')
 
-            # حذف پارامترهای خالی قبل از ساخت لینک
+            # --- Finish building the link ---
+            # Remove any empty parameters before creating the query string
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
             
             config_url = f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
@@ -162,4 +174,4 @@ class ConfigGenerator:
 
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
-        return None
+            return None
