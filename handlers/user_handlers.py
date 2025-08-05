@@ -378,33 +378,55 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         user_id = message.from_user.id
         state_data = _user_states.get(user_id)
 
-        # اگر کاربر در وضعیت انتظار رسید نیست، خارج شو
         if not state_data or state_data.get('state') != 'waiting_for_payment_receipt':
             return
 
-        # اگر پیام عکس نیست، به کاربر اطلاع بده
         if not message.photo:
             prompt_id = state_data.get('prompt_message_id')
-            current_text = _bot.get_chat(user_id).text or ""
-            _bot.edit_message_text(f"{messages.INVALID_RECEIPT_FORMAT}\n\n{current_text}", user_id, prompt_id)
+            _bot.send_message(user_id, messages.INVALID_RECEIPT_FORMAT)
             return
 
-        # دریافت اطلاعات لازم از وضعیت کاربر
-        order_data = state_data['data']
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
         if not user_db_info:
             _bot.send_message(user_id, messages.OPERATION_FAILED)
             _clear_user_state(user_id)
             return
 
-        # ساخت جزئیات سفارش برای ذخیره در دیتابیس
+        order_data = state_data['data']
+        
+        # --- FIX IS HERE: Differentiate between purchase types ---
+        server_id = None
+        server_name = ""
+
+        if order_data.get('purchase_type') == 'profile':
+            profile_details = order_data['profile_details']
+            server_name = f"پروفایل: {profile_details['name']}"
+            # For profiles, there's no single server_id. We can leave it as None or use a placeholder.
+            # We will retrieve the actual server IDs later when finalizing the purchase.
+            # For now, we get a representative ID for the database record.
+            profile_inbounds = _db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
+            if profile_inbounds:
+                server_id = profile_inbounds[0]['server']['id']
+            else:
+                _bot.send_message(user_id, "Error: The selected profile has no servers configured. Please inform the admin.")
+                _clear_user_state(user_id)
+                return
+        else:
+            # This is the old logic for normal service purchases
+            server_id = order_data['server_id']
+            server_info = _db_manager.get_server_by_id(server_id)
+            server_name = server_info['name'] if server_info else "Unknown Server"
+
+        # --- End of Fix ---
+
         order_details_for_db = {
             'user_telegram_id': user_id,
             'user_db_id': user_db_info['id'],
             'user_first_name': message.from_user.first_name,
-            'server_id': order_data['server_id'],
-            'server_name': _db_manager.get_server_by_id(order_data['server_id'])['name'],
-            'plan_type': order_data['plan_type'],
+            'server_id': server_id, # Now correctly set for both cases
+            'server_name': server_name,
+            'purchase_type': order_data.get('purchase_type'),
+            'profile_details': order_data.get('profile_details'),
             'plan_details': order_data.get('plan_details'),
             'gb_plan_details': order_data.get('gb_plan_details'),
             'requested_gb': order_data.get('requested_gb'),
@@ -414,7 +436,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             'receipt_file_id': message.photo[-1].file_id
         }
 
-        # ثبت پرداخت در دیتابیس
         payment_id = _db_manager.add_payment(
             user_db_info['id'],
             order_data['total_price'],
@@ -423,24 +444,21 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         )
 
         if not payment_id:
-            _bot.send_message(user_id, messages.RECEIPT_SEND_ERROR)
+            _bot.send_message(user_id, "An error occurred while saving your payment. Please try again.")
             _clear_user_state(user_id)
             return
 
-        # --- بخش جدید: ارسال نوتیفیکیشن به ادمین‌ها مستقیماً از اینجا ---
-        from config import ADMIN_IDS # ایمپورت لیست ادمین‌ها
-
+        # Notify admins
         caption = messages.ADMIN_NEW_PAYMENT_NOTIFICATION_DETAILS.format(
             user_first_name=helpers.escape_markdown_v1(order_details_for_db['user_first_name']),
             user_telegram_id=order_details_for_db['user_telegram_id'],
             amount=order_details_for_db['total_price'],
-            server_name=helpers.escape_markdown_v1(order_details_for_db['server_name']),
+            server_name=helpers.escape_markdown_v1(order_details_for_db['server_name']), # Using the correct server_name
             plan_details=helpers.escape_markdown_v1(order_details_for_db['plan_details_text_display']),
             gateway_name=helpers.escape_markdown_v1(order_details_for_db['gateway_name'])
         )
         markup = inline_keyboards.get_admin_payment_action_menu(payment_id)
         
-        # ارسال پیام به تمام ادمین‌ها
         for admin_id in ADMIN_IDS:
             try:
                 sent_msg = _bot.send_photo(
@@ -450,20 +468,14 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                     parse_mode='Markdown',
                     reply_markup=markup
                 )
-                # آیدی پیام ارسال شده به اولین ادمین را برای ویرایش‌های بعدی ذخیره می‌کنیم
                 if admin_id == ADMIN_IDS[0]:
                     _db_manager.update_payment_admin_notification_id(payment_id, sent_msg.message_id)
             except Exception as e:
                 logger.error(f"Failed to send payment notification to admin {admin_id}: {e}")
-        # --- پایان بخش جدید ---
 
         _bot.send_message(user_id, messages.RECEIPT_RECEIVED_USER)
         _clear_user_state(user_id)
         _show_user_main_menu(user_id)
-
-    # --- سرویس‌های من ---
-    # handlers/user_handlers.py
-
     def show_service_details(user_id, purchase_id, message):
         """
         Shows the details of a specific subscription, without the single config button.
