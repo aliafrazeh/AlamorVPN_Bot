@@ -178,7 +178,7 @@ class DatabaseManager:
                 authority TEXT,
                 ref_id TEXT
             )
-            """,,
+            """,
             """
             CREATE TABLE IF NOT EXISTS subscription_domains (
                 id SERIAL PRIMARY KEY,
