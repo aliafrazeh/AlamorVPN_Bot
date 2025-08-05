@@ -1071,3 +1071,36 @@ class DatabaseManager:
             return -1 # نشان‌دهنده خطا
         finally:
             if conn: conn.close()
+            
+            
+    def get_purchase_by_sub_id(self, sub_id):
+        """یک خرید را بر اساس شناسه اشتراک یکتای آن پیدا می‌کند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM purchases WHERE sub_id = %s", (sub_id,))
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting purchase by sub_id {sub_id}: {e}")
+            return None
+        finally:
+            if conn: conn.close()
+            
+    def get_synced_configs_for_profile(self, profile_id):
+        """تمام کانفیگ‌های همگام‌سازی شده برای یک پروفایل خاص را برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # با JOIN کردن جداول، کانفیگ‌های مربوط به یک پروفایل را پیدا می‌کنیم
+                sql = """
+                    SELECT sc.* FROM synced_configs sc
+                    JOIN profile_inbounds pi ON sc.server_id = pi.server_id AND sc.inbound_id = pi.inbound_id
+                    WHERE pi.profile_id = %s;
+                """
+                cur.execute(sql, (profile_id,))
+                return cur.fetchall()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting synced configs for profile {profile_id}: {e}")
+            return []
+        finally:
+            if conn: conn.close()

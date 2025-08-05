@@ -1,12 +1,13 @@
 # webhook_server.py
 
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, Response
 import requests
 import json
 import logging
 import os
 import sys
 import datetime
+import base64
 
 # افزودن مسیر پروژه به sys.path
 project_path = os.path.dirname(os.path.abspath(__file__))
@@ -36,7 +37,31 @@ BOT_USERNAME = BOT_USERNAME_ALAMOR # <-- اصلاح شد
 @app.route('/', methods=['GET'])
 def index():
     return "AlamorVPN Bot Webhook Server is running."
-
+def build_config_link(synced_config, client_uuid, client_remark, active_domain):
+    """
+    با استفاده از اطلاعات خام همگام‌سازی شده، لینک کانفیگ نهایی را می‌سازد.
+    """
+    try:
+        # جایگزین کردن آدرس سرور اصلی با دامنه ضد فیلتر
+        address = active_domain
+        port = synced_config['port']
+        remark = f"{client_remark} - {synced_config['remark']}"
+        
+        # فرض ما بر VLESS/TCP است (رایج‌ترین حالت)
+        if synced_config['protocol'] == 'vless':
+            stream_settings = json.loads(synced_config['stream_settings'])
+            link = (
+                f"vless://{client_uuid}@{address}:{port}"
+                f"?type={stream_settings.get('network', 'tcp')}"
+                f"&security={stream_settings.get('security', 'none')}"
+                f"#{remark}"
+            )
+            return link
+        # در آینده می‌توان پروتکل‌های دیگر را نیز اینجا اضافه کرد
+        
+    except Exception as e:
+        logger.error(f"Error building config link for inbound {synced_config['inbound_id']}: {e}")
+        return None
 @app.route('/zarinpal/verify', methods=['GET'])
 def handle_zarinpal_callback():
     authority = request.args.get('Authority')
@@ -113,6 +138,49 @@ def handle_zarinpal_callback():
     else:
         bot.send_message(user_telegram_id, "شما فرآیند پرداخت را لغو کردید. سفارش شما ناتمام باقی ماند.")
         return render_template('payment_status.html', status='error', message="تراکنش توسط شما لغو شد.", bot_username=BOT_USERNAME)
+# --- Endpoint جدید برای سرور اشتراک ---
+@app.route('/sub/<sub_id>', methods=['GET'])
+def serve_subscription(sub_id):
+    logger.info(f"Subscription request received for sub_id: {sub_id}")
+    
+    # ۱. پیدا کردن خرید مربوط به این sub_id
+    purchase = db_manager.get_purchase_by_sub_id(sub_id)
+    if not purchase or not purchase['is_active']:
+        return Response("Subscription not found or is inactive.", status=404)
+        
+    # ۲. پیدا کردن دامنه فعال
+    active_domain_record = db_manager.get_active_subscription_domain()
+    if not active_domain_record:
+        return Response("No active subscription domain is configured.", status=500)
+    active_domain = active_domain_record['domain_name']
+
+    # ۳. دریافت کانفیگ‌های مربوط به این خرید
+    # فعلا فقط پروفایل‌ها این نوع لینک را دارند
+    # TODO: این منطق باید برای خرید عادی نیز در آینده توسعه یابد
+    if purchase.get('profile_id'):
+        synced_configs = db_manager.get_synced_configs_for_profile(purchase['profile_id'])
+    else:
+        # منطق برای خرید عادی در اینجا اضافه خواهد شد
+        return Response("Subscription type not supported yet.", status=500)
+
+    if not synced_configs:
+        return Response("No configurations found for this subscription.", status=404)
+        
+    # ۴. ساخت لینک‌های کانفیگ نهایی
+    all_config_links = []
+    client_uuid = purchase['client_uuid'] # UUID مشترک برای همه کانفیگ‌ها
+    client_remark = f"AlamorVPN-{purchase['id']}" # نام دلخواه
+    
+    for config_data in synced_configs:
+        link = build_config_link(config_data, client_uuid, client_remark, active_domain)
+        if link:
+            all_config_links.append(link)
+            
+    # ۵. ترکیب و کد کردن لینک‌ها
+    final_subscription_content = "\n".join(all_config_links)
+    encoded_content = base64.b64encode(final_subscription_content.encode('utf-8')).decode('utf-8')
+    
+    return Response(encoded_content, mimetype='text/plain')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
