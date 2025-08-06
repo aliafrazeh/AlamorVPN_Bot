@@ -49,10 +49,10 @@ class DatabaseManager:
                 first_name TEXT,
                 last_name TEXT,
                 username TEXT,
-                is_admin BOOLEAN DEFAULT FALSE,
+                is_admin BOOLEAN DEFAULT FALSE, 
                 join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            )
+            );
             """,
             """
             CREATE TABLE IF NOT EXISTS settings (
@@ -1186,4 +1186,30 @@ class DatabaseManager:
             if conn: conn.close()
             
             
-    
+    def set_user_admin_status(self, telegram_id, is_admin):
+        """وضعیت ادمین بودن یک کاربر را تغییر می‌دهد."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET is_admin = %s WHERE telegram_id = %s", (is_admin, telegram_id))
+                conn.commit()
+                return cur.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error setting admin status for {telegram_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_all_admins(self):
+        """لیست تمام کاربرانی که ادمین هستند را برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM users WHERE is_admin = TRUE")
+                return cur.fetchall()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all admins: {e}")
+            return []
+        finally:
+            if conn: conn.close()

@@ -21,6 +21,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
         types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"),
         types.InlineKeyboardButton("🔄 همگام‌سازی کانفیگ‌ها", callback_data="admin_sync_configs"),
+        types.InlineKeyboardButton("🔑 مدیریت ادمین‌ها", callback_data="admin_manage_admins"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -434,5 +435,15 @@ def get_domain_management_menu(domains):
                 types.InlineKeyboardButton(btn_text_delete, callback_data=f"admin_delete_domain_{domain['id']}")
             )
 
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
+
+
+def get_admin_management_menu():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin"),
+        types.InlineKeyboardButton("❌ حذف ادمین", callback_data="admin_remove_admin")
+    )
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup

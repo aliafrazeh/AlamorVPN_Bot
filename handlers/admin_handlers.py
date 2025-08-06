@@ -323,7 +323,33 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_add_gateway(admin_id, data)
         elif state == 'waiting_for_gateway_id_to_toggle':
             execute_toggle_gateway_status(admin_id, text)
+        # --- Admin Management Flows ---
+        elif state == 'waiting_for_admin_id_to_add':
+            if not text.isdigit():
+                _bot.send_message(admin_id, "آیدی نامعتبر است. لطفاً یک عدد وارد کنید.")
+                return
+            target_user_id = int(text)
+            if _db_manager.set_user_admin_status(target_user_id, True):
+                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت به لیست ادمین‌ها اضافه شد.")
+            else:
+                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در افزودن ادمین خطایی رخ داد.")
+            _clear_admin_state(admin_id)
+            _show_admin_management_menu(admin_id, message)
 
+        elif state == 'waiting_for_admin_id_to_remove':
+            if not text.isdigit():
+                _bot.send_message(admin_id, "آیدی نامعتبر است. لطفاً یک عدد وارد کنید.")
+                return
+            target_user_id = int(text)
+            if target_user_id == admin_id:
+                _bot.send_message(admin_id, "❌ شما نمی‌توانید خودتان را از لیست ادمین‌ها حذف کنید.")
+                return
+            if _db_manager.set_user_admin_status(target_user_id, False):
+                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت از لیست ادمین‌ها حذف شد.")
+            else:
+                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در حذف ادمین خطایی رخ داد.")
+            _clear_admin_state(admin_id)
+            _show_admin_management_menu(admin_id, message)
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -423,6 +449,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_manage_admins": _show_admin_management_menu,
+            "admin_add_admin": start_add_admin_flow,
+            "admin_remove_admin": start_remove_admin_flow,
             "admin_sync_configs": start_sync_configs_flow,
             "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
             "admin_list_profiles": list_all_profiles,
@@ -1705,3 +1734,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # نمایش مجدد منوی مدیریت دامنه‌ها
         from .domain_handlers import show_domain_management_menu # ایمپورت محلی برای جلوگیری از خطا
         show_domain_management_menu(admin_id, message)
+        
+        
+    def _show_admin_management_menu(admin_id, message):
+        admins = _db_manager.get_all_admins()
+        admin_list = "\n".join([f"- `{admin['telegram_id']}` ({admin['first_name']})" for admin in admins])
+        text = f"🔑 **مدیریت ادمین‌ها**\n\n**لیست ادمین‌های فعلی:**\n{admin_list}"
+        _show_menu(admin_id, text, inline_keyboards.get_admin_management_menu(), message)
+
+    def start_add_admin_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً آیدی عددی کاربری که می‌خواهید به ادمین تبدیل شود را وارد کنید:", inline_keyboards.get_back_button("admin_manage_admins"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_admin_id_to_add', 'prompt_message_id': prompt.message_id}
+
+    def start_remove_admin_flow(admin_id, message):
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً آیدی عددی ادمینی که می‌خواهید از لیست حذف شود را وارد کنید:", inline_keyboards.get_back_button("admin_manage_admins"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_admin_id_to_remove', 'prompt_message_id': prompt.message_id}
