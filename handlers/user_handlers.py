@@ -14,9 +14,9 @@ from utils import messages, helpers
 from keyboards import inline_keyboards
 from utils.config_generator import ConfigGenerator
 from utils.helpers import is_float_or_int , escape_markdown_v1
-from utils.bot_helpers import send_subscription_info # این ایمپورت جدید است
 from config import ZARINPAL_MERCHANT_ID, WEBHOOK_DOMAIN , ZARINPAL_SANDBOX
 from main import send_welcome
+from utils.bot_helpers import send_subscription_info
 
 logger = logging.getLogger(__name__)
 
@@ -617,22 +617,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         else:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
 
-    # تابع جدید برای ارسال لینک و QR کد
-    def send_subscription_info(user_id, sub_link):
-        _bot.send_message(user_id, messages.CONFIG_DELIVERY_HEADER, parse_mode='Markdown')
-        
-        # Create QR Code in memory
-        qr_image = qrcode.make(sub_link)
-        bio = BytesIO()
-        bio.name = 'qrcode.jpeg'
-        qr_image.save(bio, 'JPEG')
-        bio.seek(0)
 
-        # Send QR Code
-        _bot.send_photo(user_id, bio, caption=messages.QR_CODE_CAPTION)
-        
-        # Send Subscription Link
-        _bot.send_message(user_id, messages.CONFIG_DELIVERY_SUB_LINK.format(sub_link=sub_link), parse_mode='Markdown')
 
     def show_my_services_list(user_id, message):
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
