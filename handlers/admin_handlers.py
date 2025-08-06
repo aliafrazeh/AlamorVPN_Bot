@@ -22,6 +22,7 @@ from utils.bot_helpers import finalize_profile_purchase
 from handlers.domain_handlers import register_domain_handlers # <-- ایمپورت جدید
 from utils.system_helpers import remove_domain_nginx_files
 from utils.system_helpers import run_shell_command
+from utils import helpers
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -450,6 +451,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_health_check": run_system_health_check,
             "admin_check_nginx": check_nginx_status,
             "admin_manage_admins": _show_admin_management_menu,
             "admin_add_admin": start_add_admin_flow,
@@ -1779,4 +1781,49 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             report += "❌ مشکلی در سرویس یا کانفیگ Nginx وجود دارد. لطفاً خروجی‌های بالا را بررسی کنید."
             
         _bot.send_message(admin_id, report, parse_mode='Markdown')
+        _show_admin_main_menu(admin_id) # نمایش مجدد منوی اصلی
+        
+        
+    def run_system_health_check(admin_id, message):
+        """یک بررسی کامل روی وضعیت سرویس‌های ربات و Nginx انجام می‌دهد و تلاش می‌کند مشکلات را حل کند."""
+        _bot.edit_message_text("🩺 در حال انجام چکاپ کامل سیستم... لطفاً چند لحظه صبر کنید.", admin_id, message.message_id)
+        
+        report_parts = ["📊 **گزارش وضعیت کامل سیستم**\n"]
+
+        # ۱. بررسی سرویس اصلی ربات
+        success, output = run_shell_command(['systemctl', 'is-active', 'alamorbot.service'])
+        status_text = "فعال ✅" if success else f"غیرفعال ❌\n`{output}`"
+        report_parts.append(f"▫️ **سرویس ربات اصلی:** {status_text}")
+
+        # ۲. بررسی سرویس وب‌هوک (علت خطای 502)
+        success, output = run_shell_command(['systemctl', 'is-active', 'alamor_webhook.service'])
+        if success:
+            report_parts.append("▫️ **سرویس وب‌هوک (Flask):** فعال ✅")
+        else:
+            report_parts.append(f"▫️ **سرویس وب‌هوک (Flask):** غیرفعال ❌\n   - در حال تلاش برای روشن کردن مجدد...")
+            start_success, start_output = run_shell_command(['systemctl', 'start', 'alamor_webhook.service'])
+            if start_success:
+                report_parts.append("   - ✅ سرویس وب‌هوک با موفقیت روشن شد!")
+            else:
+                report_parts.append(f"   - ❌ روشن کردن سرویس ناموفق بود:\n`{start_output}`")
+                
+        # ۳. بررسی سرویس Nginx
+        success, output = run_shell_command(['systemctl', 'is-active', 'nginx.service'])
+        if success:
+            report_parts.append("▫️ **سرویس Nginx:** فعال ✅")
+        else:
+            report_parts.append(f"▫️ **سرویس Nginx:** غیرفعال ❌\n   - در حال تلاش برای روشن کردن مجدد...")
+            start_success, start_output = run_shell_command(['systemctl', 'start', 'nginx.service'])
+            if start_success:
+                report_parts.append("   - ✅ سرویس Nginx با موفقیت روشن شد!")
+            else:
+                report_parts.append(f"   - ❌ روشن کردن سرویس ناموفق بود:\n`{start_output}`")
+
+        # ۴. بررسی کانفیگ Nginx
+        success, output = run_shell_command(['nginx', '-t'])
+        config_status = "صحیح ✅" if success else f"دارای خطا ❌\n`{output}`"
+        report_parts.append(f"▫️ **وضعیت کانفیگ Nginx:** {config_status}")
+        
+        final_report = "\n".join(report_parts)
+        _bot.send_message(admin_id, final_report, parse_mode='Markdown')
         _show_admin_main_menu(admin_id) # نمایش مجدد منوی اصلی
