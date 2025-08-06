@@ -1213,3 +1213,20 @@ class DatabaseManager:
             return []
         finally:
             if conn: conn.close()
+            
+            
+    def check_connection(self):
+        """اتصال به دیتابیس را بررسی می‌کند."""
+        conn = None
+        try:
+            conn = self._get_connection()
+            # اگر کانکشن موفق باشد، یک کوئری ساده اجرا می‌کنیم
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"Database connection check failed: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()

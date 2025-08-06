@@ -1785,45 +1785,67 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def run_system_health_check(admin_id, message):
-        """یک بررسی کامل روی وضعیت سرویس‌های ربات و Nginx انجام می‌دهد و تلاش می‌کند مشکلات را حل کند."""
-        _bot.edit_message_text("🩺 در حال انجام چکاپ کامل سیستم... لطفاً چند لحظه صبر کنید.", admin_id, message.message_id)
+        """یک بررسی کامل روی وضعیت سیستم انجام داده و تلاش می‌کند مشکلات رایج را حل کند."""
+        msg = _bot.edit_message_text("🩺 **شروع چکاپ کامل سیستم...**\n\nلطفاً چند لحظه صبر کنید، نتایج به تدریج نمایش داده می‌شوند.", admin_id, message.message_id, parse_mode='Markdown')
         
         report_parts = ["📊 **گزارش وضعیت کامل سیستم**\n"]
+        errors_found = False
 
-        # ۱. بررسی سرویس اصلی ربات
-        success, output = run_shell_command(['systemctl', 'is-active', 'alamorbot.service'])
-        status_text = "فعال ✅" if success else f"غیرفعال ❌\n`{output}`"
-        report_parts.append(f"▫️ **سرویس ربات اصلی:** {status_text}")
-
-        # ۲. بررسی سرویس وب‌هوک (علت خطای 502)
-        success, output = run_shell_command(['systemctl', 'is-active', 'alamor_webhook.service'])
-        if success:
-            report_parts.append("▫️ **سرویس وب‌هوک (Flask):** فعال ✅")
-        else:
-            report_parts.append(f"▫️ **سرویس وب‌هوک (Flask):** غیرفعال ❌\n   - در حال تلاش برای روشن کردن مجدد...")
-            start_success, start_output = run_shell_command(['systemctl', 'start', 'alamor_webhook.service'])
-            if start_success:
-                report_parts.append("   - ✅ سرویس وب‌هوک با موفقیت روشن شد!")
+        # ۱. بررسی سرویس‌ها
+        report_parts.append("\n--- **۱. وضعیت سرویس‌ها** ---")
+        services_to_check = ['alamorbot.service', 'alamor_webhook.service', 'nginx.service']
+        for service in services_to_check:
+            is_active, _ = run_shell_command(['systemctl', 'is-active', service])
+            if is_active:
+                report_parts.append(f"✅ سرویس `{service}`: **فعال**")
             else:
-                report_parts.append(f"   - ❌ روشن کردن سرویس ناموفق بود:\n`{start_output}`")
-                
-        # ۳. بررسی سرویس Nginx
-        success, output = run_shell_command(['systemctl', 'is-active', 'nginx.service'])
-        if success:
-            report_parts.append("▫️ **سرویس Nginx:** فعال ✅")
-        else:
-            report_parts.append(f"▫️ **سرویس Nginx:** غیرفعال ❌\n   - در حال تلاش برای روشن کردن مجدد...")
-            start_success, start_output = run_shell_command(['systemctl', 'start', 'nginx.service'])
-            if start_success:
-                report_parts.append("   - ✅ سرویس Nginx با موفقیت روشن شد!")
-            else:
-                report_parts.append(f"   - ❌ روشن کردن سرویس ناموفق بود:\n`{start_output}`")
-
-        # ۴. بررسی کانفیگ Nginx
-        success, output = run_shell_command(['nginx', '-t'])
-        config_status = "صحیح ✅" if success else f"دارای خطا ❌\n`{output}`"
-        report_parts.append(f"▫️ **وضعیت کانفیگ Nginx:** {config_status}")
+                errors_found = True
+                report_parts.append(f"❌ سرویس `{service}`: **غیرفعال**")
+                report_parts.append(f"   - در حال تلاش برای روشن کردن...")
+                start_success, start_output = run_shell_command(['systemctl', 'start', service])
+                if start_success:
+                    report_parts.append("   - ✅ سرویس با موفقیت روشن شد!")
+                else:
+                    report_parts.append(f"   - ❌ روشن کردن ناموفق بود.")
         
+        # ۲. بررسی اتصال به دیتابیس
+        report_parts.append("\n--- **۲. اتصال به دیتابیس** ---")
+        if _db_manager.check_connection():
+            report_parts.append("✅ اتصال به دیتابیس PostgreSQL: **موفق**")
+        else:
+            errors_found = True
+            report_parts.append("❌ اتصال به دیتابیس PostgreSQL: **ناموفق**\n   - لطفاً اطلاعات `DB_` در فایل `.env` را بررسی کنید.")
+
+        # ۳. بررسی اتصال به پنل‌های X-UI
+        report_parts.append("\n--- **۳. اتصال به پنل‌های X-UI** ---")
+        servers = _db_manager.get_all_servers(only_active=False)
+        if not servers:
+            report_parts.append("⚠️ هیچ سروری در ربات تعریف نشده است.")
+        else:
+            for server in servers:
+                api_client = get_api_client(server)
+                if api_client and api_client.check_login():
+                    report_parts.append(f"✅ اتصال به سرور '{helpers.escape_markdown_v1(server['name'])}': **موفق**")
+                else:
+                    errors_found = True
+                    report_parts.append(f"❌ اتصال به سرور '{helpers.escape_markdown_v1(server['name'])}': **ناموفق**")
+
+        # ۴. بررسی تنظیمات کلیدی
+        report_parts.append("\n--- **۴. بررسی تنظیمات فروش** ---")
+        if not _db_manager.get_active_subscription_domain():
+            errors_found = True
+            report_parts.append("⚠️ **هشدار:** هیچ دامنه اشتراک فعالی تنظیم نشده است. کاربران نمی‌توانند لینک دریافت کنند.")
+        if not _db_manager.get_all_plans(only_active=True):
+            errors_found = True
+            report_parts.append("⚠️ **هشدار:** هیچ پلن فروش فعالی وجود ندارد. کاربران نمی‌توانند خرید کنند.")
+        if not _db_manager.get_all_payment_gateways(only_active=True):
+            errors_found = True
+            report_parts.append("⚠️ **هشدار:** هیچ درگاه پرداخت فعالی وجود ندارد. کاربران نمی‌توانند پرداخت کنند.")
+        
+        if not errors_found:
+            report_parts.append("\n✅ **نتیجه:** تمام بخش‌های کلیدی سیستم به درستی کار می‌کنند.")
+        else:
+            report_parts.append("\n❌ **نتیجه:** برخی مشکلات شناسایی شد. لطفاً گزارش بالا را بررسی کنید.")
+            
         final_report = "\n".join(report_parts)
-        _bot.send_message(admin_id, final_report, parse_mode='Markdown')
-        _show_admin_main_menu(admin_id) # نمایش مجدد منوی اصلی
+        _bot.edit_message_text(final_report, admin_id, msg.message_id, parse_mode='Markdown', reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
