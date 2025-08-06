@@ -366,7 +366,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             'data': {}, 
             'prompt_message_id': prompt.message_id
         }
-       
     def start_toggle_plan_status_flow(admin_id, message):
         _clear_admin_state(admin_id)
         # --- بخش اصلاح شده ---
