@@ -21,6 +21,7 @@ from utils.helpers import normalize_panel_inbounds
 from utils.bot_helpers import finalize_profile_purchase
 from handlers.domain_handlers import register_domain_handlers # <-- ایمپورت جدید
 from utils.system_helpers import remove_domain_nginx_files
+from utils.system_helpers import run_shell_command
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -449,6 +450,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_check_nginx": check_nginx_status,
             "admin_manage_admins": _show_admin_management_menu,
             "admin_add_admin": start_add_admin_flow,
             "admin_remove_admin": start_remove_admin_flow,
@@ -1751,3 +1753,30 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, "لطفاً آیدی عددی ادمینی که می‌خواهید از لیست حذف شود را وارد کنید:", inline_keyboards.get_back_button("admin_manage_admins"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_admin_id_to_remove', 'prompt_message_id': prompt.message_id}
+        
+        
+        
+    def check_nginx_status(admin_id, message):
+        """وضعیت و کانفیگ Nginx را بررسی کرده و نتیجه را به ادمین ارسال می‌کند."""
+        _bot.edit_message_text("⏳ در حال بررسی وضعیت وب‌سرور Nginx... لطفاً صبر کنید.", admin_id, message.message_id)
+        
+        # اجرای دستور status
+        status_success, status_output = run_shell_command(['systemctl', 'status', 'nginx.service'])
+        
+        # اجرای دستور تست کانفیگ
+        config_success, config_output = run_shell_command(['nginx', '-t'])
+        
+        # آماده‌سازی گزارش نهایی
+        report = "📊 **گزارش وضعیت Nginx**\n\n"
+        report += "--- **وضعیت سرویس (`systemctl status`)** ---\n"
+        report += f"```\n{status_output}\n```\n\n"
+        report += "--- **تست فایل‌های کانفیگ (`nginx -t`)** ---\n"
+        report += f"```\n{config_output}\n```\n\n"
+        
+        if status_success and config_success:
+            report += "✅ به نظر می‌رسد سرویس Nginx فعال و کانفیگ آن بدون مشکل است."
+        else:
+            report += "❌ مشکلی در سرویس یا کانفیگ Nginx وجود دارد. لطفاً خروجی‌های بالا را بررسی کنید."
+            
+        _bot.send_message(admin_id, report, parse_mode='Markdown')
+        _show_admin_main_menu(admin_id) # نمایش مجدد منوی اصلی

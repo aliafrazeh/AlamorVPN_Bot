@@ -132,3 +132,29 @@ def check_ssl_certificate_exists(domain_name):
     else:
         logger.warning(f"SSL certificate NOT found for domain {domain_name}.")
         return False
+    
+    
+    
+def run_shell_command(command):
+    """
+    یک دستور شل را با دسترسی sudo اجرا کرده و نتیجه کامل آن را برمی‌گرداند.
+    """
+    try:
+        full_command = ['sudo'] + command
+        # check=False باعث می‌شود حتی در صورت بروز خطا، برنامه متوقف نشود
+        result = subprocess.run(full_command, check=False, capture_output=True, text=True, encoding='utf-8')
+        
+        # ترکیب خروجی استاندارد و خروجی خطا
+        output = result.stdout + result.stderr
+        
+        if result.returncode == 0:
+            logger.info(f"Command successful: {' '.join(command)}")
+            return True, output
+        else:
+            logger.error(f"Command failed with exit code {result.returncode}: {' '.join(command)}\nOutput: {output}")
+            return False, output
+            
+    except Exception as e:
+        error_message = f"Exception running command {' '.join(command)}: {e}"
+        logger.error(error_message)
+        return False, error_message
