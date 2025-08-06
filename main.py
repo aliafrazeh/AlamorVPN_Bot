@@ -77,13 +77,22 @@ def send_user_id(message):
 def main():
     bot.remove_webhook()
     logger.info("Bot is starting...")
-
+    try:
+        db_admins = db_manager.get_all_admins()
+        if db_admins:
+            for admin in db_admins:
+                if admin['telegram_id'] not in ADMIN_IDS:
+                    ADMIN_IDS.append(admin['telegram_id'])
+        logger.info(f"Final admin list loaded: {ADMIN_IDS}")
+    except Exception as e:
+        logger.error(f"Could not load dynamic admins from database: {e}")
     try:
         db_manager.create_tables()
         logger.info("Database tables checked/created successfully.")
     except Exception as e:
         logger.critical(f"FATAL: Could not create database tables. Error: {e}")
         return
+    
 
     admin_handlers.register_admin_handlers(bot, db_manager, XuiAPIClient)
     logger.info("Admin handlers registered.")
