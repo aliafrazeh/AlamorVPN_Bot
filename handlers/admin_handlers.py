@@ -352,20 +352,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(prompt_text, admin_id, message.message_id, parse_mode='Markdown')
 
     def start_add_plan_flow(admin_id, message):
-        """Starts the flow for adding a new global plan."""
-        _clear_admin_state(admin_id) # Clear any previous state
-        prompt = _show_menu(admin_id, "لطفاً نوع پلن را انتخاب کنید:", inline_keyboards.get_plan_type_selection_menu_admin(), message)
-        # The next step is handled by the callback handler for the plan type buttons.
-
-        
-        server_list_text = "\n".join([f"ID: `{s['id']}` - {helpers.escape_markdown_v1(s['name'])}" for s in servers])
-        prompt_text = f"**لیست سرورها:**\n{server_list_text}\n\nلطفا ID سروری که میخواهید پلن را برای آن تعریف کنید، وارد نمایید:"
-        
-        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_plan_management"), message)
-        
-        # --- THE FIX IS HERE ---
-        # Explicitly tell the bot to pass the next message to the 'process_add_plan_server' function.
-        _bot.register_next_step_handler(prompt, process_add_plan_server)
+        """فرآیند افزودن یک پلن جدید سراسری را شروع می‌کند."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(
+            admin_id, 
+            "لطفاً نوع پلن جدید را انتخاب کنید:", 
+            inline_keyboards.get_plan_type_selection_menu_admin(), 
+            message
+        )
+        # وضعیت را تنظیم می‌کنیم تا ربات منتظر پاسخ از کیبورد بالا باشد
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_plan_type', 
+            'data': {}, 
+            'prompt_message_id': prompt.message_id
+        }
+       
     def start_toggle_plan_status_flow(admin_id, message):
         _clear_admin_state(admin_id)
         # --- بخش اصلاح شده ---
