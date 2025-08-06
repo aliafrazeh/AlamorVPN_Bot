@@ -382,7 +382,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             return
 
         if not message.photo:
-            prompt_id = state_data.get('prompt_message_id')
             _bot.send_message(user_id, messages.INVALID_RECEIPT_FORMAT)
             return
 
@@ -394,38 +393,35 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
 
         order_data = state_data['data']
         
-        # --- FIX IS HERE: Differentiate between purchase types ---
         server_id = None
         server_name = ""
 
+        # تفکیک بین خرید پروفایل و خرید عادی
         if order_data.get('purchase_type') == 'profile':
             profile_details = order_data['profile_details']
             server_name = f"پروفایل: {profile_details['name']}"
-            # For profiles, there's no single server_id. We can leave it as None or use a placeholder.
-            # We will retrieve the actual server IDs later when finalizing the purchase.
-            # For now, we get a representative ID for the database record.
             profile_inbounds = _db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
             if profile_inbounds:
                 server_id = profile_inbounds[0]['server']['id']
             else:
-                _bot.send_message(user_id, "Error: The selected profile has no servers configured. Please inform the admin.")
+                _bot.send_message(user_id, "خطا: پروفایل انتخاب شده هیچ سروری ندارد. لطفاً به ادمین اطلاع دهید.")
                 _clear_user_state(user_id)
                 return
         else:
-            # This is the old logic for normal service purchases
+            # منطق خرید عادی
             server_id = order_data['server_id']
             server_info = _db_manager.get_server_by_id(server_id)
-            server_name = server_info['name'] if server_info else "Unknown Server"
+            server_name = server_info['name'] if server_info else "سرور ناشناس"
 
-        # --- End of Fix ---
-
+        # ساخت دیکشنری کامل برای ذخیره در دیتابیس
         order_details_for_db = {
             'user_telegram_id': user_id,
             'user_db_id': user_db_info['id'],
             'user_first_name': message.from_user.first_name,
-            'server_id': server_id, # Now correctly set for both cases
+            'server_id': server_id,
             'server_name': server_name,
             'purchase_type': order_data.get('purchase_type'),
+            'plan_type': order_data.get('plan_type'), # <-- اطمینان از وجود این کلید
             'profile_details': order_data.get('profile_details'),
             'plan_details': order_data.get('plan_details'),
             'gb_plan_details': order_data.get('gb_plan_details'),
@@ -444,16 +440,16 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         )
 
         if not payment_id:
-            _bot.send_message(user_id, "An error occurred while saving your payment. Please try again.")
+            _bot.send_message(user_id, "خطایی در ذخیره پرداخت شما رخ داد. لطفاً دوباره تلاش کنید.")
             _clear_user_state(user_id)
             return
 
-        # Notify admins
+        # ارسال نوتیفیکیشن به ادمین‌ها
         caption = messages.ADMIN_NEW_PAYMENT_NOTIFICATION_DETAILS.format(
             user_first_name=helpers.escape_markdown_v1(order_details_for_db['user_first_name']),
             user_telegram_id=order_details_for_db['user_telegram_id'],
             amount=order_details_for_db['total_price'],
-            server_name=helpers.escape_markdown_v1(order_details_for_db['server_name']), # Using the correct server_name
+            server_name=helpers.escape_markdown_v1(order_details_for_db['server_name']),
             plan_details=helpers.escape_markdown_v1(order_details_for_db['plan_details_text_display']),
             gateway_name=helpers.escape_markdown_v1(order_details_for_db['gateway_name'])
         )
