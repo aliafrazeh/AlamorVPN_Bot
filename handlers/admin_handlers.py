@@ -253,7 +253,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
         elif state == 'waiting_for_plan_volume':
             if not helpers.is_float_or_int(text): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_VOLUME}", admin_id, prompt_id); return
-            data['volume_gb'] = float(text); state_info['state'] = 'waiting_for_plan_duration'
+            data['volume_gb'] = float(text)
+            state_info['state'] = 'waiting_for_plan_duration'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION, admin_id, prompt_id)
         elif state == 'waiting_for_plan_duration':
             if not text.isdigit(): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION}", admin_id, prompt_id); return
