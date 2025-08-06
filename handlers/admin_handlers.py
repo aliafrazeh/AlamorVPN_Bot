@@ -189,126 +189,103 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state = state_info.get("state")
         prompt_id = state_info.get("prompt_message_id")
         data = state_info.get("data", {})
-        text = message.text
-        
+        text = message.text.strip()
 
         # --- Server Flows ---
         if state == 'waiting_for_server_name':
-            data['name'] = text; state_info['state'] = 'waiting_for_server_url'
+            data['name'] = text
+            state_info['state'] = 'waiting_for_server_url'
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_URL, admin_id, prompt_id)
         elif state == 'waiting_for_server_url':
-            data['url'] = text; state_info['state'] = 'waiting_for_server_username'
+            data['url'] = text
+            state_info['state'] = 'waiting_for_server_username'
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_USERNAME, admin_id, prompt_id)
         elif state == 'waiting_for_server_username':
-            data['username'] = text; state_info['state'] = 'waiting_for_server_password'
+            data['username'] = text
+            state_info['state'] = 'waiting_for_server_password'
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_PASSWORD, admin_id, prompt_id)
         elif state == 'waiting_for_server_password':
-            data['password'] = text; state_info['state'] = 'waiting_for_sub_base_url'
+            data['password'] = text
+            state_info['state'] = 'waiting_for_sub_base_url'
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_SUB_BASE_URL, admin_id, prompt_id)
         elif state == 'waiting_for_sub_base_url':
-            data['sub_base_url'] = text; state_info['state'] = 'waiting_for_sub_path_prefix'
+            data['sub_base_url'] = text
+            state_info['state'] = 'waiting_for_sub_path_prefix'
             _bot.edit_message_text(messages.ADD_SERVER_PROMPT_SUB_PATH_PREFIX, admin_id, prompt_id)
         elif state == 'waiting_for_sub_path_prefix':
-            data['sub_path_prefix'] = text; execute_add_server(admin_id, data)
+            data['sub_path_prefix'] = text
+            execute_add_server(admin_id, data)
         elif state == 'waiting_for_server_id_to_delete':
-            if not text.isdigit() or not (server := _db_manager.get_server_by_id(int(text))):
-                _bot.edit_message_text(f"{messages.SERVER_NOT_FOUND}\n\n{messages.DELETE_SERVER_PROMPT}", admin_id, prompt_id); return
-            confirm_text = messages.DELETE_SERVER_CONFIRM.format(server_name=server['name'], server_id=server['id'])
-            markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_server_{server['id']}", "admin_server_management")
-            _bot.edit_message_text(confirm_text, admin_id, prompt_id, reply_markup=markup)
+            process_delete_server_id(admin_id, message)
+
+        # --- Plan Flows ---
+        elif state == 'waiting_for_plan_name':
+            data['name'] = text
+            # The next step is a callback, handled in get_plan_details_from_callback
+            state_info['state'] = 'waiting_for_plan_type'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
+        elif state == 'waiting_for_plan_volume':
+            if not helpers.is_float_or_int(text) or float(text) <= 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_VOLUME}", admin_id, prompt_id); return
+            data['volume_gb'] = float(text)
+            state_info['state'] = 'waiting_for_plan_duration'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION, admin_id, prompt_id)
+        elif state == 'waiting_for_plan_duration':
+            if not text.isdigit() or int(text) < 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION}", admin_id, prompt_id); return
+            data['duration_days'] = int(text)
+            state_info['state'] = 'waiting_for_plan_price'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PRICE, admin_id, prompt_id)
+        elif state == 'waiting_for_plan_price':
+            if not helpers.is_float_or_int(text) or float(text) < 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PRICE}", admin_id, prompt_id); return
+            data['price'] = float(text)
+            execute_add_plan(admin_id, data)
+        elif state == 'waiting_for_per_gb_price':
+            if not helpers.is_float_or_int(text) or float(text) <= 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PER_GB_PRICE}", admin_id, prompt_id); return
+            data['per_gb_price'] = float(text)
+            state_info['state'] = 'waiting_for_gb_plan_duration'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION_GB, admin_id, prompt_id)
+        elif state == 'waiting_for_gb_plan_duration':
+            if not text.isdigit() or int(text) < 0:
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION_GB}", admin_id, prompt_id); return
+            data['duration_days'] = int(text)
+            execute_add_plan(admin_id, data)
+        elif state == 'waiting_for_plan_id_to_toggle':
+            execute_toggle_plan_status(admin_id, text)
+        elif state == 'waiting_for_plan_id_to_delete':
+            process_delete_plan_id(admin_id, message)
+        elif state == 'waiting_for_plan_id_to_edit':
+            process_edit_plan_id(admin_id, message)
+        elif state == 'waiting_for_new_plan_name':
+            process_edit_plan_name(admin_id, message)
+        elif state == 'waiting_for_new_plan_price':
+            process_edit_plan_price(admin_id, message)
+
+        # --- Profile Flows ---
         elif state == 'waiting_for_profile_name':
             data['name'] = text
             state_info['state'] = 'waiting_for_profile_per_gb_price'
             _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_PER_GB_PRICE, admin_id, prompt_id)
-        
         elif state == 'waiting_for_profile_per_gb_price':
             if not helpers.is_float_or_int(text) or float(text) <= 0:
                 _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_PER_GB_PRICE}", admin_id, prompt_id); return
             data['per_gb_price'] = float(text)
             state_info['state'] = 'waiting_for_profile_duration'
             _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DURATION, admin_id, prompt_id)
-
-        elif state == 'waiting_for_profile_volume':
-            if not helpers.is_float_or_int(text) or float(text) <= 0:
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_VOLUME}", admin_id, prompt_id); return
-            data['total_gb'] = float(text)
-            state_info['state'] = 'waiting_for_profile_duration'
-            _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DURATION, admin_id, prompt_id)
-        elif state == 'waiting_for_profile_description':
-            data['description'] = None if text.lower() == 'skip' else text
-            execute_add_profile(admin_id, data)
         elif state == 'waiting_for_profile_duration':
             if not text.isdigit() or int(text) <= 0:
                 _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PROFILE_PROMPT_DURATION}", admin_id, prompt_id); return
             data['duration_days'] = int(text)
             state_info['state'] = 'waiting_for_profile_description'
             _bot.edit_message_text(messages.ADD_PROFILE_PROMPT_DESCRIPTION, admin_id, prompt_id)
-            
         elif state == 'waiting_for_profile_description':
             data['description'] = None if text.lower() == 'skip' else text
             execute_add_profile(admin_id, data)
-        # --- Plan Flows ---
-        elif state == 'waiting_for_plan_name':
-            data['name'] = text
-            state_info['state'] = 'waiting_for_plan_type'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
-        
-        elif state == 'waiting_for_plan_volume':
-            if not helpers.is_float_or_int(text): 
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_VOLUME}", admin_id, prompt_id)
-                return
-            data['volume_gb'] = float(text)
-            state_info['state'] = 'waiting_for_plan_duration'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION, admin_id, prompt_id)
 
-        elif state == 'waiting_for_plan_duration':
-            if not text.isdigit(): 
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION}", admin_id, prompt_id)
-                return
-            data['duration_days'] = int(text)
-            state_info['state'] = 'waiting_for_plan_price'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PRICE, admin_id, prompt_id)
-
-        elif state == 'waiting_for_plan_price':
-            if not helpers.is_float_or_int(text): 
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PRICE}", admin_id, prompt_id)
-                return
-            data['price'] = float(text)
-            execute_add_plan(admin_id, data)
-
-        elif state == 'waiting_for_per_gb_price':
-            if not helpers.is_float_or_int(text): 
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PER_GB_PRICE}", admin_id, prompt_id)
-                return
-            data['per_gb_price'] = float(text)
-            state_info['state'] = 'waiting_for_gb_plan_duration'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION_GB, admin_id, prompt_id)
-
-        elif state == 'waiting_for_gb_plan_duration':
-            if not text.isdigit(): 
-                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION_GB}", admin_id, prompt_id)
-                return
-            data['duration_days'] = int(text)
-            execute_add_plan(admin_id, data)
-
-        elif state == 'waiting_for_tutorial_platform':
-            process_tutorial_platform(admin_id, message)
-        elif state == 'waiting_for_plan_id_to_toggle':
-            execute_toggle_plan_status(admin_id, text)
-        elif state == 'waiting_for_tutorial_app_name':
-            process_tutorial_app_name(admin_id, message)
-        elif state == 'waiting_for_tutorial_forward':
-            process_tutorial_forward(admin_id , message)
-        elif state == 'waiting_for_user_id_to_search':
-            process_user_search(admin_id, text)
-        elif state == 'waiting_for_channel_id':
-            process_set_channel_id(admin_id, message)
-        elif state == 'waiting_for_user_id_to_search':
-            process_user_search(admin_id,message)
-        elif state == 'waiting_for_channel_link':
-            process_set_channel_link(admin_id,message)
         # --- Gateway Flows ---
-        if state == 'waiting_for_gateway_name':
+        elif state == 'waiting_for_gateway_name':
             data['name'] = text
             state_info['state'] = 'waiting_for_gateway_type'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_gateway_type_selection_menu())
@@ -316,43 +293,39 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             data['merchant_id'] = text
             state_info['state'] = 'waiting_for_gateway_description'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
-        
         elif state == 'waiting_for_card_number':
-            if not text.isdigit() or len(text) not in [16]:
-                _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id)
-                return
+            if not text.isdigit() or len(text) != 16:
+                _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id); return
             data['card_number'] = text
             state_info['state'] = 'waiting_for_card_holder_name'
             _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
-        
         elif state == 'waiting_for_card_holder_name':
-                data['card_holder_name'] = text
-                state_info['state'] = 'waiting_for_gateway_description'
-                _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
-
+            data['card_holder_name'] = text
+            state_info['state'] = 'waiting_for_gateway_description'
+            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
         elif state == 'waiting_for_gateway_description':
             data['description'] = None if text.lower() == 'skip' else text
             execute_add_gateway(admin_id, data)
         elif state == 'waiting_for_gateway_id_to_toggle':
             execute_toggle_gateway_status(admin_id, text)
-            
-        # --- Inbound Flow ---
-        elif state == 'waiting_for_server_id_for_inbounds':
-            process_manage_inbounds_flow(admin_id, message)
 
-        elif state == 'waiting_for_plan_id_to_delete':
-            process_delete_plan_id(admin_id, message)
-        
-        elif state == 'waiting_for_plan_id_to_edit':
-            process_edit_plan_id(admin_id, message)
-        elif state == 'waiting_for_new_plan_name':
-            process_edit_plan_name(admin_id, message)
-            
-        elif state == 'waiting_for_new_plan_price':
-            process_edit_plan_price(admin_id, message)
+        # --- Other Flows ---
+        elif state == 'waiting_for_inbounds':
+            process_manage_inbounds_flow(admin_id, message)
+        elif state == 'waiting_for_tutorial_platform':
+            process_tutorial_platform(admin_id, message)
+        elif state == 'waiting_for_tutorial_app_name':
+            process_tutorial_app_name(admin_id, message)
+        elif state == 'waiting_for_tutorial_forward':
+            process_tutorial_forward(admin_id, message)
+        elif state == 'waiting_for_user_id_to_search':
+            process_user_search(admin_id, message)
+        elif state == 'waiting_for_channel_id':
+            process_set_channel_id(admin_id, message)
+        elif state == 'waiting_for_channel_link':
+            process_set_channel_link(admin_id, message)
         elif state == 'waiting_for_support_link':
             process_support_link(admin_id, message)
-     
 
     # =============================================================================
     # SECTION: Process Starters and Callback Handlers
