@@ -565,7 +565,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id, {}).get('state')
             )
     def handle_admin_stateful_messages(message):
-            (message.from_user.id, message)
+        admin_id = message.from_user.id
+    
+        # حذف پیام ورودی ادمین برای تمیز ماندن چت
+        try:
+            if message.content_type == 'text':
+                _bot.delete_message(admin_id, message.message_id)
+        except Exception:
+            pass
+
+        # فراخوانی تابع اصلی که منطق را پردازش می‌کند
+        _handle_stateful_message(admin_id, message)
         
         
 
