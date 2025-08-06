@@ -251,25 +251,49 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif state == 'waiting_for_plan_name':
             data['name'] = text; state_info['state'] = 'waiting_for_plan_type'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
-        elif state == 'waiting_for_plan_volume':
-            if not helpers.is_float_or_int(text): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_VOLUME}", admin_id, prompt_id); return
+        elif state == 'waiting_for_plan_name':
+            data['name'] = text
+            state_info['state'] = 'waiting_for_plan_type'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
+        
+        elif state == 'waiting_for_plan_volume': # <-- این بخش اضافه شد
+            if not helpers.is_float_or_int(text): 
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_VOLUME}", admin_id, prompt_id)
+                return
             data['volume_gb'] = float(text)
             state_info['state'] = 'waiting_for_plan_duration'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION, admin_id, prompt_id)
-        elif state == 'waiting_for_plan_duration':
-            if not text.isdigit(): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION}", admin_id, prompt_id); return
-            data['duration_days'] = int(text); state_info['state'] = 'waiting_for_plan_price'
+
+        elif state == 'waiting_for_plan_duration': # <-- این بخش اضافه شد
+            if not text.isdigit(): 
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION}", admin_id, prompt_id)
+                return
+            data['duration_days'] = int(text)
+            state_info['state'] = 'waiting_for_plan_price'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PRICE, admin_id, prompt_id)
-        elif state == 'waiting_for_plan_price':
-            if not helpers.is_float_or_int(text): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PRICE}", admin_id, prompt_id); return
-            data['price'] = float(text); execute_add_plan(admin_id, data)
+
+        elif state == 'waiting_for_plan_price': # <-- این بخش اضافه شد
+            if not helpers.is_float_or_int(text): 
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PRICE}", admin_id, prompt_id)
+                return
+            data['price'] = float(text)
+            execute_add_plan(admin_id, data)
+
         elif state == 'waiting_for_per_gb_price':
-            if not helpers.is_float_or_int(text): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PER_GB_PRICE}", admin_id, prompt_id); return
-            data['per_gb_price'] = float(text); state_info['state'] = 'waiting_for_gb_plan_duration'
+            if not helpers.is_float_or_int(text): 
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_PER_GB_PRICE}", admin_id, prompt_id)
+                return
+            data['per_gb_price'] = float(text)
+            state_info['state'] = 'waiting_for_gb_plan_duration'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_DURATION_GB, admin_id, prompt_id)
+
         elif state == 'waiting_for_gb_plan_duration':
-            if not text.isdigit(): _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION_GB}", admin_id, prompt_id); return
-            data['duration_days'] = int(text); execute_add_plan(admin_id, data)
+            if not text.isdigit(): 
+                _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ADD_PLAN_PROMPT_DURATION_GB}", admin_id, prompt_id)
+                return
+            data['duration_days'] = int(text)
+            execute_add_plan(admin_id, data)
+
         elif state == 'waiting_for_tutorial_platform':
             process_tutorial_platform(admin_id, message)
         elif state == 'waiting_for_plan_id_to_toggle':
