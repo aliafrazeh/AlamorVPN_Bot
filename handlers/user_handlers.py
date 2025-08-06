@@ -5,6 +5,7 @@ import json
 import qrcode
 import datetime
 from io import BytesIO
+import uuid
 import requests
 from config import SUPPORT_CHANNEL_LINK, ADMIN_IDS
 from database.db_manager import DatabaseManager
@@ -652,15 +653,13 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
     def process_custom_config_name(message):
         """
-        Processes the custom name, creates the config, saves the purchase,
-        and correctly calls the local send_subscription_info function.
+        Processes the custom name for a normal purchase, creates the config using the new ConfigGenerator,
+        saves the purchase, and delivers the smart subscription link.
         """
         user_id = message.from_user.id
         state_info = _user_states.get(user_id, {})
         if not state_info or state_info.get('state') != 'waiting_for_custom_config_name':
             return
-
-        # ... (The first part of the function to get order details is correct and remains the same)
 
         custom_name = message.text.strip()
         if custom_name.lower() == 'skip':
@@ -683,11 +682,17 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             duration_days = gb_plan.get('duration_days', 0)
             plan_id = gb_plan.get('id')
         
-        client_details, sub_link = _config_generator.create_client_and_configs(
-            user_id, server_id, total_gb, duration_days, custom_remark=custom_name
+        # --- FIX IS HERE: Using the new ConfigGenerator method ---
+        config_gen = ConfigGenerator(_db_manager)
+        generated_configs, client_details = config_gen.create_subscription_for_server(
+            user_telegram_id=user_id,
+            server_id=server_id,
+            total_gb=total_gb,
+            duration_days=duration_days,
+            custom_remark=custom_name
         )
 
-        if not sub_link:
+        if not generated_configs:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, prompt_id)
             _clear_user_state(user_id)
             return
@@ -695,20 +700,31 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
         expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
         
+        new_sub_id = str(uuid.uuid4().hex)
+
         _db_manager.add_purchase(
-            user_id=user_db_info['id'], server_id=server_id, plan_id=plan_id,
+            user_id=user_db_info['id'],
+            server_id=server_id,
+            plan_id=plan_id,
             expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
-            initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
-            client_email=client_details['email'], sub_id=client_details['subscription_id'],
-            single_configs=None
+            initial_volume_gb=total_gb,
+            client_uuids=client_details['uuids'],
+            client_email=client_details['email'],
+            sub_id=new_sub_id,
+            single_configs=generated_configs,
+            profile_id=None
         )
 
         _bot.delete_message(user_id, prompt_id)
         _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
         
-        # --- THE FIX IS HERE ---
-        # We now call the function with the correct number of arguments (2 instead of 3).
-        send_subscription_info(user_id, sub_link)
+        active_domain = _db_manager.get_active_subscription_domain()
+        if not active_domain:
+            _bot.send_message(user_id, "❌ No active domain is set for the subscription link. Please contact support.")
+            return
+
+        final_sub_link = f"https://{active_domain['domain_name']}/sub/{new_sub_id}"
+        send_subscription_info(_bot, user_id, final_sub_link)
         
         _clear_user_state(user_id)
     def show_platform_selection(user_id, message):

@@ -143,3 +143,5 @@ class ConfigGenerator:
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url: {e}")
         return None
+    
+    
