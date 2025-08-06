@@ -277,7 +277,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_edit_plan_name(admin_id, message)
         elif state == 'waiting_for_new_plan_price':
             process_edit_plan_price(admin_id, message)
-
+    
         # --- Profile Flows ---
         elif state == 'waiting_for_profile_name':
             data['name'] = text
@@ -325,7 +325,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_toggle_gateway_status(admin_id, text)
 
         # --- Other Flows ---
-        elif state == 'waiting_for_inbounds':
+        elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
         elif state == 'waiting_for_tutorial_platform':
             process_tutorial_platform(admin_id, message)
