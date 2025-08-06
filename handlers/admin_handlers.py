@@ -20,7 +20,7 @@ from api_client.factory import get_api_client
 from utils.helpers import normalize_panel_inbounds
 from utils.bot_helpers import finalize_profile_purchase
 from handlers.domain_handlers import register_domain_handlers # <-- ایمپورت جدید
-
+from utils.system_helpers import remove_domain_nginx_files
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -183,7 +183,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     # =============================================================================
     # SECTION: Stateful Process Handlers
     # =============================================================================
+    def get_plan_details_from_callback(admin_id, message, plan_type):
+        """نوع پلن انتخاب شده را پردازش کرده و سوال بعدی را می‌پرسد."""
+        state_info = _admin_states.get(admin_id, {})
+        if state_info.get('state') != 'waiting_for_plan_type': return
 
+        state_info['data']['plan_type'] = plan_type
+        
+        if plan_type == 'fixed_monthly':
+            # برای پلن ثابت، سوال بعدی حجم است
+            state_info['state'] = 'waiting_for_plan_volume'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_VOLUME, admin_id, message.message_id)
+        elif plan_type == 'gigabyte_based':
+            # برای پلن حجمی، سوال بعدی قیمت هر گیگ است
+            state_info['state'] = 'waiting_for_per_gb_price'
+            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PER_GB_PRICE, admin_id, message.message_id)
+        
+        state_info['prompt_message_id'] = message.message_id
     def _handle_stateful_message(admin_id, message):
         state_info = _admin_states.get(admin_id, {})
         state = state_info.get("state")
@@ -221,7 +237,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- Plan Flows ---
         elif state == 'waiting_for_plan_name':
             data['name'] = text
-            # The next step is a callback, handled in get_plan_details_from_callback
             state_info['state'] = 'waiting_for_plan_type'
             _bot.edit_message_text(messages.ADD_PLAN_PROMPT_TYPE, admin_id, prompt_id, reply_markup=inline_keyboards.get_plan_type_selection_menu_admin())
         elif state == 'waiting_for_plan_volume':
@@ -349,18 +364,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     def start_add_plan_flow(admin_id, message):
         """فرآیند افزودن یک پلن جدید سراسری را شروع می‌کند."""
         _clear_admin_state(admin_id)
-        prompt = _show_menu(
-            admin_id, 
-            "لطفاً نوع پلن جدید را انتخاب کنید:", 
-            inline_keyboards.get_plan_type_selection_menu_admin(), 
-            message
-        )
-        # وضعیت را تنظیم می‌کنیم تا ربات منتظر پاسخ از کیبورد بالا باشد
-        _admin_states[admin_id] = {
-            'state': 'waiting_for_plan_type', 
-            'data': {}, 
-            'prompt_message_id': prompt.message_id
-        }
+        # در ابتدا نام پلن را می‌پرسیم
+        prompt = _show_menu(admin_id, messages.ADD_PLAN_PROMPT_NAME, inline_keyboards.get_back_button("admin_plan_management"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_plan_name', 'data': {}, 'prompt_message_id': prompt.message_id}
     def start_toggle_plan_status_flow(admin_id, message):
         _clear_admin_state(admin_id)
         # --- بخش اصلاح شده ---
@@ -382,19 +388,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(f"{gateways_text}\n\n{messages.TOGGLE_GATEWAY_STATUS_PROMPT}", admin_id, message.message_id, parse_mode='Markdown')
         _admin_states[admin_id] = {'state': 'waiting_for_gateway_id_to_toggle', 'prompt_message_id': message.message_id}
 
-    def get_plan_details_from_callback(admin_id, message, plan_type):
-        state_info = _admin_states.get(admin_id, {})
-        if state_info.get('state') != 'waiting_for_plan_type': return
-        state_info['data']['plan_type'] = plan_type
-        if plan_type == 'fixed_monthly':
-            state_info['state'] = 'waiting_for_plan_volume'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_VOLUME, admin_id, message.message_id)
-        elif plan_type == 'gigabyte_based':
-            state_info['state'] = 'waiting_for_per_gb_price'
-            _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PER_GB_PRICE, admin_id, message.message_id)
-        state_info['prompt_message_id'] = message.message_id
 
-    # ... other functions remain the same ...
 
     # =============================================================================
     # SECTION: Main Bot Handlers
@@ -408,7 +402,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         except Exception: pass
         _clear_admin_state(message.from_user.id)
         _show_admin_main_menu(message.from_user.id)
-
+    
     @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id))
     def handle_admin_callbacks(call):
         """این هندلر تمام کلیک‌های ادمین را به صورت یکپارچه مدیریت می‌کند."""
@@ -477,7 +471,18 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             tutorial_id = int(data.split('_')[-1])
             execute_delete_tutorial(admin_id, message, tutorial_id)
         elif data.startswith("plan_type_"):
-            process_add_plan_type_selection(call)
+            plan_type = data.replace("plan_type_", "")
+            state_info = _admin_states.get(admin_id, {})
+            if state_info.get('state') != 'waiting_for_plan_type': return
+
+            state_info['data']['plan_type'] = plan_type
+            if plan_type == 'fixed_monthly':
+                state_info['state'] = 'waiting_for_plan_volume'
+                _bot.edit_message_text(messages.ADD_PLAN_PROMPT_VOLUME, admin_id, message.message_id)
+            elif plan_type == 'gigabyte_based':
+                state_info['state'] = 'waiting_for_per_gb_price'
+                _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PER_GB_PRICE, admin_id, message.message_id)
+            state_info['prompt_message_id'] = message.message_id
             return
         elif data.startswith("admin_ps_"): # Profile Server Selection
             parts = data.split('_')
@@ -1324,87 +1329,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # Clean up the admin state
         _clear_admin_state(admin_id)
         
-    def process_add_plan_server(message):
-        """Processes the server ID and asks for the plan name."""
-        admin_id = message.from_user.id
-        
-        try:
-            _bot.delete_message(admin_id, message.message_id)
-        except Exception:
-            pass
-
-        server_id_str = message.text.strip()
-        
-        if not server_id_str.isdigit() or not _db_manager.get_server_by_id(int(server_id_str)):
-            prompt = _bot.send_message(admin_id, "ID سرور نامعتبر است. لطفاً دوباره تلاش کنید:")
-            _bot.register_next_step_handler(prompt, process_add_plan_server) # Ask again
-            return
-
-        # Save data in a temporary dictionary for this conversation
-        plan_data = {'server_id': int(server_id_str)}
-        
-        prompt = _bot.send_message(admin_id, "نام پلن را وارد کنید (مثلا: پلن اقتصادی):")
-        _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data) # Pass data to the next step
-
-    def process_add_plan_price(message, plan_data):
-        """Processes the final price for a fixed plan and saves it."""
-        admin_id = message.from_user.id
-        try:
-            plan_data['price'] = float(message.text)
-        except (ValueError, TypeError):
-            prompt = _bot.send_message(admin_id, "قیمت نامعتبر است. لطفاً یک عدد وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
-            return
-
-        result = _db_manager.add_plan(
-            name=plan_data['name'],
-            plan_type='fixed_monthly',
-            volume_gb=plan_data['volume_gb'],
-            duration_days=plan_data['duration_days'],
-            price=plan_data['price'],
-            per_gb_price=None # Not applicable for fixed plans
-        )
-        
-        if result:
-            _bot.send_message(admin_id, "✅ پلن ثابت با موفقیت اضافه شد.")
-        else:
-            _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد.")
-
-    def process_add_plan_name(message, plan_data):
-        """Processes the plan name and asks for the next detail."""
-        admin_id = message.from_user.id
-        plan_data['name'] = message.text.strip()
-        
-        if plan_data['plan_type'] == 'fixed_monthly':
-            prompt = _bot.send_message(admin_id, "حجم پلن را به GB وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_plan_volume, plan_data)
-        else: # gigabyte_based
-            prompt = _bot.send_message(admin_id, "قیمت هر گیگابایت را به تومان وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_per_gb_price, plan_data)
-
-
-    def process_add_plan_volume(message, plan_data):
-        """Processes volume for fixed plans."""
-        admin_id = message.from_user.id
-        try:
-            plan_data['volume_gb'] = float(message.text)
-        except (ValueError, TypeError):
-            prompt = _bot.send_message(admin_id, "مقدار نامعتبر است. لطفاً یک عدد وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_plan_volume, plan_data)
-            return
-    def process_add_plan_duration(message, plan_data):
-        """Processes duration for fixed plans."""
-        admin_id = message.from_user.id
-        try:
-            plan_data['duration_days'] = int(message.text)
-        except (ValueError, TypeError):
-            prompt = _bot.send_message(admin_id, "مقدار نامعتبر است. لطفاً یک عدد صحیح وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_plan_duration, plan_data)
-            return
-
-        prompt = _bot.send_message(admin_id, "قیمت کل پلن را به تومان وارد کنید:")
-        _bot.register_next_step_handler(prompt, process_add_plan_price, plan_data)
-
+    
         
     def execute_save_inbounds(admin_id, message, server_id):
         """Saves the selected inbound settings to the database."""
@@ -1426,45 +1351,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # You can show the server management menu again after this
         # _show_server_management_menu(admin_id) # Optional
         
-        
-    def process_add_plan_type_selection(call):
-        """Handles the callback from the plan type selection keyboard."""
-        admin_id = call.from_user.id
-        plan_type = call.data.replace("plan_type_", "") # 'fixed_monthly' or 'gigabyte_based'
-        
-        plan_data = {'plan_type': plan_type}
-        
-        prompt = _bot.edit_message_text("نام پلن را وارد کنید (مثلا: پلن اقتصادی):", admin_id, call.message.message_id)
-        _bot.register_next_step_handler(prompt, process_add_plan_name, plan_data)
+    
 
-
-
-    def process_add_per_gb_price(message, plan_data):
-        """Processes the price for a gigabyte-based plan and saves it."""
-        admin_id = message.from_user.id
-        try:
-            plan_data['per_gb_price'] = float(message.text)
-        except (ValueError, TypeError):
-            prompt = _bot.send_message(admin_id, "قیمت نامعتبر است. لطفاً یک عدد وارد کنید:")
-            _bot.register_next_step_handler(prompt, process_add_per_gb_price, plan_data)
-            return
-
-        result = _db_manager.add_plan(
-            name=plan_data['name'],
-            plan_type='gigabyte_based',
-            volume_gb=None, # Not applicable
-            duration_days=None, # Not applicable
-            price=None, # Not applicable
-            per_gb_price=plan_data['per_gb_price']
-        )
-
-        if result:
-            _bot.send_message(admin_id, "✅ پلن گیگابایتی با موفقیت اضافه شد.")
-        else:
-            _bot.send_message(admin_id, f"❌ خطا: پلنی با نام '{plan_data['name']}' از قبل وجود دارد.")
-            
-            
-            
+    
     @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith('panel_type_'))
     def handle_panel_type_selection(call):
         """نوع پنل انتخاب شده توسط ادمین را پردازش می‌کند."""
@@ -1783,4 +1672,41 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     
-    
+    def process_delete_server_id(admin_id, message):
+        """ID سرور وارد شده برای حذف را پردازش کرده و پیام تایید را نمایش می‌دهد."""
+        state_info = _admin_states.get(admin_id, {})
+        prompt_id = state_info.get("prompt_message_id")
+        server_id_str = message.text.strip()
+
+        if not server_id_str.isdigit() or not (server := _db_manager.get_server_by_id(int(server_id_str))):
+            _bot.edit_message_text(f"{messages.SERVER_NOT_FOUND}\n\n{messages.DELETE_SERVER_PROMPT}", admin_id, prompt_id)
+            return
+            
+        server_id = int(server_id_str)
+        confirm_text = messages.DELETE_SERVER_CONFIRM.format(server_name=server['name'], server_id=server_id)
+        markup = inline_keyboards.get_confirmation_menu(f"confirm_delete_server_{server_id}", "admin_server_management")
+        _bot.edit_message_text(confirm_text, admin_id, prompt_id, reply_markup=markup, parse_mode='Markdown')
+        _clear_admin_state(admin_id)
+        
+        
+    def execute_delete_domain(admin_id, message, domain_id):
+        """منطق اصلی حذف دامنه از سیستم و دیتابیس را اجرا می‌کند."""
+        domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
+        if not domain:
+            _bot.answer_callback_query(message.id, "دامنه یافت نشد.", show_alert=True)
+            return
+
+        domain_name = domain['domain_name']
+        
+        # حذف فایل‌های سیستمی
+        remove_domain_nginx_files(domain_name)
+        
+        # حذف از دیتابیس
+        if _db_manager.delete_subscription_domain(domain_id):
+            _bot.answer_callback_query(message.id, f"دامنه {domain_name} با موفقیت حذف شد.")
+        else:
+            _bot.answer_callback_query(message.id, "خطا در حذف دامنه از دیتابیس.", show_alert=True)
+            
+        # نمایش مجدد منوی مدیریت دامنه‌ها
+        from .domain_handlers import show_domain_management_menu # ایمپورت محلی برای جلوگیری از خطا
+        show_domain_management_menu(admin_id, message)
