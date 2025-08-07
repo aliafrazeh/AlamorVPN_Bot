@@ -1,4 +1,4 @@
-# handlers/domain_handlers.py (نسخه نهایی با قابلیت تنظیم وبهوک)
+# handlers/domain_handlers.py (نسخه نهایی، کامل و یکپارچه)
 
 import telebot
 from telebot import types
@@ -13,77 +13,67 @@ from utils.system_helpers import run_shell_command
 
 logger = logging.getLogger(__name__)
 
-# این متغیرها از فایل اصلی به اینجا پاس داده خواهند شد
+# این متغیرها در هنگام ثبت هندلرها مقداردهی می‌شوند
 _bot = None
 _db_manager = None
 _admin_states = None
 
-def register_domain_handlers(bot, db_manager, admin_states):
-    """تمام هندلرهای مربوط به مدیریت دامنه و وبهوک را ثبت می‌کند."""
-    global _bot, _db_manager, _admin_states
-    _bot = bot
-    _db_manager = db_manager
-    _admin_states = admin_states
+# =============================================================================
+# توابع اصلی و کمکی (در سطح اصلی فایل)
+# =============================================================================
 
-    # =============================================================================
-    # Helper Functions
-    # =============================================================================
-    def _clear_admin_state(admin_id):
-        if admin_id in _admin_states:
-            del _admin_states[admin_id]
+def _clear_admin_state(admin_id):
+    if admin_id in _admin_states:
+        del _admin_states[admin_id]
 
-    def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
-        try:
-            if message:
-                return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
-            else:
-                return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
-        except telebot.apihelper.ApiTelegramException as e:
-            if "can't parse entities" in str(e):
-                logger.warning(f"Markdown parse error for user {user_id}. Retrying with plain text.")
-                if message:
-                    _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=None)
-                else:
-                    _bot.send_message(user_id, text, reply_markup=markup, parse_mode=None)
-            elif 'message is not modified' not in str(e):
-                 logger.warning(f"Menu error for {user_id}: {e}")
-        return message
-        
-    def show_domain_management_menu(admin_id, message=None):
-        domains = _db_manager.get_all_subscription_domains()
-        domains_with_status = []
-        for row in domains:
-            domain_dict = dict(row)
-            domain_dict['ssl_status'] = check_ssl_certificate_exists(domain_dict['domain_name'])
-            domains_with_status.append(domain_dict)
-        markup = inline_keyboards.get_domain_management_menu(domains_with_status)
-        _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
+def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
+    try:
+        if message:
+            return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
+        else:
+            return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
+    except telebot.apihelper.ApiTelegramException as e:
+        if "can't parse entities" in str(e):
+            if message: _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=None)
+            else: _bot.send_message(user_id, text, reply_markup=markup, parse_mode=None)
+        elif 'message is not modified' not in str(e):
+             logger.warning(f"Menu error for {user_id}: {e}")
+    return message
+    
+def show_domain_management_menu(admin_id, message=None):
+    domains = _db_manager.get_all_subscription_domains()
+    domains_with_status = []
+    for row in domains:
+        domain_dict = dict(row)
+        domain_dict['ssl_status'] = check_ssl_certificate_exists(domain_dict['domain_name'])
+        domains_with_status.append(domain_dict)
+    markup = inline_keyboards.get_domain_management_menu(domains_with_status)
+    _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
 
-    def start_add_domain_flow(admin_id, message):
-        _clear_admin_state(admin_id)
-        prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
+def start_add_domain_flow(admin_id, message):
+    _clear_admin_state(admin_id)
+    prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
+    _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
 
-    def execute_delete_domain(admin_id, message, domain_id):
-        domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
-        if not domain:
-            show_domain_management_menu(admin_id, message)
-            return
-        domain_name = domain['domain_name']
-        remove_domain_nginx_files(domain_name)
-        _db_manager.delete_subscription_domain(domain_id)
+def execute_delete_domain(admin_id, message, domain_id):
+    domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
+    if not domain:
         show_domain_management_menu(admin_id, message)
+        return
+    domain_name = domain['domain_name']
+    remove_domain_nginx_files(domain_name)
+    _db_manager.delete_subscription_domain(domain_id)
+    show_domain_management_menu(admin_id, message)
 
-    # --- توابع جدید برای وبهوک ---
-    def start_webhook_setup_flow(admin_id, message):
-        """فرآیند تنظیم دامنه وبهوک را شروع می‌کند."""
-        _clear_admin_state(admin_id)
-        prompt = _show_menu(admin_id, "لطفاً نام دامنه جدید را برای وبهوک و لینک‌های اشتراک وارد کنید (مثال: sub.yourdomain.com):", inline_keyboards.get_back_button("admin_main_menu"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_webhook_domain', 'prompt_message_id': prompt.message_id}
+def start_webhook_setup_flow(admin_id, message):
+    """فرآیند تنظیم دامنه وبهوک را شروع می‌کند."""
+    _clear_admin_state(admin_id)
+    prompt = _show_menu(admin_id, "لطفاً نام دامنه جدید را برای وبهوک و پرداخت آنلاین وارد کنید (مثال: pay.yourdomain.com):", inline_keyboards.get_back_button("admin_main_menu"), message)
+    _admin_states[admin_id] = {'state': 'waiting_for_webhook_domain', 'prompt_message_id': prompt.message_id}
 
-    def _create_and_start_webhook_service():
-        """سرویس systemd برای وبهوک را ایجاد و فعال می‌کند."""
-        service_content = """
+def _create_and_start_webhook_service():
+    """سرویس systemd برای وبهوک را ایجاد و فعال می‌کند."""
+    service_content = """
 [Unit]
 Description=AlamorBot Webhook Server
 After=network.target
@@ -96,25 +86,32 @@ RestartSec=10s
 [Install]
 WantedBy=multi-user.target
 """
-        try:
-            with open("/tmp/alamor_webhook.service", "w") as f:
-                f.write(service_content)
-            run_shell_command(['mv', '/tmp/alamor_webhook.service', '/etc/systemd/system/alamor_webhook.service'])
-            run_shell_command(['systemctl', 'daemon-reload'])
-            run_shell_command(['systemctl', 'enable', 'alamor_webhook.service'])
-            success, output = run_shell_command(['systemctl', 'restart', 'alamor_webhook.service'])
-            return success, output
-        except Exception as e:
-            return False, str(e)
+    try:
+        with open("/tmp/alamor_webhook.service", "w") as f: f.write(service_content)
+        run_shell_command(['mv', '/tmp/alamor_webhook.service', '/etc/systemd/system/alamor_webhook.service'])
+        run_shell_command(['systemctl', 'daemon-reload'])
+        run_shell_command(['systemctl', 'enable', 'alamor_webhook.service'])
+        success, output = run_shell_command(['systemctl', 'restart', 'alamor_webhook.service'])
+        return success, output
+    except Exception as e:
+        return False, str(e)
 
-    # =============================================================================
-    # Stateful Message Handler
-    # =============================================================================
+# =============================================================================
+# تابع ثبت کننده هندلرها
+# =============================================================================
+def register_domain_handlers(bot, db_manager, admin_states):
+    """تمام هندلرهای مربوط به مدیریت دامنه و وبهوک را ثبت می‌کند."""
+    global _bot, _db_manager, _admin_states
+    _bot = bot
+    _db_manager = db_manager
+    _admin_states = admin_states
+
+    # --- Stateful Message Handler ---
     @_bot.message_handler(
         content_types=['text'],
         func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id, {}).get('state') in [
             'waiting_for_domain_name', 'waiting_for_letsencrypt_email',
-            'waiting_for_webhook_domain', 'waiting_for_webhook_email' # state های جدید
+            'waiting_for_webhook_domain', 'waiting_for_webhook_email'
         ]
     )
     def handle_domain_stateful_messages(message):
@@ -132,6 +129,7 @@ WantedBy=multi-user.target
             state_info['state'] = 'waiting_for_letsencrypt_email'
             state_info['data']['domain_name'] = domain_name
             _bot.edit_message_text("برای دریافت گواهی SSL، لطفاً آدرس ایمیل خود را وارد کنید:", admin_id, prompt_id)
+        
         elif state == 'waiting_for_letsencrypt_email':
             admin_email = text
             _db_manager.update_setting('letsencrypt_email', admin_email)
@@ -170,17 +168,12 @@ WantedBy=multi-user.target
                 else:
                     _bot.send_message(admin_id, "✅ عملیات با موفقیت کامل شد! دامنه تنظیم و سرویس وبهوک فعال گردید.")
             _clear_admin_state(admin_id)
-            # نمایش منوی اصلی ادمین پس از اتمام
             from handlers.admin_handlers import _show_admin_main_menu
             _show_admin_main_menu(admin_id)
 
-    # =============================================================================
-    # Callback Handler
-    # =============================================================================
+    # --- Callback Handler ---
     @_bot.callback_query_handler(
-        func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith((
-            'admin_domain_management', 'admin_add_domain', 'admin_activate_domain_', 'admin_delete_domain_', 'confirm_delete_domain_'
-        ))
+        func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith('admin_') and 'domain' in call.data
     )
     def handle_domain_callbacks(call):
         admin_id, message, data = call.from_user.id, call.message, call.data
