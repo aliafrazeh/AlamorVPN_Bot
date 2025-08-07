@@ -25,6 +25,8 @@ from utils.system_helpers import run_shell_command
 from utils import helpers
 from utils.helpers import update_env_file
 from utils.system_helpers import run_shell_command
+from .domain_handlers import register_domain_handlers, start_webhook_setup_flow # <-- تابع جدید را اضافه کنید
+
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -453,6 +455,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- پایان بخش اصلاح شده ---
 
         actions = {
+            "admin_webhook_setup": start_webhook_setup_flow,
             "admin_health_check": run_system_health_check,
             "admin_check_nginx": check_nginx_status,
             "admin_manage_admins": _show_admin_management_menu,
