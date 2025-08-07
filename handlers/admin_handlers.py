@@ -23,6 +23,8 @@ from handlers.domain_handlers import register_domain_handlers # <-- ایمپور
 from utils.system_helpers import remove_domain_nginx_files
 from utils.system_helpers import run_shell_command
 from utils import helpers
+from utils.helpers import update_env_file
+from utils.system_helpers import run_shell_command
 logger = logging.getLogger(__name__)
 
 # ماژول‌های سراسری
@@ -235,7 +237,43 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_add_server(admin_id, data)
         elif state == 'waiting_for_server_id_to_delete':
             process_delete_server_id(admin_id, message)
+            # --- Domain Flows ---
+        elif state == 'waiting_for_webhook_domain':
+            domain_name = text.strip().lower()
+            state_info['data'] = {'domain_name': domain_name}
+            state_info['state'] = 'waiting_for_webhook_email'
+            _bot.edit_message_text("برای دریافت گواهی SSL، لطفاً ایمیل خود را وارد کنید:", admin_id, prompt_id)
 
+        elif state == 'waiting_for_webhook_email':
+            admin_email = text.strip().lower()
+            domain_name = data['domain_name']
+            
+            _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL...", admin_id, prompt_id)
+            
+            # ۱. تنظیم Nginx و دریافت SSL
+            ssl_success, ssl_message = setup_domain_nginx_and_ssl(domain_name, admin_email)
+            if not ssl_success:
+                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {ssl_message}")
+                _clear_admin_state(admin_id)
+                _show_admin_main_menu(admin_id)
+                return
+                
+            # ۲. آپدیت فایل .env
+            if not update_env_file('WEBHOOK_DOMAIN', domain_name):
+                _bot.send_message(admin_id, "❌ دامنه تنظیم شد، اما در آپدیت فایل .env خطایی رخ داد.")
+                _clear_admin_state(admin_id)
+                _show_admin_main_menu(admin_id)
+                return
+
+            # ۳. ساخت و راه‌اندازی سرویس وبهوک
+            service_success, service_output = _create_and_start_webhook_service()
+            if not service_success:
+                _bot.send_message(admin_id, f"❌ دامنه و .env تنظیم شدند، اما در راه‌اندازی سرویس وبهوک خطایی رخ داد:\n`{service_output}`")
+            else:
+                _bot.send_message(admin_id, "✅ عملیات با موفقیت کامل شد! دامنه تنظیم و سرویس وبهوک فعال گردید.")
+
+            _clear_admin_state(admin_id)
+            _show_admin_main_menu(admin_id)
         # --- Plan Flows ---
         elif state == 'waiting_for_plan_name':
             data['name'] = text
@@ -1849,3 +1887,39 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
         final_report = "\n".join(report_parts)
         _bot.edit_message_text(final_report, admin_id, msg.message_id, parse_mode='Markdown', reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
+        
+        
+        
+        
+    def start_webhook_setup_flow(admin_id, message):
+        """فرآیند تنظیم دامنه وبهوک را شروع می‌کند."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً نام دامنه جدید را برای وبهوک و لینک‌های اشتراک وارد کنید (مثال: sub.yourdomain.com):", inline_keyboards.get_back_button("admin_main_menu"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_webhook_domain', 'prompt_message_id': prompt.message_id}
+
+    def _create_and_start_webhook_service():
+        """سرویس systemd برای وبهوک را ایجاد و فعال می‌کند."""
+        service_content = """
+        [Unit]
+        Description=AlamorBot Webhook Server
+        After=network.target
+        [Service]
+        User=root
+        WorkingDirectory=/var/www/alamorvpn_bot
+        ExecStart=/var/www/alamorvpn_bot/.venv/bin/python3 /var/www/alamorvpn_bot/webhook_server.py
+        Restart=always
+        RestartSec=10s
+        [Install]
+        WantedBy=multi-user.target
+        """
+            try:
+                with open("/tmp/alamor_webhook.service", "w") as f:
+                    f.write(service_content)
+                
+                run_shell_command(['mv', '/tmp/alamor_webhook.service', '/etc/systemd/system/alamor_webhook.service'])
+                run_shell_command(['systemctl', 'daemon-reload'])
+                run_shell_command(['systemctl', 'enable', 'alamor_webhook.service'])
+                success, output = run_shell_command(['systemctl', 'restart', 'alamor_webhook.service'])
+                return success, output
+            except Exception as e:
+                return False, str(e)

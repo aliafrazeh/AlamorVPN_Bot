@@ -4,6 +4,7 @@ import telebot
 import logging
 import random
 import string
+import re
 
 # این خط برای دسترسی به لیست ادمین‌ها اضافه شده است
 from config import ADMIN_IDS
@@ -103,3 +104,29 @@ def normalize_panel_inbounds(panel_type, raw_inbounds):
     #         })
 
     return normalized_list
+
+
+def update_env_file(key_to_update, new_value):
+    """یک متغیر خاص را در فایل .env آپدیت یا اضافه می‌کند."""
+    env_path = '.env'
+    try:
+        with open(env_path, 'r') as file:
+            lines = file.readlines()
+
+        key_found = False
+        with open(env_path, 'w') as file:
+            for line in lines:
+                # اگر خط مربوط به کلید مورد نظر باشد، آن را با مقدار جدید جایگزین کن
+                if line.strip().startswith(key_to_update + '='):
+                    file.write(f'{key_to_update}="{new_value}"\n')
+                    key_found = True
+                else:
+                    file.write(line)
+            
+            # اگر کلید در فایل وجود نداشت، آن را به انتها اضافه کن
+            if not key_found:
+                file.write(f'\n{key_to_update}="{new_value}"\n')
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update .env file: {e}")
+        return False
