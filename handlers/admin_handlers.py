@@ -237,43 +237,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_add_server(admin_id, data)
         elif state == 'waiting_for_server_id_to_delete':
             process_delete_server_id(admin_id, message)
-            # --- Domain Flows ---
-        elif state == 'waiting_for_webhook_domain':
-            domain_name = text.strip().lower()
-            state_info['data'] = {'domain_name': domain_name}
-            state_info['state'] = 'waiting_for_webhook_email'
-            _bot.edit_message_text("برای دریافت گواهی SSL، لطفاً ایمیل خود را وارد کنید:", admin_id, prompt_id)
 
-        elif state == 'waiting_for_webhook_email':
-            admin_email = text.strip().lower()
-            domain_name = data['domain_name']
-            
-            _bot.edit_message_text(f"⏳ لطفاً صبر کنید...\nدر حال تنظیم دامنه {domain_name} و دریافت گواهی SSL...", admin_id, prompt_id)
-            
-            # ۱. تنظیم Nginx و دریافت SSL
-            ssl_success, ssl_message = setup_domain_nginx_and_ssl(domain_name, admin_email)
-            if not ssl_success:
-                _bot.send_message(admin_id, f"❌ عملیات ناموفق بود.\nعلت: {ssl_message}")
-                _clear_admin_state(admin_id)
-                _show_admin_main_menu(admin_id)
-                return
-                
-            # ۲. آپدیت فایل .env
-            if not update_env_file('WEBHOOK_DOMAIN', domain_name):
-                _bot.send_message(admin_id, "❌ دامنه تنظیم شد، اما در آپدیت فایل .env خطایی رخ داد.")
-                _clear_admin_state(admin_id)
-                _show_admin_main_menu(admin_id)
-                return
-
-            # ۳. ساخت و راه‌اندازی سرویس وبهوک
-            service_success, service_output = _create_and_start_webhook_service()
-            if not service_success:
-                _bot.send_message(admin_id, f"❌ دامنه و .env تنظیم شدند، اما در راه‌اندازی سرویس وبهوک خطایی رخ داد:\n`{service_output}`")
-            else:
-                _bot.send_message(admin_id, "✅ عملیات با موفقیت کامل شد! دامنه تنظیم و سرویس وبهوک فعال گردید.")
-
-            _clear_admin_state(admin_id)
-            _show_admin_main_menu(admin_id)
         # --- Plan Flows ---
         elif state == 'waiting_for_plan_name':
             data['name'] = text
