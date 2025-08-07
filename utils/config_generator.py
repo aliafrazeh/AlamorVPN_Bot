@@ -14,6 +14,7 @@ from api_client.factory import get_api_client
 
 logger = logging.getLogger(__name__)
 
+
 class ConfigGenerator:
     def __init__(self, db_manager):
         self.db_manager = db_manager
