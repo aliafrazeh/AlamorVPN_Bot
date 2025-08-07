@@ -199,3 +199,7 @@ def register_domain_handlers(bot, db_manager, admin_states):
             _bot.answer_callback_query(call.id, "⏳ در حال حذف دامنه...")
             domain_id = int(data.split('_')[-1])
             execute_delete_domain(admin_id, message, domain_id)
+            
+            
+            
+            

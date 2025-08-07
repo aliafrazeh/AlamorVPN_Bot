@@ -97,9 +97,6 @@ create_system_command() {
 
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Webhook/Subscription Domain ---"
-    read -p "Do you want to configure a domain for online payments and subscription links? (y/n): " setup_ssl
-    if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping domain configuration."; return; fi
-
     read -p "$(echo -e ${YELLOW}"Please enter your domain (e.g., sub.yourdomain.com): "${NC})" payment_domain
     read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
