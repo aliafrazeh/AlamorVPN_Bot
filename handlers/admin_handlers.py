@@ -1891,35 +1891,4 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
         
-    def start_webhook_setup_flow(admin_id, message):
-        """فرآیند تنظیم دامنه وبهوک را شروع می‌کند."""
-        _clear_admin_state(admin_id)
-        prompt = _show_menu(admin_id, "لطفاً نام دامنه جدید را برای وبهوک و لینک‌های اشتراک وارد کنید (مثال: sub.yourdomain.com):", inline_keyboards.get_back_button("admin_main_menu"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_webhook_domain', 'prompt_message_id': prompt.message_id}
-
-    def _create_and_start_webhook_service():
-        """سرویس systemd برای وبهوک را ایجاد و فعال می‌کند."""
-        service_content = """
-        [Unit]
-        Description=AlamorBot Webhook Server
-        After=network.target
-        [Service]
-        User=root
-        WorkingDirectory=/var/www/alamorvpn_bot
-        ExecStart=/var/www/alamorvpn_bot/.venv/bin/python3 /var/www/alamorvpn_bot/webhook_server.py
-        Restart=always
-        RestartSec=10s
-        [Install]
-        WantedBy=multi-user.target
-        """
-            try:
-                with open("/tmp/alamor_webhook.service", "w") as f:
-                    f.write(service_content)
-                
-                run_shell_command(['mv', '/tmp/alamor_webhook.service', '/etc/systemd/system/alamor_webhook.service'])
-                run_shell_command(['systemctl', 'daemon-reload'])
-                run_shell_command(['systemctl', 'enable', 'alamor_webhook.service'])
-                success, output = run_shell_command(['systemctl', 'restart', 'alamor_webhook.service'])
-                return success, output
-            except Exception as e:
-                return False, str(e)
+    
