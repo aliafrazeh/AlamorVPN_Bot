@@ -84,7 +84,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             start_purchase(user_id, call.message)
         elif data == "user_my_services":
             show_my_services_list(user_id, call.message)
-        
+        elif data == "user_add_balance":
+            start_add_balance_flow(user_id, call.message)
         # --- بخش اصلاح شده ---
         elif data == "user_free_test":
             # اکنون تابع ساخت اکانت تست فراخوانی می‌شود
@@ -187,6 +188,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             process_payment_receipt(message)
         elif current_state == 'waiting_for_custom_config_name':
             process_custom_config_name(message)
+        elif current_state == 'waiting_for_charge_amount':
+            process_charge_amount(message)
     # --- توابع کمکی و اصلی ---
     def show_how_to_connect(user_id, message):
         """Sends the guide on how to connect to the services."""
@@ -862,3 +865,40 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
         markup = inline_keyboards.get_user_account_menu()
         _show_menu(user_id, account_text, markup, message, parse_mode='Markdown')
+        
+        
+        
+    def start_add_balance_flow(user_id, message):
+        """فرآیند شارژ کیف پول را با پرسیدن مبلغ شروع می‌کند."""
+        _clear_user_state(user_id)
+        prompt_text = "لطفاً مبلغی که می‌خواهید کیف پول خود را شارژ کنید به تومان وارد کنید (مثلاً: 50000):"
+        prompt = _show_menu(user_id, prompt_text, inline_keyboards.get_back_button("user_account"), message)
+        _user_states[user_id] = {'state': 'waiting_for_charge_amount', 'prompt_message_id': prompt.message_id}
+
+    def process_charge_amount(message):
+        """مبلغ وارد شده توسط کاربر را پردازش کرده و خلاصه سفارش را نمایش می‌دهد."""
+        user_id = message.from_user.id
+        state_info = _user_states.get(user_id, {})
+        
+        amount_str = message.text.strip()
+        if not amount_str.isdigit() or int(amount_str) <= 0:
+            _bot.send_message(user_id, "مبلغ وارد شده نامعتبر است. لطفاً یک عدد صحیح و مثبت وارد کنید.")
+            return
+
+        amount = int(amount_str)
+        
+        # ایجاد یک خلاصه سفارش موقت برای نمایش به کاربر و استفاده در فرآیند پرداخت
+        state_info['data'] = {
+            'purchase_type': 'wallet_charge',
+            'total_price': amount,
+            'plan_details_for_admin': f"شارژ کیف پول به مبلغ {amount:,.0f} تومان"
+        }
+        
+        summary_text = (
+            f"📝 **تایید تراکنش**\n\n"
+            f"شما در حال شارژ کیف پول خود به مبلغ **{amount:,.0f} تومان** هستید.\n\n"
+            f"آیا تایید می‌کنید؟"
+        )
+        
+        markup = inline_keyboards.get_confirmation_menu("confirm_and_pay", "user_account")
+        _bot.edit_message_text(summary_text, user_id, state_info['prompt_message_id'], reply_markup=markup, parse_mode='Markdown')

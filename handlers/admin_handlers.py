@@ -786,6 +786,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         فرآیند تحویل سرویس را آغاز می‌کند. (نسخه نهایی)
         """
         payment = _db_manager.get_payment_by_id(payment_id)
+        
         if not payment or payment['is_confirmed']:
             try:
                 # message.id در اینجا شناسه پیام است، نه کلیک. برای سادگی خطا را نادیده می‌گیریم.
@@ -796,7 +797,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         order_details = json.loads(payment['order_details_json'])
         user_telegram_id = order_details['user_telegram_id']
-        
+        user_db_id = order_details['user_db_id']
         # به‌روزرسانی وضعیت پرداخت در دیتابیس و ویرایش پیام ادمین
         _db_manager.update_payment_status(payment_id, True, admin_id)
         try:
@@ -811,6 +812,12 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if order_details.get('purchase_type') == 'profile':
             # اگر خرید پروفایل بود، تابع مرکزی و خودکار را فراخوانی کن
             finalize_profile_purchase(_bot, _db_manager, user_telegram_id, order_details)
+        elif order_details.get('purchase_type') == 'wallet_charge':
+            amount = order_details['total_price']
+            if _db_manager.add_to_user_balance(user_db_id, amount):
+                _bot.send_message(user_telegram_id, f"✅ کیف پول شما با موفقیت به مبلغ {amount:,.0f} تومان شارژ شد.")
+            else:
+                _bot.send_message(user_telegram_id, "❌ خطایی در شارژ کیف پول شما رخ داد. لطفاً با پشتیبانی تماس بگیرید.")
         else:
             # اگر خرید عادی بود، از کاربر نام دلخواه کانفیگ را بپرس
             prompt = _bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)

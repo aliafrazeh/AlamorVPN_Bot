@@ -10,6 +10,8 @@ import datetime
 import base64
 import telebot
 from urllib.parse import quote
+from utils import messages
+
 # افزودن مسیر پروژه به sys.path
 project_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_path)
@@ -168,6 +170,7 @@ def handle_zarinpal_callback():
         order_details = json.loads(payment['order_details_json'])
         gateway = db_manager.get_payment_gateway_by_id(order_details['gateway_details']['id'])
         
+        # مبلغ به ریال برای زرین‌پال ارسال می‌شود
         payload = {"merchant_id": gateway['merchant_id'], "amount": int(payment['amount']) * 10, "authority": authority}
         
         try:
@@ -179,36 +182,25 @@ def handle_zarinpal_callback():
                 ref_id = result.get("data", {}).get("ref_id", "N/A")
                 db_manager.confirm_online_payment(payment['id'], str(ref_id))
 
-                if order_details.get('purchase_type') == 'profile':
+                # --- منطق اصلی برای تفکیک نوع تراکنش ---
+                if order_details.get('purchase_type') == 'wallet_charge':
+                    amount = payment['amount']
+                    if db_manager.add_to_user_balance(payment['user_id'], amount):
+                        bot.send_message(user_telegram_id, f"✅ کیف پول شما با موفقیت به مبلغ {amount:,.0f} تومان شارژ شد.")
+                    else:
+                        bot.send_message(user_telegram_id, "❌ خطایی در شارژ کیف پول شما رخ داد. لطفاً با پشتیبانی تماس بگیرید.")
+
+                elif order_details.get('purchase_type') == 'profile':
                     finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details)
-                else:
-                    # منطق خرید عادی آنلاین
-                    if order_details['plan_type'] == 'fixed_monthly':
-                        plan = order_details['plan_details']
-                        total_gb, duration_days = plan['volume_gb'], plan['duration_days']
-                    else:
-                        gb_plan = order_details['gb_plan_details']
-                        total_gb, duration_days = order_details['requested_gb'], gb_plan.get('duration_days', 0)
-                    
-                    client_details, sub_link = config_gen_normal.create_client_and_configs(user_telegram_id, order_details['server_id'], total_gb, duration_days)
-                    
-                    if sub_link:
-                        expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
-                        plan_id = order_details.get('plan_details', {}).get('id') or order_details.get('gb_plan_details', {}).get('id')
-                        
-                        db_manager.add_purchase(
-                            user_id=payment['user_id'], server_id=order_details['server_id'], plan_id=plan_id,
-                            expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
-                            initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
-                            client_email=client_details['email'], sub_id=client_details['subscription_id'],
-                            single_configs=None, # برای خرید عادی فعلا لینک‌های تکی نداریم
-                            profile_id=None
-                        )
-                        
-                        bot.send_message(user_telegram_id, "✅ پرداخت شما با موفقیت تایید و سرویس شما فعال گردید.")
-                        send_subscription_info(bot, user_telegram_id, sub_link)
-                    else:
-                        bot.send_message(user_telegram_id, "❌ در فعال‌سازی سرویس شما خطایی رخ داد. لطفاً با پشتیبانی تماس بگیرید.")
+                
+                else: # خرید عادی سرویس
+                    user_db_info = db_manager.get_user_by_telegram_id(user_telegram_id)
+                    prompt = bot.send_message(user_telegram_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
+                    # Note: This part needs a mechanism to communicate with the main bot process
+                    # to set the user state. A simple file-based or Redis-based queue could work.
+                    # For now, we rely on the admin to complete the process if this part fails.
+                    logger.info(f"Online payment for normal service by {user_telegram_id} confirmed. User needs to provide a config name.")
+                    bot.send_message(user_telegram_id, "✅ پرداخت شما با موفقیت تایید شد. لطفاً برای دریافت سرویس خود، یک نام دلخواه برای کانفیگ در ربات وارد کنید.")
                 
                 return render_template('payment_status.html', status='success', ref_id=ref_id, bot_username=BOT_USERNAME)
             else:

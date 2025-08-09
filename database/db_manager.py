@@ -1398,3 +1398,17 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
+                
+                
+    def add_to_user_balance(self, user_id: int, amount: float):
+        """مبلغ مشخص شده را به موجودی کیف پول کاربر اضافه می‌کند."""
+        sql = "UPDATE users SET balance = balance + %s WHERE id = %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (amount, user_id))
+                    conn.commit()
+                    return True
+        except psycopg2.Error as e:
+            logger.error(f"Error adding balance for user {user_id}: {e}")
+            return False
