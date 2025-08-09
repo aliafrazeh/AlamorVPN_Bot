@@ -1314,3 +1314,42 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error getting active inbounds with template for server {server_id}: {e}")
             return []
+        
+        
+        
+    def get_all_profile_inbounds_with_status(self):
+        """
+        لیست تمام اینباندهای متصل به پروفایل‌ها را به همراه وضعیت الگو برمی‌گرداند.
+        """
+        sql = """
+            SELECT 
+                pi.profile_id, p.name as profile_name,
+                pi.server_id, s.name as server_name,
+                pi.inbound_id, si.remark,
+                pi.config_params
+            FROM profile_inbounds pi
+            JOIN profiles p ON pi.profile_id = p.id
+            JOIN servers s ON pi.server_id = s.id
+            LEFT JOIN server_inbounds si ON pi.server_id = si.server_id AND pi.inbound_id = si.inbound_id
+            ORDER BY p.name, s.name, si.remark;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profile inbounds with status: {e}")
+            return []
+
+    def get_server_inbound_details(self, server_id: int, inbound_id: int):
+        """جزئیات یک اینباند خاص (مانند remark) را از جدول server_inbounds می‌خواند."""
+        sql = "SELECT remark FROM server_inbounds WHERE server_id = %s AND inbound_id = %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql, (server_id, inbound_id))
+                    return cursor.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting server inbound details for s:{server_id}-i:{inbound_id}: {e}")
+            return None

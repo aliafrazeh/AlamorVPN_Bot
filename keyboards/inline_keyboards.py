@@ -477,3 +477,31 @@ def get_template_management_menu(all_active_inbounds):
             
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_server_management"))
     return markup
+
+
+def get_profile_template_management_menu(all_profile_inbounds):
+    """
+    منوی مدیریت الگوها برای پروفایل‌ها را ایجاد می‌کند.
+    """
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    if not all_profile_inbounds:
+        markup.add(types.InlineKeyboardButton("هیچ اینباندی به پروفایل‌ها متصل نیست", callback_data="no_action"))
+    else:
+        current_profile = None
+        for inbound in all_profile_inbounds:
+            # برای خوانایی، نام پروفایل را به عنوان تیتر نمایش می‌دهیم
+            if current_profile != inbound['profile_name']:
+                current_profile = inbound['profile_name']
+                markup.add(types.InlineKeyboardButton(f"--- پروفایل: {current_profile} ---", callback_data="no_action"))
+
+            status_emoji = "✅" if inbound.get('config_params') else "⚠️"
+            btn_text = (
+                f"{status_emoji} {inbound['server_name']} - "
+                f"{inbound.get('remark', f'ID: {inbound['inbound_id']}')}"
+            )
+            callback_data = f"admin_edit_profile_template_{inbound['profile_id']}_{inbound['server_id']}_{inbound['inbound_id']}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+            
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_profile_management"))
+    return markup
