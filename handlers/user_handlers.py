@@ -68,7 +68,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     _config_generator = ConfigGenerator(db_manager_instance)
 
     # --- هندلرهای اصلی ---
-    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith('user_'))
+    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_', 'pay_')))
     def handle_main_callbacks(call):
         """هندل کردن دکمه‌های منوی اصلی کاربر"""
         user_id = call.from_user.id
