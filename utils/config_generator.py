@@ -89,3 +89,43 @@ class ConfigGenerator:
 
         client_details_for_db = {'uuids': generated_uuids, 'email': base_client_email}
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
+    
+    def _rebuild_link_from_params(self, params: dict) -> str:
+        """
+        یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده با دقت کامل بازسازی می‌کند.
+        (نسخه نهایی با شرط اصلاح شده)
+        """
+        try:
+            # ۱. استخراج اجزای اصلی و ساختاری لینک
+            scheme = params.get('protocol', 'vless')
+            uuid = params.get('uuid')
+            hostname = params.get('hostname')
+            port = params.get('port')
+            remark = params.get('remark', '')
+            path = params.get('path', '')
+
+            # ۲. ساخت رشته کوئری (Query String) از تمام پارامترهای باقی‌مانده
+            structural_keys = {'protocol', 'uuid', 'hostname', 'port', 'remark', 'path'}
+            query_params = {key: value for key, value in params.items() if key not in structural_keys}
+            
+            sorted_query_params = dict(sorted(query_params.items()))
+            
+            # --- اصلاح اصلی اینجاست ---
+            # شرط پیچیده قبلی با یک شرط ساده و مطمئن‌تر جایگزین شد
+            query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in sorted_query_params.items() if value is not None])
+
+            # ۳. بازسازی کامل لینک
+            netloc = f"{uuid}@{hostname}:{port}"
+            url_parts = (
+                scheme,
+                netloc,
+                path,
+                '',
+                query_string,
+                quote(remark)
+            )
+            
+            return urlunparse(url_parts)
+        except Exception as e:
+            logger.error(f"Error rebuilding link from params with high precision: {e}", exc_info=True)
+            return None
