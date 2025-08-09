@@ -1881,12 +1881,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         """
         if not target_inbounds:
             _bot.send_message(admin_id, "✅ تمام تنظیمات با موفقیت ذخیره شد.")
-            _clear_admin_state(admin_id) # پاک کردن وضعیت در انتها
-            # بسته به نوع، به منوی مربوطه برمی‌گردیم
+            _clear_admin_state(admin_id)
+            
+            # --- اصلاح اصلی و نهایی اینجاست ---
+            # حالا ربات به منوی صحیح برمی‌گردد
             if context.get('type') == 'profile':
-                handle_profile_selection(admin_id, message, context['profile_id'])
+                # به جای رفتن به بخش اختصاص اینباند، به منوی مدیریت الگوهای پروفایل برمی‌گردیم
+                show_profile_template_management_menu(admin_id, message)
             else:
-                _show_server_management_menu(admin_id, message)
+                # برای حالت عادی هم به منوی مدیریت الگوهای سرور برمی‌گردیم
+                show_template_management_menu(admin_id, message)
             return
 
         current_inbound = target_inbounds[0]
@@ -1901,7 +1905,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             }
         }
         
-        # --- خط اصلاح شده در اینجا قرار دارد ---
         inbound_remark = current_inbound.get('remark', f"ID: {current_inbound.get('id')}")
         
         prompt_text = (
