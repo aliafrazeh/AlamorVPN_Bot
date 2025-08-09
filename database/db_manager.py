@@ -947,39 +947,42 @@ class DatabaseManager:
                 
                 
                 
-    def get_inbounds_for_profile(self, profile_id, with_server_info=False):
-        """Returns the list of inbounds connected to a specific profile."""
-        conn = self._get_connection()
+    def get_inbounds_for_profile(self, profile_id, with_server_and_template=False):
+        """لیست اینباندهای متصل به یک پروفایل خاص را برمی‌گرداند."""
+        if not with_server_and_template:
+            # منطق قدیمی برای استفاده‌های دیگر
+            sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
+            params = (profile_id,)
+        else:
+            # کوئری جدید برای گرفتن اطلاعات کامل سرور و الگوی کانفیگ
+            sql = """
+                SELECT pi.inbound_id, pi.config_params, s.* FROM profile_inbounds pi
+                JOIN servers s ON pi.server_id = s.id
+                WHERE pi.profile_id = %s;
+            """
+            params = (profile_id,)
+
         try:
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                if with_server_info:
-                    # More complex query to get complete server information
-                    sql = """
-                        SELECT pi.inbound_id, s.* FROM profile_inbounds pi
-                        JOIN servers s ON pi.server_id = s.id
-                        WHERE pi.profile_id = %s;
-                    """
-                    cur.execute(sql, (profile_id,))
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(sql, params)
                     results = []
                     for row in cur.fetchall():
-                        server_info = self._decrypt_server_row(row)
-                        if server_info:
-                            results.append({
-                                'inbound_id': row['inbound_id'],
-                                'server': server_info
-                            })
+                        if not with_server_and_template:
+                            results.append(row['inbound_id'])
+                        else:
+                            server_info = self._decrypt_server_row(row)
+                            if server_info:
+                                results.append({
+                                    'inbound_id': row['inbound_id'],
+                                    'config_params': row['config_params'], # الگو را هم اضافه می‌کنیم
+                                    'server': server_info
+                                })
                     return results
-                else:
-                    # The same simple query as before
-                    cur.execute("SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s", (profile_id,))
-                    return [row['inbound_id'] for row in cur.fetchall()]
         except psycopg2.Error as e:
             logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
             return []
-        finally:
-            if conn:
-                conn.close()
-
+            
     def update_inbounds_for_profile(self, profile_id, server_id, inbound_ids):
         """
         اینباندهای یک پروفایل برای یک سرور خاص را آپدیت می‌کند.
@@ -1257,3 +1260,57 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error updating profile inbound params for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
             return False
+        
+        
+        
+    def get_all_active_inbounds_with_server_info(self):
+        """
+        لیست تمام اینباندهای فعال از تمام سرورها را به همراه نام سرور برمی‌گرداند.
+        """
+        sql = """
+            SELECT si.server_id, si.inbound_id, si.remark, si.config_params, s.name as server_name
+            FROM server_inbounds si
+            JOIN servers s ON si.server_id = s.id
+            WHERE si.is_active = TRUE
+            ORDER BY s.name, si.remark;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all active inbounds with server info: {e}")
+            return []
+        
+        
+    
+    def get_active_inbounds_for_server_with_template(self, server_id: int):
+        """اینباندهای فعال یک سرور را به همراه الگوی کانفیگ آنها برمی‌گرداند."""
+        sql = """
+            SELECT si.inbound_id, si.config_params, si.remark, s.*
+            FROM server_inbounds si
+            JOIN servers s ON si.server_id = s.id
+            WHERE si.server_id = %s AND si.is_active = TRUE;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(sql, (server_id,))
+                    results = []
+                    server_info = None
+                    for row in cur.fetchall():
+                        if not server_info: # فقط یک بار اطلاعات سرور را رمزگشایی کن
+                            server_info = self._decrypt_server_row(row)
+                        
+                        if server_info:
+                            results.append({
+                                'inbound_id': row['inbound_id'],
+                                'remark': row['remark'],
+                                'config_params': row['config_params'],
+                                'server': server_info
+                            })
+                    return results
+        except psycopg2.Error as e:
+            logger.error(f"Error getting active inbounds with template for server {server_id}: {e}")
+            return []

@@ -511,6 +511,26 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("admin_delete_tutorial_"): # <-- NEW
             tutorial_id = int(data.split('_')[-1])
             execute_delete_tutorial(admin_id, message, tutorial_id)
+        elif data == "admin_manage_templates": # <-- بلوک جدید
+            show_template_management_menu(admin_id, message)
+            return
+
+        elif data.startswith("admin_edit_template_"): # <-- بلوک جدید
+            parts = data.split('_')
+            server_id = int(parts[3])
+            inbound_id = int(parts[4])
+            
+            server_data = _db_manager.get_server_by_id(server_id)
+            inbound_info = {'id': inbound_id, 'remark': ''} # Remark is optional here
+            
+            context = {
+                'type': 'server', # فعلا فقط برای سرورهای عادی
+                'server_id': server_id,
+                'server_name': server_data['name']
+            }
+            # ما از همان تابع قبلی برای شروع فرآیند استفاده می‌کنیم
+            start_sample_config_flow(admin_id, message, [inbound_info], context)
+            return
         elif data.startswith("plan_type_"):
             plan_type = data.replace("plan_type_", "")
             state_info = _admin_states.get(admin_id, {})
@@ -1942,3 +1962,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         # به سراغ اینباند بعدی می‌رویم
         start_sample_config_flow(admin_id, message, state_info['data']['remaining_inbounds'], context)
+        
+        
+        
+    def show_template_management_menu(admin_id, message):
+        """منوی مدیریت الگوهای کانفیگ را نمایش می‌دهد."""
+        all_inbounds = _db_manager.get_all_active_inbounds_with_server_info()
+        markup = inline_keyboards.get_template_management_menu(all_inbounds)
+        _show_menu(admin_id, "برای ثبت یا ویرایش الگوی یک اینباند، روی آن کلیک کنید:", markup, message)

@@ -1,48 +1,87 @@
-# utils/config_generator.py (نسخه نهایی و کاملاً اصلاح شده)
+# utils/config_generator.py (نسخه نهایی با منطق استفاده از الگو)
 
 import json
 import logging
 import uuid
 import datetime
-import random
-from urllib.parse import quote
-import base64
+from urllib.parse import urlunparse, quote
 
 # ایمپورت‌های پروژه
 from .helpers import generate_random_string
 from api_client.factory import get_api_client
+from database.db_manager import DatabaseManager # اطمینان از ایمپورت شدن
 
 logger = logging.getLogger(__name__)
 
 class ConfigGenerator:
-    def __init__(self, db_manager):
+    def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator initialized.")
+        logger.info("ConfigGenerator with TEMPLATE logic initialized.")
+
+    def _rebuild_link_from_params(self, params: dict) -> str:
+        """
+        یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده بازسازی می‌کند.
+        """
+        try:
+            query_params = {k: v for k, v in params.items() if k not in ['protocol', 'uuid', 'hostname', 'port', 'remark']}
+            query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in query_params.items() if v or v == 0])
+            
+            # ساختار URL: scheme://user:pass@host:port/path?query#fragment
+            # در VLESS:   vless://UUID@hostname:port?query_string#remark
+            
+            netloc = f"{params['uuid']}@{params['hostname']}:{params['port']}"
+            
+            # urlunparse یک tuple شش عضوی می‌خواهد
+            url_parts = (
+                params['protocol'],   # scheme
+                netloc,               # netloc
+                '',                   # path
+                '',                   # params
+                query_string,         # query
+                quote(params['remark']) # fragment
+            )
+            return urlunparse(url_parts)
+        except Exception as e:
+            logger.error(f"Error rebuilding link from params: {e}")
+            return None
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
+        """
+        کانفیگ‌های یک پروفایل را بر اساس الگوهای ذخیره شده در دیتابیس می‌سازد.
+        """
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details: return None, None
-        inbounds_to_create = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
+        
+        # دریافت اینباندهای پروفایل به همراه الگوهایشان
+        inbounds_with_templates = self.db_manager.get_inbounds_for_profile(profile_id, with_server_and_template=True)
         duration_days = profile_details['duration_days']
-        return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
+        
+        return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        inbounds_list_raw = self.db_manager.get_server_inbounds(server_id, only_active=True)
-        if not inbounds_list_raw: return None, None
-        server_data = self.db_manager.get_server_by_id(server_id)
-        inbounds_to_create = [{'inbound_id': i['inbound_id'], 'server': server_data} for i in inbounds_list_raw]
-        return self._build_configs(user_telegram_id, inbounds_to_create, total_gb, duration_days, custom_remark)
+        """
+        کانفیگ‌های یک سرور را بر اساس الگوهای ذخیره شده در دیتابیس می‌سازد.
+        """
+        # دریافت اینباندهای فعال یک سرور به همراه الگوهایشان
+        inbounds_with_templates = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
+        
+        return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
 
-    def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
+    def _build_configs_from_template(self, user_telegram_id: int, inbounds_list_with_templates: list, total_gb: float, duration_days: int, custom_remark: str = None):
         all_generated_configs, generated_uuids = [], []
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
-        shared_sub_id = generate_random_string(16)
-
+        
         inbounds_by_server = {}
-        for info in inbounds_list:
+        for info in inbounds_list_with_templates:
             server_id = info['server']['id']
             if server_id not in inbounds_by_server: inbounds_by_server[server_id] = []
             inbounds_by_server[server_id].append(info)
+
+        expiry_time_ms = 0
+        if duration_days and duration_days > 0:
+            expire_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
+            expiry_time_ms = int(expire_date.timestamp() * 1000)
+        total_traffic_bytes = int(total_gb * (1024**3)) if total_gb and total_gb > 0 else 0
 
         for server_id, inbounds in inbounds_by_server.items():
             server_data = inbounds[0]['server']
@@ -51,33 +90,20 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
-            expiry_time_ms = 0
-            if duration_days and duration_days > 0:
-                expire_date = datetime.datetime.now() + datetime.timedelta(days=duration_days)
-                expiry_time_ms = int(expire_date.timestamp() * 1000)
-            total_traffic_bytes = int(total_gb * (1024**3)) if total_gb and total_gb > 0 else 0
-
             for s_inbound in inbounds:
                 inbound_id = s_inbound['inbound_id']
-                inbound_details = api_client.get_inbound(inbound_id)
-                if not inbound_details:
-                    logger.warning(f"Could not fetch full details for inbound ID {inbound_id}.")
+                config_params = s_inbound.get('config_params')
+                
+                if not config_params:
+                    logger.warning(f"No config template found for inbound {inbound_id} on server {server_id}. Skipping.")
                     continue
 
                 client_uuid = str(uuid.uuid4())
                 unique_email = f"in{inbound_id}.{base_client_email}"
-                remark_base = custom_remark or f"AlamorBot-{user_telegram_id}"
                 
-                try:
-                    protocol_settings = json.loads(inbound_details.get('settings', '{}'))
-                    flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
-                except (json.JSONDecodeError, IndexError):
-                    flow = ''
-
                 client_settings = {
                     "id": client_uuid, "email": unique_email, "totalGB": total_traffic_bytes,
-                    "expiryTime": expiry_time_ms, "enable": True, "tgId": str(user_telegram_id),
-                    "subId": shared_sub_id, "flow": flow
+                    "expiryTime": expiry_time_ms, "enable": True, "tgId": str(user_telegram_id)
                 }
                 
                 add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
@@ -86,117 +112,15 @@ class ConfigGenerator:
                     continue
 
                 generated_uuids.append(client_uuid)
-                single_config = self._generate_single_config_url(client_uuid, server_data, inbound_details, remark_base)
-                if single_config: all_generated_configs.append(single_config)
+                
+                # --- بازسازی لینک نهایی از روی الگو ---
+                final_params = dict(config_params) # کپی کردن الگو
+                final_params['uuid'] = client_uuid # جایگزینی UUID
+                final_params['remark'] = custom_remark or f"AlamorBot-{user_telegram_id}-{s_inbound.get('remark', '')}"
+                
+                final_config_url = self._rebuild_link_from_params(final_params)
+                if final_config_url:
+                    all_generated_configs.append(final_config_url)
 
-        client_details_for_db = {'uuids': generated_uuids, 'email': base_client_email, 'sub_id': shared_sub_id}
+        client_details_for_db = {'uuids': generated_uuids, 'email': base_client_email}
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)
-
-    def _generate_single_config_url(self, client_uuid: str, server_data: dict, inbound_details: dict, remark_prefix: str) -> str or None:
-        """
-        این تابع به صورت هوشمند و پویا لینک کانفیگ را بر اساس تنظیمات اینباند می‌سازد.
-        """
-        try:
-            protocol = inbound_details.get('protocol')
-            if protocol not in ['vless', 'vmess']:
-                return None
-
-            remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
-            address = server_data['subscription_base_url'].split('//')[-1].split(':')[0].split('/')[0]
-            port = inbound_details.get('port')
-
-            stream_settings_str = inbound_details.get('streamSettings', '{}')
-            protocol_settings_str = inbound_details.get('settings', '{}')
-            
-            stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
-            protocol_settings = json.loads(protocol_settings_str) if isinstance(protocol_settings_str, str) else protocol_settings_str
-            
-            params = {}
-            
-            # 1. Transport Parameters
-            network = stream_settings.get('network', 'tcp')
-            params['type'] = network
-            
-            transport_settings = stream_settings.get(f"{network}Settings", {})
-            if transport_settings.get('path'):
-                params['path'] = transport_settings.get('path')
-            
-            ws_headers = transport_settings.get('headers', {})
-            if ws_headers.get('Host'):
-                params['host'] = ws_headers.get('Host')
-            elif transport_settings.get('host'):
-                params['host'] = transport_settings.get('host')
-
-            if transport_settings.get('serviceName'):
-                params['serviceName'] = transport_settings.get('serviceName')
-            
-            # 2. Security Parameters
-            security = stream_settings.get('security', 'none')
-            if security != 'none':
-                params['security'] = security
-                security_settings = stream_settings.get(f"{security}Settings", {})
-                
-                # Fingerprint (common for TLS and Reality)
-                if security_settings.get('fingerprint'):
-                    params['fp'] = security_settings['fingerprint']
-                elif 'settings' in security_settings and security_settings['settings'].get('fingerprint'):
-                    params['fp'] = security_settings['settings']['fingerprint']
-
-                if security == 'tls':
-                    if security_settings.get('serverName'):
-                        params['sni'] = security_settings['serverName']
-                    if security_settings.get('alpn'):
-                        params['alpn'] = ','.join(security_settings['alpn'])
-                
-                elif security == 'reality':
-                    nested_reality_settings = security_settings.get('settings', {})
-                    
-                    if security_settings.get('serverNames'):
-                        valid_snis = [s for s in security_settings['serverNames'] if s]
-                        if valid_snis:
-                            params['sni'] = valid_snis[0]
-
-                    if security_settings.get('publicKey'):
-                        params['pbk'] = security_settings.get('publicKey')
-                    elif nested_reality_settings.get('publicKey'):
-                        params['pbk'] = nested_reality_settings.get('publicKey')
-                        
-                    if security_settings.get('shortIds'):
-                        valid_sids = [s for s in security_settings['shortIds'] if s]
-                        if valid_sids:
-                            params['sid'] = random.choice(valid_sids)
-                    
-                    if security_settings.get('spiderX'):
-                        params['spiderX'] = security_settings.get('spiderX')
-                    elif nested_reality_settings.get('spiderX'):
-                        params['spiderX'] = nested_reality_settings.get('spiderX')
-
-            # 3. Build Final Link
-            if protocol == 'vless':
-                try:
-                    flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
-                    if flow:
-                        params['flow'] = flow
-                except (IndexError, TypeError): pass
-                
-                query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v or v == 0])
-                return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
-
-            elif protocol == 'vmess':
-                try:
-                    vmess_client = protocol_settings.get('clients', [{}])[0]
-                    vmess_data = {
-                        "v": "2", "ps": remark, "add": address, "port": str(port), "id": client_uuid,
-                        "aid": str(vmess_client.get("alterId", 0)), "net": network, "type": "none",
-                        "host": params.get('host', ''), "path": params.get('path', ''), "tls": security if security != 'none' else ""
-                    }
-                    if network == 'grpc':
-                         vmess_data['path'] = params.get('serviceName','')
-
-                    json_str = json.dumps(vmess_data, separators=(',', ':'))
-                    return f"vmess://{base64.b64encode(json_str.encode('utf-8')).decode('utf-8')}"
-                except (IndexError, TypeError): return None
-
-        except Exception as e:
-            logger.error(f"Error in _generate_single_config_url for inbound {inbound_details.get('id')}: {e}", exc_info=True)
-            return None

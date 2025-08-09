@@ -35,6 +35,7 @@ def get_server_management_inline_menu():
         types.InlineKeyboardButton("📝 لیست سرورها", callback_data="admin_list_servers"),
         types.InlineKeyboardButton("🔌 مدیریت Inboundها", callback_data="admin_manage_inbounds"),
         types.InlineKeyboardButton("🔄 تست اتصال سرورها", callback_data="admin_test_all_servers"),
+        types.InlineKeyboardButton("📝 مدیریت الگوها", callback_data="admin_manage_templates"),
         types.InlineKeyboardButton("❌ حذف سرور", callback_data="admin_delete_server"),
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
@@ -448,4 +449,27 @@ def get_admin_management_menu():
         types.InlineKeyboardButton("❌ حذف ادمین", callback_data="admin_remove_admin")
     )
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
+
+
+def get_template_management_menu(all_active_inbounds):
+    """
+    منوی مدیریت الگوها را با نمایش وضعیت هر اینباند ایجاد می‌کند.
+    """
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    if not all_active_inbounds:
+        markup.add(types.InlineKeyboardButton("هیچ اینباند فعالی یافت نشد", callback_data="no_action"))
+    else:
+        for inbound in all_active_inbounds:
+            status_emoji = "✅" if inbound.get('config_params') else "⚠️"
+            btn_text = (
+                f"{status_emoji} {inbound['server_name']} - "
+                f"{inbound.get('remark', f'ID: {inbound['inbound_id']})}"
+            )
+            # callback_data شامل آیدی سرور و اینباند است تا بدانیم کدام الگو را باید ویرایش کنیم
+            callback_data = f"admin_edit_template_{inbound['server_id']}_{inbound['inbound_id']}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+            
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_server_management"))
     return markup
