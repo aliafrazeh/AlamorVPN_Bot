@@ -429,33 +429,38 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
         server_id = None
         server_name = ""
+        purchase_type = order_data.get('purchase_type')
 
-        # تفکیک بین خرید پروفایل و خرید عادی
-        if order_data.get('purchase_type') == 'profile':
+        # --- اصلاح اصلی اینجاست: تفکیک سه حالت مختلف ---
+        if purchase_type == 'profile':
             profile_details = order_data['profile_details']
             server_name = f"پروفایل: {profile_details['name']}"
             profile_inbounds = _db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
-            
             if profile_inbounds:
-                # یک سرور را به عنوان نماینده برای ثبت در خرید انتخاب می‌کنیم
                 server_id = profile_inbounds[0]['server']['id']
             else:
                 _bot.send_message(user_id, "خطا: پروفایل انتخاب شده هیچ سروری ندارد. لطفاً به ادمین اطلاع دهید.")
                 _clear_user_state(user_id)
                 return
-        else:
-            # منطق خرید عادی
+        
+        elif purchase_type == 'wallet_charge':
+            # برای شارژ کیف پول، سرور معنی ندارد
+            server_id = None 
+            server_name = "شارژ کیف پول"
+
+        else: # حالت پیش‌فرض: خرید سرویس عادی
             server_id = order_data['server_id']
             server_info = _db_manager.get_server_by_id(server_id)
             server_name = server_info['name'] if server_info else "سرور ناشناس"
 
+        # ساخت دیکشنری کامل برای ذخیره در دیتابیس
         order_details_for_db = {
             'user_telegram_id': user_id,
             'user_db_id': user_db_info['id'],
             'user_first_name': message.from_user.first_name,
             'server_id': server_id,
             'server_name': server_name,
-            'purchase_type': order_data.get('purchase_type'),
+            'purchase_type': purchase_type,
             'plan_type': order_data.get('plan_type'),
             'profile_details': order_data.get('profile_details'),
             'plan_details': order_data.get('plan_details'),
@@ -499,6 +504,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                     parse_mode='Markdown',
                     reply_markup=markup
                 )
+                # فقط اولین پیام ادمین را در دیتابیس ذخیره می‌کنیم
                 if admin_id == ADMIN_IDS[0]:
                     _db_manager.update_payment_admin_notification_id(payment_id, sent_msg.message_id)
             except Exception as e:
@@ -507,6 +513,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         _bot.send_message(user_id, messages.RECEIPT_RECEIVED_USER)
         _clear_user_state(user_id)
         _show_user_main_menu(user_id)
+
     def show_service_details(user_id, purchase_id, message):
         """
         Shows the details of a specific subscription, without the single config button.
