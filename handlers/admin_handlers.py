@@ -1898,16 +1898,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             }
         }
         
+        # --- خط اصلاح شده در اینجا قرار دارد ---
+        inbound_remark = current_inbound.get('remark', f"ID: {current_inbound.get('id')}")
+        
         prompt_text = (
             f"لطفاً یک **لینک کانفیگ نمونه** برای اینباند زیر ارسال کنید:\n\n"
             f"▫️ **سرور:** {context['server_name']}\n"
-            f"▫️ **اینباند:** {current_inbound.get('remark', f'ID: {current_inbound.get('id')}')}"
+            f"▫️ **اینباند:** {inbound_remark}"
         )
         
         prompt = _show_menu(admin_id, prompt_text, None, message)
         _admin_states[admin_id]['prompt_message_id'] = prompt.message_id
-
-
     def process_sample_config_input(admin_id, message):
         """
         کانفیگ نمونه ارسال شده توسط ادمین را پردازش، تجزیه و در دیتابیس ذخیره می‌کند.
