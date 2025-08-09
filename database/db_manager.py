@@ -1412,3 +1412,22 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error adding balance for user {user_id}: {e}")
             return False
+        
+        
+        
+    def deduct_from_user_balance(self, user_id: int, amount: float):
+        """
+        مبلغ مشخص شده را از موجودی کیف پول کاربر کسر می‌کند.
+        برای جلوگیری از منفی شدن موجودی، یک شرط در کوئری قرار داده شده است.
+        """
+        sql = "UPDATE users SET balance = balance - %s WHERE id = %s AND balance >= %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (amount, user_id, amount))
+                    conn.commit()
+                    # اگر سطری آپدیت شده باشد، یعنی موجودی کافی بوده است
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error deducting balance for user {user_id}: {e}")
+            return False

@@ -176,11 +176,20 @@ def get_order_confirmation_menu():
         cancel_text="❌ انصراف"
     )
 
-def get_payment_gateway_selection_menu(gateways: list):
+def get_payment_gateway_selection_menu(gateways: list, wallet_balance: float = 0, order_price: float = 0):
     markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    # --- منطق جدید برای نمایش دکمه کیف پول ---
+    if wallet_balance >= order_price:
+        balance_str = f"{wallet_balance:,.0f}"
+        btn_text = f"💳 پرداخت از کیف پول (موجودی: {balance_str} تومان)"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data="pay_with_wallet"))
+
+    # نمایش بقیه درگاه‌ها
     for gateway in gateways:
         markup.add(types.InlineKeyboardButton(gateway['name'], callback_data=f"select_gateway_{gateway['id']}"))
-    markup.add(get_back_button("show_order_summary", "🔙 بازگشت به خلاصه سفارش").keyboard[0][0])
+        
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به خلاصه سفارش", callback_data="show_order_summary"))
     return markup
     
 def get_admin_payment_action_menu(payment_id: int):
@@ -519,4 +528,6 @@ def get_user_account_menu():
         types.InlineKeyboardButton("📝 تکمیل پروفایل", callback_data="user_complete_profile")
     )
     markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="user_main_menu"))
-    return markup   
+    return markup
+
+

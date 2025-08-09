@@ -16,7 +16,7 @@ from utils.config_generator import ConfigGenerator
 from utils.helpers import is_float_or_int , escape_markdown_v1
 from config import ZARINPAL_MERCHANT_ID, WEBHOOK_DOMAIN , ZARINPAL_SANDBOX
 from main import send_welcome
-from utils.bot_helpers import send_subscription_info
+from utils.bot_helpers import send_subscription_info , finalize_profile_purchase
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("buy_select_profile_"):
             profile_id = int(data.replace("buy_select_profile_", ""))
             select_profile_for_purchase(user_id, profile_id, call.message)
-          
+        elif data == "pay_with_wallet":
+            process_wallet_payment(user_id, call.message)
 
         elif data == "cancel_order":
             _clear_user_state(user_id)
@@ -319,12 +320,18 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     def display_payment_gateways(user_id, message):
         _user_states[user_id]['state'] = 'selecting_gateway'
         active_gateways = _db_manager.get_all_payment_gateways(only_active=True)
-        if not active_gateways:
+        
+        # --- بخش جدید ---
+        user_info = _db_manager.get_user_by_telegram_id(user_id)
+        wallet_balance = user_info.get('balance', 0.0)
+        order_price = _user_states[user_id]['data']['total_price']
+        
+        if not active_gateways and wallet_balance < order_price:
             _bot.edit_message_text(messages.NO_ACTIVE_PAYMENT_GATEWAYS, user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("show_order_summary"))
             return
         
-        _bot.edit_message_text(messages.SELECT_PAYMENT_GATEWAY_PROMPT, user_id, message.message_id, reply_markup=inline_keyboards.get_payment_gateway_selection_menu(active_gateways))
-        
+        markup = inline_keyboards.get_payment_gateway_selection_menu(active_gateways, wallet_balance, order_price)
+        _bot.edit_message_text(messages.SELECT_PAYMENT_GATEWAY_PROMPT, user_id, message.message_id, reply_markup=markup)
     def select_payment_gateway(user_id, gateway_id, message):
         gateway = _db_manager.get_payment_gateway_by_id(gateway_id)
         if not gateway:
@@ -909,3 +916,33 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
         markup = inline_keyboards.get_confirmation_menu("confirm_and_pay", "user_account")
         _bot.edit_message_text(summary_text, user_id, state_info['prompt_message_id'], reply_markup=markup, parse_mode='Markdown')
+        
+        
+        
+    def process_wallet_payment(user_id, message):
+        """پرداخت از طریق کیف پول را پردازش کرده و سرویس را فعال می‌کند."""
+        user_db_info = _db_manager.get_user_by_telegram_id(user_id)
+        order_details = _user_states[user_id]['data']
+        order_price = order_details['total_price']
+
+        if not user_db_info or user_db_info.get('balance', 0) < order_price:
+            _bot.answer_callback_query(message.id, "موجودی کیف پول شما کافی نیست.", show_alert=True)
+            return
+        
+        # کسر مبلغ از کیف پول
+        if _db_manager.deduct_from_user_balance(user_db_info['id'], order_price):
+            _bot.edit_message_text("✅ پرداخت شما از طریق کیف پول با موفقیت انجام شد. لطفاً صبر کنید...", user_id, message.message_id)
+            
+            # فرآیند ساخت سرویس را بلافاصله شروع می‌کنیم (مانند تایید پرداخت ادمین)
+            if order_details.get('purchase_type') == 'profile':
+                finalize_profile_purchase(_bot, _db_manager, user_id, order_details)
+            else: # خرید عادی
+                prompt = _bot.send_message(user_id, messages.ASK_FOR_CUSTOM_CONFIG_NAME)
+                _user_states[user_id] = {
+                    'state': 'waiting_for_custom_config_name',
+                    'data': order_details,
+                    'prompt_message_id': prompt.message_id
+                }
+        else:
+            _bot.edit_message_text("❌ در برداشت از کیف پول خطایی رخ داد. لطفاً با پشتیبانی تماس بگیرید.", user_id, message.message_id)
+            _clear_user_state(user_id)
