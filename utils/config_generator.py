@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با پارامتر اصلاح شده)
+# utils/config_generator.py (نسخه نهایی و پایدار)
 
 import json
 import logging
@@ -16,12 +16,11 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator with TEMPLATE logic initialized.")
+        logger.info("ConfigGenerator with FINAL rebuild logic initialized.")
 
     def _rebuild_link_from_params(self, params: dict) -> str:
         """
         یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده با دقت کامل بازسازی می‌کند.
-        این تابع تمام پارامترهای ممکن را در نظر گرفته و یک کپی دقیق از الگوی اولیه ایجاد می‌کند.
         """
         try:
             # ۱. استخراج اجزای اصلی و ساختاری لینک
@@ -33,16 +32,14 @@ class ConfigGenerator:
             path = params.get('path', '')
 
             # ۲. ساخت رشته کوئری (Query String) از تمام پارامترهای باقی‌مانده
-            # ما تمام پارامترهایی که جزو ساختار اصلی نیستند را به عنوان کوئری در نظر می‌گیریم
             structural_keys = {'protocol', 'uuid', 'hostname', 'port', 'remark', 'path'}
             query_params = {key: value for key, value in params.items() if key not in structural_keys}
             
-            # مرتب کردن کلیدها برای اطمینان از یکسان بودن خروجی (اختیاری ولی خوب است)
             sorted_query_params = dict(sorted(query_params.items()))
             
             query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in sorted_query_params.items() if value or value == 0 or value == ''])
 
-            # ۳. بازسازی کامل لینک با استفاده از urlunparse
+            # ۳. بازسازی کامل لینک
             netloc = f"{uuid}@{hostname}:{port}"
             url_parts = (
                 scheme,
@@ -55,29 +52,19 @@ class ConfigGenerator:
             
             return urlunparse(url_parts)
         except Exception as e:
-            logger.error(f"Error rebuilding link from params with high precision: {e}", exc_info=True)
+            logger.error(f"Error rebuilding link from params: {e}", exc_info=True)
             return None
 
-
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
-        """
-        کانفیگ‌های یک پروفایل را بر اساس الگوهای ذخیره شده در دیتابیس می‌سازد.
-        """
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details: return None, None
         
-        # --- اصلاح اصلی اینجاست ---
-        # نام پارامتر به 'with_server_info' تغییر کرد
         inbounds_with_templates = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
-        
         duration_days = profile_details['duration_days']
         
         return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        """
-        کانفیگ‌های یک سرور را بر اساس الگوهای ذخیره شده در دیتابیس می‌سازد.
-        """
         inbounds_with_templates = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
         
         return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
