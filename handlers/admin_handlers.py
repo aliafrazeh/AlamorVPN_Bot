@@ -305,7 +305,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif state == 'waiting_for_profile_description':
             data['description'] = None if text.lower() == 'skip' else text
             execute_add_profile(admin_id, data)
-
+        elif state == 'waiting_for_sample_config':
+            process_sample_config_input(admin_id, message)
+            return
         # --- Gateway Flows ---
         elif state == 'waiting_for_gateway_name':
             data['name'] = text
@@ -529,9 +531,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_id = int(parts[3])
             handle_server_selection_for_profile(admin_id, message, profile_id, server_id)
             return
-        if state_info.get('state') == 'waiting_for_sample_config':
-            process_sample_config_input(admin_id, message)
-            return
+        
         elif data.startswith("admin_pi_toggle_"): # Profile Inbound Toggle
             parts = data.split('_')
             profile_id = int(parts[3])
