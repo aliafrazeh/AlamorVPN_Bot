@@ -538,6 +538,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("admin_delete_tutorial_"): # <-- NEW
             tutorial_id = int(data.split('_')[-1])
             execute_delete_tutorial(admin_id, message, tutorial_id)
+        elif data == "admin_manage_profile_templates":
+            show_profile_template_management_menu(admin_id, message)
+            return
+        elif data.startswith("admin_edit_profile_template_"):
+            parts = data.split('_')
+            profile_id, server_id, inbound_id = int(parts[4]), int(parts[5]), int(parts[6])
+            server_data = _db_manager.get_server_by_id(server_id)
+            profile_data = _db_manager.get_profile_by_id(profile_id)
+            inbound_info_db = _db_manager.get_server_inbound_details(server_id, inbound_id)
+            inbound_info = {'id': inbound_id, 'remark': inbound_info_db.get('remark', '') if inbound_info_db else ''}
+            context = {
+                'type': 'profile', 'profile_id': profile_id, 'profile_name': profile_data['name'],
+                'server_id': server_id, 'server_name': server_data['name']
+            }
+            start_sample_config_flow(admin_id, message, [inbound_info], context)
+            return
         elif data == "admin_manage_templates": # <-- بلوک جدید
             show_template_management_menu(admin_id, message)
             return
