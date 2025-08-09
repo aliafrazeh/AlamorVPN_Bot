@@ -20,34 +20,42 @@ class ConfigGenerator:
 
     def _rebuild_link_from_params(self, params: dict) -> str:
         """
-        یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده بازسازی می‌کند.
-        (نسخه اصلاح شده با پشتیبانی کامل از path و همه پارامترها)
+        یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده با دقت کامل بازسازی می‌کند.
+        این تابع تمام پارامترهای ممکن را در نظر گرفته و یک کپی دقیق از الگوی اولیه ایجاد می‌کند.
         """
         try:
-            # --- اصلاح اصلی اینجاست ---
-            # ابتدا پارامتر path را جدا می‌کنیم
+            # ۱. استخراج اجزای اصلی و ساختاری لینک
+            scheme = params.get('protocol', 'vless')
+            uuid = params.get('uuid')
+            hostname = params.get('hostname')
+            port = params.get('port')
+            remark = params.get('remark', '')
             path = params.get('path', '')
+
+            # ۲. ساخت رشته کوئری (Query String) از تمام پارامترهای باقی‌مانده
+            # ما تمام پارامترهایی که جزو ساختار اصلی نیستند را به عنوان کوئری در نظر می‌گیریم
+            structural_keys = {'protocol', 'uuid', 'hostname', 'port', 'remark', 'path'}
+            query_params = {key: value for key, value in params.items() if key not in structural_keys}
             
-            # سپس تمام پارامترهای ساختاری را از لیست کوئری حذف می‌کنیم
-            excluded_keys = ['protocol', 'uuid', 'hostname', 'port', 'remark', 'path']
-            query_params = {k: v for k, v in params.items() if k not in excluded_keys}
+            # مرتب کردن کلیدها برای اطمینان از یکسان بودن خروجی (اختیاری ولی خوب است)
+            sorted_query_params = dict(sorted(query_params.items()))
             
-            query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in query_params.items() if v or v == 0])
-            
-            netloc = f"{params['uuid']}@{params['hostname']}:{params['port']}"
-            
-            # urlunparse یک تاپل شش عضوی می‌خواهد: (scheme, netloc, path, params, query, fragment)
+            query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in sorted_query_params.items() if value or value == 0 or value == ''])
+
+            # ۳. بازسازی کامل لینک با استفاده از urlunparse
+            netloc = f"{uuid}@{hostname}:{port}"
             url_parts = (
-                params.get('protocol', 'vless'),
+                scheme,
                 netloc,
-                path,  # <-- استفاده از path جدا شده
-                '',    # params (معمولاً خالی)
+                path,
+                '',  # پارامترهای مسیر که در VLESS استفاده نمی‌شود
                 query_string,
-                quote(params.get('remark', '')) # fragment for remark
+                quote(remark)
             )
+            
             return urlunparse(url_parts)
         except Exception as e:
-            logger.error(f"Error rebuilding link from params: {e}", exc_info=True)
+            logger.error(f"Error rebuilding link from params with high precision: {e}", exc_info=True)
             return None
 
 
