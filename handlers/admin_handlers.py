@@ -1923,18 +1923,17 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _admin_states[admin_id]['prompt_message_id'] = prompt.message_id
     def process_sample_config_input(admin_id, message):
         """
-        کانفیگ نمونه ارسال شده توسط ادمین را پردازش، تجزیه و در دیتابیس ذخیره می‌کند.
+        کانفیگ نمونه را پردازش، تجزیه کرده و هم پارامترها و هم متن خام آن را ذخیره می‌کند.
         """
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'waiting_for_sample_config':
             return
 
-        sample_link = message.text.strip()
-        parsed_params = parse_config_link(sample_link)
+        raw_template_link = message.text.strip()
+        parsed_params = parse_config_link(raw_template_link)
 
         if not parsed_params:
             _bot.send_message(admin_id, "❌ لینک ارسال شده نامعتبر است. لطفاً یک لینک VLESS صحیح برای همین اینباند ارسال کنید.")
-            # وضعیت تغییر نمی‌کند تا ادمین بتواند دوباره تلاش کند
             return
         
         inbound_info = state_info['data']['current_inbound']
@@ -1943,20 +1942,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
         success = False
         if context['type'] == 'profile':
-            success = _db_manager.update_profile_inbound_params(context['profile_id'], context['server_id'], inbound_info['id'], params_json)
+            success = _db_manager.update_profile_inbound_template(context['profile_id'], context['server_id'], inbound_info['id'], params_json, raw_template_link)
         else:
-            success = _db_manager.update_server_inbound_params(context['server_id'], inbound_info['id'], params_json)
+            success = _db_manager.update_server_inbound_template(context['server_id'], inbound_info['id'], params_json, raw_template_link)
 
         if success:
-            _bot.edit_message_text("✅ پارامترها با موفقیت ذخیره شد. در حال رفتن به اینباند بعدی...", admin_id, state_info['prompt_message_id'])
+            _bot.edit_message_text("✅ پارامترها و الگوی خام با موفقیت ذخیره شد.", admin_id, state_info['prompt_message_id'])
         else:
-            _bot.edit_message_text("❌ خطایی در ذخیره پارامترها در دیتابیس رخ داد.", admin_id, state_info['prompt_message_id'])
+            _bot.edit_message_text("❌ خطایی در ذخیره الگو در دیتابیس رخ داد.", admin_id, state_info['prompt_message_id'])
 
-        # به سراغ اینباند بعدی می‌رویم
         start_sample_config_flow(admin_id, message, state_info['data']['remaining_inbounds'], context)
-        
-        
-        
     def show_template_management_menu(admin_id, message):
         """منوی مدیریت الگوهای کانفیگ را نمایش می‌دهد."""
         all_inbounds = _db_manager.get_all_active_inbounds_with_server_info()

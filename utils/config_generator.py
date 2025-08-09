@@ -1,12 +1,11 @@
-# utils/config_generator.py (نسخه نهایی و پایدار)
+# utils/config_generator.py (نسخه نهایی با جایگزینی رشته)
 
 import json
 import logging
 import uuid
 import datetime
-from urllib.parse import urlunparse, quote
+from urllib.parse import quote
 
-# ایمپورت‌های پروژه
 from .helpers import generate_random_string
 from api_client.factory import get_api_client
 from database.db_manager import DatabaseManager
@@ -16,65 +15,25 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator with FINAL rebuild logic initialized.")
-
-    def _rebuild_link_from_params(self, params: dict) -> str:
-        """
-        یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده با دقت کامل بازسازی می‌کند.
-        """
-        try:
-            # ۱. استخراج اجزای اصلی و ساختاری لینک
-            scheme = params.get('protocol', 'vless')
-            uuid = params.get('uuid')
-            hostname = params.get('hostname')
-            port = params.get('port')
-            remark = params.get('remark', '')
-            path = params.get('path', '')
-
-            # ۲. ساخت رشته کوئری (Query String) از تمام پارامترهای باقی‌مانده
-            structural_keys = {'protocol', 'uuid', 'hostname', 'port', 'remark', 'path'}
-            query_params = {key: value for key, value in params.items() if key not in structural_keys}
-            
-            sorted_query_params = dict(sorted(query_params.items()))
-            
-            query_string = '&'.join([f"{key}={quote(str(value))}" for key, value in sorted_query_params.items() if value or value == 0 or value == ''])
-
-            # ۳. بازسازی کامل لینک
-            netloc = f"{uuid}@{hostname}:{port}"
-            url_parts = (
-                scheme,
-                netloc,
-                path,
-                '',  # پارامترهای مسیر که در VLESS استفاده نمی‌شود
-                query_string,
-                quote(remark)
-            )
-            
-            return urlunparse(url_parts)
-        except Exception as e:
-            logger.error(f"Error rebuilding link from params: {e}", exc_info=True)
-            return None
+        logger.info("ConfigGenerator with FINAL string replacement logic initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details: return None, None
-        
-        inbounds_with_templates = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
+        inbounds = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
         duration_days = profile_details['duration_days']
-        
-        return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
+        return self._build_configs_from_template(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        inbounds_with_templates = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
-        
-        return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
+        inbounds = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
+        return self._build_configs_from_template(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
-    def _build_configs_from_template(self, user_telegram_id: int, inbounds_list_with_templates: list, total_gb: float, duration_days: int, custom_remark: str = None):
+    def _build_configs_from_template(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
         all_generated_configs, generated_uuids = [], []
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
         
         inbounds_by_server = {}
-        for info in inbounds_list_with_templates:
+        for info in inbounds_list:
             server_id = info['server']['id']
             if server_id not in inbounds_by_server: inbounds_by_server[server_id] = []
             inbounds_by_server[server_id].append(info)
@@ -94,20 +53,17 @@ class ConfigGenerator:
 
             for s_inbound in inbounds:
                 inbound_id = s_inbound['inbound_id']
+                raw_template = s_inbound.get('raw_template')
                 config_params = s_inbound.get('config_params')
                 
-                if not config_params:
-                    logger.warning(f"No config template found for inbound {inbound_id} on server {server_id}. Skipping.")
+                if not raw_template or not config_params or not config_params.get('uuid'):
+                    logger.warning(f"Incomplete template data for inbound {inbound_id} on server {server_id}. Skipping.")
                     continue
 
                 client_uuid = str(uuid.uuid4())
                 unique_email = f"in{inbound_id}.{base_client_email}"
                 
-                client_settings = {
-                    "id": client_uuid, "email": unique_email, "totalGB": total_traffic_bytes,
-                    "expiryTime": expiry_time_ms, "enable": True, "tgId": str(user_telegram_id)
-                }
-                
+                client_settings = {"id": client_uuid, "email": unique_email, "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms, "enable": True, "tgId": str(user_telegram_id)}
                 add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
                 if not api_client.add_client(add_client_payload):
                     logger.error(f"Failed to add client to inbound {inbound_id} on server {server_id}.")
@@ -115,14 +71,21 @@ class ConfigGenerator:
 
                 generated_uuids.append(client_uuid)
                 
-                # --- بازسازی لینک نهایی از روی الگو ---
-                final_params = dict(config_params)
-                final_params['uuid'] = client_uuid
-                final_params['remark'] = custom_remark or f"AlamorBot-{user_telegram_id}-{s_inbound.get('remark', '')}"
-                
-                final_config_url = self._rebuild_link_from_params(final_params)
-                if final_config_url:
-                    all_generated_configs.append(final_config_url)
+                try:
+                    template_uuid = config_params['uuid']
+                    final_config = raw_template.replace(template_uuid, client_uuid)
+                    
+                    template_remark_encoded = f"#{quote(config_params.get('remark', ''))}"
+                    final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}-{s_inbound.get('remark', '')}"
+                    # برای جلوگیری از جایگزینی اشتباه، فقط بخش remark را جایگزین می‌کنیم
+                    if template_remark_encoded in final_config:
+                        final_config = final_config.replace(template_remark_encoded, f"#{quote(final_remark_str)}")
+                    else: # اگر remark در الگو خالی بود
+                        final_config = f"{final_config}#{quote(final_remark_str)}"
+
+                    all_generated_configs.append(final_config)
+                except Exception as e:
+                    logger.error(f"Error during string replacement for inbound {inbound_id}: {e}")
 
         client_details_for_db = {'uuids': generated_uuids, 'email': base_client_email}
         return (all_generated_configs, client_details_for_db) if all_generated_configs else (None, None)

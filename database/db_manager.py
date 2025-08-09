@@ -1432,3 +1432,32 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error deducting balance for user {user_id}: {e}")
             return False
+        
+        
+    # این دو تابع را در db_manager.py پیدا و جایگزین کنید
+
+    def update_server_inbound_template(self, server_id: int, inbound_id: int, params_json: str, raw_template: str):
+        """پارامترها و متن خام الگو را برای یک اینباند سرور خاص آپدیت می‌کند."""
+        sql = "UPDATE server_inbounds SET config_params = %s, raw_template = %s WHERE server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, raw_template, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating server inbound template for s:{server_id}-i:{inbound_id}: {e}")
+            return False
+
+    def update_profile_inbound_template(self, profile_id: int, server_id: int, inbound_id: int, params_json: str, raw_template: str):
+        """پارامترها و متن خام الگو را برای یک اینباند پروفایل خاص آپدیت می‌کند."""
+        sql = "UPDATE profile_inbounds SET config_params = %s, raw_template = %s WHERE profile_id = %s AND server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, raw_template, profile_id, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating profile inbound template for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
+            return False
