@@ -289,7 +289,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             show_profile_template_management_menu(admin_id, message)
             return
 
-        elif data.startswith("admin_edit_profile_template_"): # <-- بلوک جدید
+        elif data.startswith("admin_edit_profile_template_"): 
             parts = data.split('_')
             profile_id = int(parts[4])
             server_id = int(parts[5])
@@ -470,74 +470,70 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         """این هندلر تمام کلیک‌های ادمین را به صورت یکپارچه مدیریت می‌کند."""
         _bot.answer_callback_query(call.id)
         admin_id, message, data = call.from_user.id, call.message, call.data
-
-        # --- بخش اصلاح شده ---
-        # تعریف توابع داخلی برای خوانایی بهتر
-        def list_plans_action(a_id, msg):
-            # پاس دادن صحیح پارامترها به تابع اصلی
-            text = list_all_plans(a_id, msg, return_text=True)
-            _bot.edit_message_text(text, a_id, msg.message_id, parse_mode='Markdown', reply_markup=inline_keyboards.get_back_button("admin_plan_management"))
-
-        def list_gateways_action(a_id, msg):
-            # پاس دادن صحیح پارامترها به تابع اصلی
-            text = list_all_gateways(a_id, msg, return_text=True)
-            _bot.edit_message_text(text, a_id, msg.message_id, parse_mode='Markdown', reply_markup=inline_keyboards.get_back_button("admin_payment_management"))
-        # --- پایان بخش اصلاح شده ---
+        state_info = _admin_states.get(admin_id, {})
 
         actions = {
-            "admin_webhook_setup": start_webhook_setup_flow,
-            "admin_health_check": run_system_health_check,
-            "admin_check_nginx": check_nginx_status,
-            "admin_manage_admins": _show_admin_management_menu,
-            "admin_add_admin": start_add_admin_flow,
-            "admin_remove_admin": start_remove_admin_flow,
-            "admin_sync_configs": start_sync_configs_flow,
-            "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
-            "admin_list_profiles": list_all_profiles,
-            "admin_add_profile": start_add_profile_flow,
+            "admin_main_menu": lambda a_id, msg: (_clear_admin_state(a_id), _show_admin_main_menu(a_id, msg)),
+            "admin_server_management": _show_server_management_menu,
+            "admin_plan_management": lambda a_id, msg: (_clear_admin_state(a_id), _show_plan_management_menu(a_id, msg)),
             "admin_profile_management": _show_profile_management_menu,
+            "admin_payment_management": _show_payment_gateway_management_menu,
+            "admin_user_management": _show_user_management_menu,
             "admin_add_server": start_add_server_flow,
-            "admin_support_management": show_support_management_menu, 
-            "admin_edit_support_link": start_edit_support_link_flow,
-            "admin_tutorial_management": show_tutorial_management_menu, 
-            "admin_add_tutorial": start_add_tutorial_flow,             
-            "admin_list_tutorials": list_tutorials,  
+            "admin_list_servers": list_all_servers,
+            "admin_delete_server": start_delete_server_flow,
+            "admin_test_all_servers": test_all_servers,
+            "admin_manage_inbounds": start_manage_inbounds_flow,
+            "admin_add_plan": start_add_plan_flow,
+            "admin_list_plans": list_all_plans,
+            "admin_delete_plan": start_delete_plan_flow,
+            "admin_edit_plan": start_edit_plan_flow,
+            "admin_toggle_plan_status": start_toggle_plan_status_flow,
+            "admin_add_gateway": start_add_gateway_flow,
+            "admin_list_gateways": list_all_gateways,
+            "admin_toggle_gateway_status": start_toggle_gateway_status_flow,
+            "admin_list_users": list_all_users,
+            "admin_search_user": start_search_user_flow,
             "admin_channel_lock_management": show_channel_lock_menu,
             "admin_set_channel_lock": start_set_channel_lock_flow,
             "admin_remove_channel_lock": execute_remove_channel_lock,
-            "admin_user_management": lambda a, m: _show_menu(a, "مدیریت کاربران:", inline_keyboards.get_user_management_menu(), m),
-            "admin_search_user": start_search_user_flow,
-            "admin_delete_plan": start_delete_plan_flow,
-            "admin_edit_plan": start_edit_plan_flow,
+            "admin_tutorial_management": show_tutorial_management_menu,
+            "admin_add_tutorial": start_add_tutorial_flow,
+            "admin_list_tutorials": list_tutorials,
+            "admin_support_management": show_support_management_menu,
+            "admin_edit_support_link": start_edit_support_link_flow,
+            "admin_add_profile": start_add_profile_flow,
+            "admin_list_profiles": list_all_profiles,
+            "admin_manage_profile_inbounds": start_manage_profile_inbounds_flow,
+            "admin_manage_admins": _show_admin_management_menu,
+            "admin_add_admin": start_add_admin_flow,
+            "admin_remove_admin": start_remove_admin_flow,
+            "admin_check_nginx": check_nginx_status,
+            "admin_health_check": run_system_health_check,
+            "admin_webhook_setup": start_webhook_setup_flow,
             "admin_create_backup": create_backup,
-            "admin_main_menu":  lambda a, m: (_clear_admin_state(a), _show_menu(a, messages.ADMIN_WELCOME, inline_keyboards.get_admin_main_inline_menu(), m)),
-            "admin_server_management": _show_server_management_menu,
-            "admin_plan_management": lambda a, m: (_clear_admin_state(a), _show_plan_management_menu(a, m)),
-            "admin_payment_management": _show_payment_gateway_management_menu,
-            "admin_add_server": start_add_server_flow,
-            "admin_delete_server": start_delete_server_flow,
-            "admin_add_plan": start_add_plan_flow,
-            "admin_toggle_plan_status": start_toggle_plan_status_flow,
-            "admin_add_gateway": start_add_gateway_flow,
-            "admin_toggle_gateway_status": start_toggle_gateway_status_flow,
-            "admin_list_servers": list_all_servers,
-            "admin_test_all_servers": test_all_servers,
-            "admin_list_plans": list_plans_action,
-            "admin_list_gateways": list_gateways_action,
-            "admin_list_users": list_all_users,
-            "admin_manage_inbounds": start_manage_inbounds_flow,
         }
-        
+
         if data in actions:
             actions[data](admin_id, message)
             return
 
-        # --- هندل کردن موارد پیچیده‌تر ---
-        if data.startswith("gateway_type_"):
-            handle_gateway_type_selection(admin_id, call.message, data.replace('gateway_type_', ''))
-        elif data.startswith("admin_delete_tutorial_"): # <-- NEW
-            tutorial_id = int(data.split('_')[-1])
-            execute_delete_tutorial(admin_id, message, tutorial_id)
+        # --- مدیریت الگوهای سرور ---
+        if data == "admin_manage_templates":
+            show_template_management_menu(admin_id, message)
+            return
+        elif data.startswith("admin_edit_template_"):
+            parts = data.split('_')
+            server_id = int(parts[3])
+            inbound_id = int(parts[4])
+            server_data = _db_manager.get_server_by_id(server_id)
+            inbound_info_db = _db_manager.get_server_inbound_details(server_id, inbound_id)
+            inbound_info = {'id': inbound_id, 'remark': inbound_info_db.get('remark', '') if inbound_info_db else ''}
+            context = {'type': 'server', 'server_id': server_id, 'server_name': server_data['name']}
+            start_sample_config_flow(admin_id, message, [inbound_info], context)
+            return
+
+        # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)
             return
@@ -554,114 +550,78 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             }
             start_sample_config_flow(admin_id, message, [inbound_info], context)
             return
-        elif data == "admin_manage_templates": # <-- بلوک جدید
-            show_template_management_menu(admin_id, message)
+
+        # --- مدیریت پرداخت‌ها ---
+        elif data.startswith("admin_approve_payment_"):
+            process_payment_approval(admin_id, int(data.split('_')[-1]), message)
+            return
+        elif data.startswith("admin_reject_payment_"):
+            process_payment_rejection(admin_id, int(data.split('_')[-1]), message)
             return
 
-        elif data.startswith("admin_edit_template_"): # <-- بلوک جدید
-            parts = data.split('_')
-            server_id = int(parts[3])
-            inbound_id = int(parts[4])
-            
-            server_data = _db_manager.get_server_by_id(server_id)
-            inbound_info = {'id': inbound_id, 'remark': ''} # Remark is optional here
-            
-            context = {
-                'type': 'server', # فعلا فقط برای سرورهای عادی
-                'server_id': server_id,
-                'server_name': server_data['name']
-            }
-            # ما از همان تابع قبلی برای شروع فرآیند استفاده می‌کنیم
-            start_sample_config_flow(admin_id, message, [inbound_info], context)
+        # --- مدیریت اینباندها (ذخیره و تایید) ---
+        elif data.startswith("inbound_save_"):
+            server_id = int(data.split('_')[-1])
+            execute_save_inbounds(admin_id, message, server_id)
             return
-        elif data.startswith("plan_type_"):
-            plan_type = data.replace("plan_type_", "")
-            state_info = _admin_states.get(admin_id, {})
-            if state_info.get('state') != 'waiting_for_plan_type': return
+        elif data.startswith("admin_pi_save_"):
+            parts = data.split('_')
+            profile_id, server_id = int(parts[3]), int(parts[4])
+            execute_save_profile_inbounds(admin_id, message, profile_id, server_id)
+            return
 
-            state_info['data']['plan_type'] = plan_type
-            if plan_type == 'fixed_monthly':
-                state_info['state'] = 'waiting_for_plan_volume'
-                _bot.edit_message_text(messages.ADD_PLAN_PROMPT_VOLUME, admin_id, message.message_id)
-            elif plan_type == 'gigabyte_based':
-                state_info['state'] = 'waiting_for_per_gb_price'
-                _bot.edit_message_text(messages.ADD_PLAN_PROMPT_PER_GB_PRICE, admin_id, message.message_id)
-            state_info['prompt_message_id'] = message.message_id
+        # --- مدیریت انتخاب اینباندها (تیک زدن) ---
+        elif data.startswith("inbound_toggle_"):
+            handle_inbound_selection(admin_id, call)
             return
-        elif data.startswith("admin_ps_"): # Profile Server Selection
+        elif data.startswith("admin_pi_toggle_"):
             parts = data.split('_')
-            profile_id = int(parts[2])
-            server_id = int(parts[3])
-            handle_server_selection_for_profile(admin_id, message, profile_id, server_id)
-            return
-        
-        elif data.startswith("admin_pi_toggle_"): # Profile Inbound Toggle
-            parts = data.split('_')
-            profile_id = int(parts[3])
-            server_id = int(parts[4])
-            inbound_id = int(parts[5])
+            profile_id, server_id, inbound_id = int(parts[3]), int(parts[4]), int(parts[5])
             handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id)
             return
         
-        elif data.startswith("admin_pi_save_"): # Profile Inbound Save
-
-            _bot.answer_callback_query(call.id, "⏳ در حال ذخیره تغییرات...")
-            
-            parts = data.split('_')
-            profile_id = int(parts[3])
-            server_id = int(parts[4])
-            execute_save_profile_inbounds(admin_id, message, profile_id, server_id)
-            return
-        elif data.startswith("confirm_delete_server_"):
-            execute_delete_server(admin_id, message, int(data.split('_')[-1]))
-        elif data.startswith("inbound_"):
-            handle_inbound_selection(admin_id, call)
-        elif data.startswith("admin_approve_payment_"):
-            process_payment_approval(admin_id, int(data.split('_')[-1]), message)
-        elif data.startswith("admin_reject_payment_"):
-            process_payment_rejection(admin_id, int(data.split('_')[-1]), message)
-        elif data.startswith("confirm_delete_plan_"):
-            plan_id = int(data.split('_')[-1])
-            execute_delete_plan(admin_id, message, plan_id)
-        elif data.startswith("panel_type_"):
-            handle_panel_type_selection(call)
-            return
+        # --- مدیریت انتخاب پروفایل و سرور برای پروفایل ---
         elif data.startswith("admin_select_profile_"):
             profile_id = int(data.split('_')[-1])
             handle_profile_selection(admin_id, message, profile_id)
             return
-        elif data.startswith("admin_delete_purchase_"):
+        elif data.startswith("admin_ps_"): # Profile Server Selection
             parts = data.split('_')
-            purchase_id = int(parts[3])
-            user_telegram_id = int(parts[4])
-            execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
-        elif data.startswith("admin_set_support_type_"):
-            support_type = data.split('_')[-1]
-            # --- THE FIX IS HERE ---
-            # Pass the entire 'call' object, not just 'message'
-            set_support_type(admin_id, call, support_type)
-        elif data.startswith("inbound_save_"):
-            server_id = int(data.split('_')[-1])
-            execute_save_inbounds(admin_id, message, server_id)
-        elif data.startswith("admin_delete_domain_"):
-            domain_id = int(data.split('_')[-1])
-            domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
-            if domain:
-                confirm_markup = inline_keyboards.get_confirmation_menu(
-                    f"confirm_delete_domain_{domain_id}", "admin_domain_management"
-                )
-                _show_menu(admin_id, f"⚠️ آیا از حذف دامنه {domain['domain_name']} مطمئن هستید؟", confirm_markup, message)
+            profile_id, server_id = int(parts[2]), int(parts[3])
+            handle_server_selection_for_profile(admin_id, message, profile_id, server_id)
             return
 
-        elif data.startswith("confirm_delete_domain_"):
-            _bot.answer_callback_query(call.id, "⏳ در حال حذف دامنه...")
-            domain_id = int(data.split('_')[-1])
-            execute_delete_domain(admin_id, message, domain_id)
+        # --- مدیریت حذف‌ها با تاییدیه ---
+        elif data.startswith("confirm_delete_server_"):
+            execute_delete_server(admin_id, message, int(data.split('_')[-1]))
+            return
+        elif data.startswith("confirm_delete_plan_"):
+            execute_delete_plan(admin_id, message, int(data.split('_')[-1]))
             return
         elif data.startswith("admin_delete_purchase_"):
             parts = data.split('_')
             purchase_id, user_telegram_id = int(parts[3]), int(parts[4])
             execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id)
+            return
+        elif data.startswith("admin_delete_tutorial_"):
+            execute_delete_tutorial(admin_id, message, int(data.split('_')[-1]))
+            return
+        elif data.startswith("confirm_delete_domain_"):
+            execute_delete_domain(admin_id, message, int(data.split('_')[-1]))
+            return
+
+        # --- مدیریت انتخاب نوع پلن و درگاه ---
+        elif data.startswith("plan_type_"):
+            get_plan_details_from_callback(admin_id, message, data.replace("plan_type_", ""))
+            return
+        elif data.startswith("gateway_type_"):
+            handle_gateway_type_selection(admin_id, message, data.replace('gateway_type_', ''))
+            return
+        elif data.startswith("panel_type_"):
+            handle_panel_type_selection(call)
+            return
+
+        # اگر هیچکدام از موارد بالا نبود
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(
