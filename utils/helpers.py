@@ -1,18 +1,50 @@
-# utils/helpers.py
+# utils/helpers.py (نسخه کامل و اصلاح شده)
 
 import telebot
 import logging
 import random
 import string
 import re
+# --- ایمپورت‌های جدید در اینجا اضافه شده‌اند ---
+from urllib.parse import urlparse, parse_qs
 
-# این خط برای دسترسی به لیست ادمین‌ها اضافه شده است
 from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
 
-# تابع is_admin در اینجا تعریف شده است
+# --- تابع جدید در اینجا اضافه شده است ---
+def parse_config_link(link: str) -> dict or None:
+    """
+    یک لینک کانفیگ vless را تجزیه کرده و به صورت یک دیکشنری ساختاریافته برمی‌گرداند.
+    """
+    try:
+        if not link.startswith("vless://"):
+            return None
+
+        parsed_url = urlparse(link)
+        
+        # استخراج پارامترهای اصلی
+        params = {
+            "protocol": parsed_url.scheme,
+            "uuid": parsed_url.username,
+            "hostname": parsed_url.hostname,
+            "port": parsed_url.port,
+            "remark": parsed_url.fragment
+        }
+        
+        # استخراج تمام پارامترهای کوئری
+        query_params = parse_qs(parsed_url.query)
+        for key, value in query_params.items():
+            # parse_qs مقادیر را به صورت لیست برمی‌گرداند، ما اولین مقدار را می‌خواهیم
+            params[key] = value[0]
+            
+        return params
+    except Exception as e:
+        logger.error(f"Failed to parse config link '{link}': {e}")
+        return None
+
+
 def is_admin(user_id: int) -> bool:
     """بررسی می‌کند که آیا کاربر ادمین است یا خیر."""
     return user_id in ADMIN_IDS
@@ -30,7 +62,6 @@ def is_user_member_of_channel(bot: telebot.TeleBot, channel_id: int, user_id: in
         return chat_member.status in ['member', 'creator', 'administrator']
     except Exception as e:
         logger.error(f"Error checking user {user_id} membership in channel {channel_id}: {e}")
-        # در صورت بروز خطا (مثلا اگر ربات از کانال حذف شده باشد)، دسترسی را مجاز می‌دانیم تا ربات متوقف نشود
         return True
 
 
@@ -54,7 +85,6 @@ def escape_markdown_v1(text: str) -> str:
     if not isinstance(text, str):
         text = str(text)
 
-    # استفاده از str.translate برای کارایی بهتر
     return text.translate(str.maketrans({c: f'\\{c}' for c in escape_chars}))
 
 
@@ -66,24 +96,17 @@ def generate_random_string(length=10) -> str:
     return ''.join(random.choice(characters) for i in range(length))
 
 
-
 def normalize_panel_inbounds(panel_type, raw_inbounds):
     """
     اطلاعات خام اینباندها از پنل‌های مختلف را گرفته و به یک فرمت استاندارد و یکسان تبدیل می‌کند.
-    این تابع قلب معماری چند پنلی ماست.
     """
     if not raw_inbounds:
         return []
 
     normalized_list = []
     
-    # --- منطق تبدیل برای هر نوع پنل ---
-    
-    # پنل‌های سنایی (x-ui) و علیرضا (alireza) فرمت خروجی یکسانی برای list_inbounds دارند.
-    # اگر در آینده پنلی با خروجی متفاوت اضافه شود، فقط کافیست یک بلوک elif جدید در اینجا برای آن بنویسیم.
     if panel_type in ['x-ui', 'alireza']:
         for inbound in raw_inbounds:
-            # ما تمام اطلاعات را به صورت کامل ذخیره می‌کنیم
             normalized_list.append({
                 'id': inbound.get('id'),
                 'remark': inbound.get('remark', ''),
@@ -91,17 +114,7 @@ def normalize_panel_inbounds(panel_type, raw_inbounds):
                 'protocol': inbound.get('protocol'),
                 'settings': inbound.get('settings', '{}'),
                 'streamSettings': inbound.get('streamSettings', '{}'),
-                # می‌توانیم فیلدهای بیشتری را نیز در صورت نیاز اینجا اضافه کنیم
             })
-            
-    # مثال برای آینده:
-    # elif panel_type == 'hiddify':
-    #     for config in raw_inbounds:
-    #         normalized_list.append({
-    #             'id': config.get('uuid'),
-    #             'remark': config.get('name'),
-    #             ...
-    #         })
 
     return normalized_list
 
@@ -116,14 +129,12 @@ def update_env_file(key_to_update, new_value):
         key_found = False
         with open(env_path, 'w') as file:
             for line in lines:
-                # اگر خط مربوط به کلید مورد نظر باشد، آن را با مقدار جدید جایگزین کن
                 if line.strip().startswith(key_to_update + '='):
                     file.write(f'{key_to_update}="{new_value}"\n')
                     key_found = True
                 else:
                     file.write(line)
             
-            # اگر کلید در فایل وجود نداشت، آن را به انتها اضافه کن
             if not key_found:
                 file.write(f'\n{key_to_update}="{new_value}"\n')
         return True
