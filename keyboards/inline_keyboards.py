@@ -496,10 +496,13 @@ def get_profile_template_management_menu(all_profile_inbounds):
                 markup.add(types.InlineKeyboardButton(f"--- پروفایل: {current_profile} ---", callback_data="no_action"))
 
             status_emoji = "✅" if inbound.get('config_params') else "⚠️"
+            
+            # --- اصلاح اصلی در این دو خط انجام شده است ---
+            inbound_remark = inbound.get('remark', f"ID: {inbound['inbound_id']}")
             btn_text = (
-                f"{status_emoji} {inbound['server_name']} - "
-                f"{inbound.get('remark', f'ID: {inbound['inbound_id']}')}"
+                f"{status_emoji} {inbound['server_name']} - {inbound_remark}"
             )
+            
             callback_data = f"admin_edit_profile_template_{inbound['profile_id']}_{inbound['server_id']}_{inbound['inbound_id']}"
             markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
             
