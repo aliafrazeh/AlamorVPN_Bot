@@ -28,7 +28,33 @@ _config_generator: ConfigGenerator = None
 # متغیرهای وضعیت
 _user_menu_message_ids = {} # {user_id: message_id}
 _user_states = {} # {user_id: {'state': '...', 'data': {...}}}
+def _show_menu(user_id, text, markup, message=None, parse_mode='Markdown'):
+    """
+    This function intelligently handles Markdown parsing errors.
+    """
+    try:
+        if message:
+            return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=parse_mode)
+        else:
+            return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
 
+    except telebot.apihelper.ApiTelegramException as e:
+        if "can't parse entities" in str(e):
+            logger.warning(f"Markdown parse error for user {user_id}. Retrying with plain text.")
+            try:
+                if message:
+                    return _bot.edit_message_text(text, user_id, message.message_id, reply_markup=markup, parse_mode=None)
+                else:
+                    return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=None)
+            except telebot.apihelper.ApiTelegramException as retry_e:
+                logger.error(f"Failed to send menu even as plain text for user {user_id}: {retry_e}")
+
+        elif 'message to edit not found' in str(e):
+            return _bot.send_message(user_id, text, reply_markup=markup, parse_mode=parse_mode)
+        elif 'message is not modified' not in str(e):
+            logger.warning(f"Menu error for {user_id}: {e}")
+            
+    return message
 
 
 ZARINPAL_API_URL = "https://api.zarinpal.com/pg/v4/payment/request.json"
