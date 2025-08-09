@@ -68,7 +68,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     _config_generator = ConfigGenerator(db_manager_instance)
 
     # --- هندلرهای اصلی ---
-    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_', 'pay_')))
+    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith('user_'))
     def handle_main_callbacks(call):
         """هندل کردن دکمه‌های منوی اصلی کاربر"""
         user_id = call.from_user.id
@@ -131,7 +131,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 _bot.delete_message(call.message.chat.id, call.message.message_id)
                 from main import send_welcome 
                 send_welcome(call.message)
-    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_')))
+    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_', 'pay_')))
+
     def handle_purchase_callbacks(call):
         """هندل کردن دکمه‌های فرآیند خرید"""
         _bot.answer_callback_query(call.id)
