@@ -21,24 +21,35 @@ class ConfigGenerator:
     def _rebuild_link_from_params(self, params: dict) -> str:
         """
         یک لینک کانفیگ VLESS را از دیکشنری پارامترهای تجزیه شده بازسازی می‌کند.
+        (نسخه اصلاح شده با پشتیبانی کامل از path و همه پارامترها)
         """
         try:
-            query_params = {k: v for k, v in params.items() if k not in ['protocol', 'uuid', 'hostname', 'port', 'remark']}
+            # --- اصلاح اصلی اینجاست ---
+            # ابتدا پارامتر path را جدا می‌کنیم
+            path = params.get('path', '')
+            
+            # سپس تمام پارامترهای ساختاری را از لیست کوئری حذف می‌کنیم
+            excluded_keys = ['protocol', 'uuid', 'hostname', 'port', 'remark', 'path']
+            query_params = {k: v for k, v in params.items() if k not in excluded_keys}
+            
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in query_params.items() if v or v == 0])
             
             netloc = f"{params['uuid']}@{params['hostname']}:{params['port']}"
             
+            # urlunparse یک تاپل شش عضوی می‌خواهد: (scheme, netloc, path, params, query, fragment)
             url_parts = (
-                params['protocol'],
+                params.get('protocol', 'vless'),
                 netloc,
-                '', '',
+                path,  # <-- استفاده از path جدا شده
+                '',    # params (معمولاً خالی)
                 query_string,
-                quote(params.get('remark', ''))
+                quote(params.get('remark', '')) # fragment for remark
             )
             return urlunparse(url_parts)
         except Exception as e:
-            logger.error(f"Error rebuilding link from params: {e}")
+            logger.error(f"Error rebuilding link from params: {e}", exc_info=True)
             return None
+
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
         """
