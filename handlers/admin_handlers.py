@@ -214,11 +214,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         data = state_info.get("data", {})
         text = message.text.strip()
 
+        # --- منطق جدید برای دریافت کانفیگ نمونه ---
+        if state == 'waiting_for_sample_config':
+            process_sample_config_input(admin_id, message)
+            return
+
         # --- Server Flows ---
         if state == 'waiting_for_server_name':
             data['name'] = text
-            state_info['state'] = 'waiting_for_server_url'
-            _bot.edit_message_text(messages.ADD_SERVER_PROMPT_URL, admin_id, prompt_id)
+            state_info['state'] = 'waiting_for_panel_type_selection'
+            prompt_text = "لطفاً نوع پنل سرور جدید را انتخاب کنید:"
+            _bot.edit_message_text(prompt_text, admin_id, prompt_id, reply_markup=inline_keyboards.get_panel_type_selection_menu())
+            return
+
         elif state == 'waiting_for_server_url':
             data['url'] = text
             state_info['state'] = 'waiting_for_server_username'
@@ -284,34 +292,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_edit_plan_name(admin_id, message)
         elif state == 'waiting_for_new_plan_price':
             process_edit_plan_price(admin_id, message)
-            
-        elif data == "admin_manage_profile_templates": # <-- بلوک جدید
-            show_profile_template_management_menu(admin_id, message)
-            return
 
-        elif data.startswith("admin_edit_profile_template_"): 
-            parts = data.split('_')
-            profile_id = int(parts[4])
-            server_id = int(parts[5])
-            inbound_id = int(parts[6])
-
-            # دریافت اطلاعات لازم برای شروع فرآیند
-            server_data = _db_manager.get_server_by_id(server_id)
-            profile_data = _db_manager.get_profile_by_id(profile_id)
-            # ما فقط به ID و remark نیاز داریم تا پیام را به ادمین نمایش دهیم
-            inbound_info_db = _db_manager.get_server_inbound_details(server_id, inbound_id)
-            inbound_info = {'id': inbound_id, 'remark': inbound_info_db.get('remark', '') if inbound_info_db else ''}
-            
-            context = {
-                'type': 'profile',
-                'profile_id': profile_id,
-                'profile_name': profile_data['name'],
-                'server_id': server_id,
-                'server_name': server_data['name']
-            }
-            # از همان تابع قبلی برای شروع فرآیند دریافت کانفیگ نمونه استفاده می‌کنیم
-            start_sample_config_flow(admin_id, message, [inbound_info], context)
-            return
         # --- Profile Flows ---
         elif state == 'waiting_for_profile_name':
             data['name'] = text
@@ -332,9 +313,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif state == 'waiting_for_profile_description':
             data['description'] = None if text.lower() == 'skip' else text
             execute_add_profile(admin_id, data)
-        elif state == 'waiting_for_sample_config':
-            process_sample_config_input(admin_id, message)
-            return
+
         # --- Gateway Flows ---
         elif state == 'waiting_for_gateway_name':
             data['name'] = text
@@ -359,6 +338,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_add_gateway(admin_id, data)
         elif state == 'waiting_for_gateway_id_to_toggle':
             execute_toggle_gateway_status(admin_id, text)
+            
         # --- Admin Management Flows ---
         elif state == 'waiting_for_admin_id_to_add':
             if not text.isdigit():
@@ -386,6 +366,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در حذف ادمین خطایی رخ داد.")
             _clear_admin_state(admin_id)
             _show_admin_management_menu(admin_id, message)
+
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -403,7 +384,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_set_channel_link(admin_id, message)
         elif state == 'waiting_for_support_link':
             process_support_link(admin_id, message)
-
     # =============================================================================
     # SECTION: Process Starters and Callback Handlers
     # =============================================================================
