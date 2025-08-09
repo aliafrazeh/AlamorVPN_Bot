@@ -29,7 +29,7 @@ if not BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN)
 db_manager = DatabaseManager()
-
+db_manager.run_migrations()
 # --- MODIFIED: /start command handler ---
 
 @bot.message_handler(commands=['start'])

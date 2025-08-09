@@ -1361,3 +1361,40 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error getting server inbound details for s:{server_id}-i:{inbound_id}: {e}")
             return None
+        
+        
+        
+    def run_migrations(self):
+        """
+        تغییرات لازم در ساختار دیتابیس را به صورت خودکار اعمال می‌کند.
+        این تابع برای اجرای چندباره ایمن است.
+        """
+        logging.info("Checking for necessary database migrations...")
+        
+        migrations = [
+            # افزودن ستون برای کیف پول و احراز هویت کاربران
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance REAL DEFAULT 0.0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
+            
+            # افزودن ستون برای الگوهای کانفیگ
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            
+            # ... در آینده می‌توان دستورات دیگری را به این لیست اضافه کرد ...
+        ]
+        
+        conn = None
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cur:
+                for sql in migrations:
+                    cur.execute(sql)
+            conn.commit()
+            logging.info("Database schema is up to date.")
+        except Exception as e:
+            logging.error(f"A critical error occurred during database migration: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                conn.close()
