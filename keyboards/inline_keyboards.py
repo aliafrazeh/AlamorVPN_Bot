@@ -130,6 +130,7 @@ def get_user_main_inline_menu(support_link: str):
         types.InlineKeyboardButton("🗂️ خرید پروفایل", callback_data="user_buy_profile"),
         types.InlineKeyboardButton("🎁 اکانت تست رایگان", callback_data="user_free_test"),
         types.InlineKeyboardButton("🗂️ سرویس‌های من", callback_data="user_my_services"),
+        types.InlineKeyboardButton("👤 حساب کاربری", callback_data="user_account"),
         types.InlineKeyboardButton("💡 آموزش اتصال", callback_data="user_how_to_connect")
     )
 
@@ -508,3 +509,14 @@ def get_profile_template_management_menu(all_profile_inbounds):
             
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_profile_management"))
     return markup
+
+
+
+def get_user_account_menu():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ افزایش موجودی", callback_data="user_add_balance"),
+        types.InlineKeyboardButton("📝 تکمیل پروفایل", callback_data="user_complete_profile")
+    )
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="user_main_menu"))
+    return markup   

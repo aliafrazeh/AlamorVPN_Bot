@@ -512,7 +512,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             context = {'type': 'server', 'server_id': server_id, 'server_name': server_data['name']}
             start_sample_config_flow(admin_id, message, [inbound_info], context)
             return
-
+        
         # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)

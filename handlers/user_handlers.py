@@ -131,6 +131,9 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("buy_select_profile_"):
             profile_id = int(data.replace("buy_select_profile_", ""))
             select_profile_for_purchase(user_id, profile_id, call.message)
+        elif data == "user_account": 
+            show_user_account_menu(user_id, call.message)   
+
         elif data == "cancel_order":
             _clear_user_state(user_id)
             _bot.edit_message_text(messages.ORDER_CANCELED, user_id, call.message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
@@ -803,3 +806,32 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 
         state_data['data']['requested_gb'] = float(message.text)
         show_order_summary(user_id, message)
+        
+        
+    def show_user_account_menu(user_id, message):
+        """اطلاعات حساب کاربری را به کاربر نمایش می‌دهد."""
+        user_info = _db_manager.get_user_by_telegram_id(user_id)
+        if not user_info:
+            _bot.edit_message_text("خطایی در دریافت اطلاعات شما رخ داد.", user_id, message.message_id)
+            return
+
+        balance = user_info.get('balance', 0.0)
+        is_verified = user_info.get('is_verified', False)
+        
+        status_text = "تایید شده ✅" if is_verified else "نیاز به تکمیل پروفایل ⚠️"
+        
+        # TODO: در آینده تعداد زیرمجموعه‌ها را از دیتابیس می‌خوانیم
+        referral_count = 0 
+        
+        account_text = (
+            f"👤 **حساب کاربری شما**\n\n"
+            f"▫️ **نام:** {helpers.escape_markdown_v1(user_info.get('first_name', ''))}\n"
+            f"▫️ **آیدی عددی:** `{user_id}`\n"
+            f"▫️ **موجودی کیف پول:** `{balance:,.0f}` تومان\n"
+            f"▫️ **وضعیت حساب:** {status_text}\n\n"
+            f"🔗 **لینک دعوت شما:**\n`t.me/{_bot.get_me().username}?start=ref_{user_id}`\n"
+            f"👥 **تعداد زیرمجموعه‌ها:** {referral_count} نفر"
+        )
+        
+        markup = inline_keyboards.get_user_account_menu()
+        _show_menu(user_id, account_text, markup, message, parse_mode='Markdown')
