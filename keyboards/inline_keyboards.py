@@ -20,7 +20,6 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"),
         types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
         types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"),
-        types.InlineKeyboardButton("🔄 همگام‌سازی کانفیگ‌ها", callback_data="admin_sync_configs"),
         types.InlineKeyboardButton("🔑 مدیریت ادمین‌ها", callback_data="admin_manage_admins"),
         types.InlineKeyboardButton("⚙️ بررسی Nginx", callback_data="admin_check_nginx"),
         types.InlineKeyboardButton("🩺 بررسی وضعیت سیستم", callback_data="admin_health_check"),

@@ -1230,3 +1230,30 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
+                
+                
+    def update_server_inbound_params(self, server_id: int, inbound_id: int, params_json: str):
+        """پارامترهای کانفیگ تجزیه شده را برای یک اینباند سرور خاص آپدیت می‌کند."""
+        sql = "UPDATE server_inbounds SET config_params = %s WHERE server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating server inbound params for s:{server_id}-i:{inbound_id}: {e}")
+            return False
+
+    def update_profile_inbound_params(self, profile_id: int, server_id: int, inbound_id: int, params_json: str):
+        """پارامترهای کانفیگ تجزیه شده را برای یک اینباند پروفایل خاص آپدیت می‌کند."""
+        sql = "UPDATE profile_inbounds SET config_params = %s WHERE profile_id = %s AND server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, profile_id, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating profile inbound params for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
+            return False

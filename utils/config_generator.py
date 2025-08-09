@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی و هوشمند)
+# utils/config_generator.py (نسخه نهایی و کاملاً اصلاح شده)
 
 import json
 import logging
@@ -13,7 +13,6 @@ from .helpers import generate_random_string
 from api_client.factory import get_api_client
 
 logger = logging.getLogger(__name__)
-
 
 class ConfigGenerator:
     def __init__(self, db_manager):
@@ -100,7 +99,6 @@ class ConfigGenerator:
         try:
             protocol = inbound_details.get('protocol')
             if protocol not in ['vless', 'vmess']:
-                logger.warning(f"Unsupported protocol for config generation: {protocol}")
                 return None
 
             remark = f"{remark_prefix}-{inbound_details.get('remark', server_data['name'])}"
@@ -113,50 +111,58 @@ class ConfigGenerator:
             stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
             protocol_settings = json.loads(protocol_settings_str) if isinstance(protocol_settings_str, str) else protocol_settings_str
             
-            # --- استخراج هوشمند پارامترها ---
             params = {}
             
-            # ۱. پارامترهای حمل و نقل (Transport)
+            # 1. Transport Parameters
             network = stream_settings.get('network', 'tcp')
             params['type'] = network
             
             transport_settings = stream_settings.get(f"{network}Settings", {})
-            if 'path' in transport_settings:
-                params['path'] = transport_settings['path']
-
-            ws_headers = transport_settings.get('headers', {})
-            if 'Host' in ws_headers and ws_headers['Host']:
-                params['host'] = ws_headers['Host']
-            elif 'host' in transport_settings and transport_settings['host']:
-                params['host'] = transport_settings['host']
-
-            if 'serviceName' in transport_settings: # برای gRPC
-                params['serviceName'] = transport_settings['serviceName']
+            if transport_settings.get('path'):
+                params['path'] = transport_settings.get('path')
             
-            # ۲. پارامترهای امنیتی (Security)
+            ws_headers = transport_settings.get('headers', {})
+            if ws_headers.get('Host'):
+                params['host'] = ws_headers.get('Host')
+            elif transport_settings.get('host'):
+                params['host'] = transport_settings.get('host')
+
+            if transport_settings.get('serviceName'):
+                params['serviceName'] = transport_settings.get('serviceName')
+            
+            # 2. Security Parameters
             security = stream_settings.get('security', 'none')
             if security != 'none':
                 params['security'] = security
                 security_settings = stream_settings.get(f"{security}Settings", {})
                 
-                if security_settings.get('serverName'):
-                    params['sni'] = security_settings['serverName']
+                # Fingerprint (common for TLS and Reality)
+                if security_settings.get('fingerprint'):
+                    params['fp'] = security_settings['fingerprint']
+                elif 'settings' in security_settings and security_settings['settings'].get('fingerprint'):
+                    params['fp'] = security_settings['settings']['fingerprint']
+
+                if security == 'tls':
+                    if security_settings.get('serverName'):
+                        params['sni'] = security_settings['serverName']
+                    if security_settings.get('alpn'):
+                        params['alpn'] = ','.join(security_settings['alpn'])
                 
-                # پارامترهای Reality
-                if security == 'reality':
+                elif security == 'reality':
                     nested_reality_settings = security_settings.get('settings', {})
+                    
+                    if security_settings.get('serverNames'):
+                        valid_snis = [s for s in security_settings['serverNames'] if s]
+                        if valid_snis:
+                            params['sni'] = valid_snis[0]
+
                     if security_settings.get('publicKey'):
                         params['pbk'] = security_settings.get('publicKey')
                     elif nested_reality_settings.get('publicKey'):
                         params['pbk'] = nested_reality_settings.get('publicKey')
-
-                    if security_settings.get('fingerprint'):
-                        params['fp'] = security_settings['fingerprint']
-                    elif nested_reality_settings.get('fingerprint'):
-                        params['fp'] = nested_reality_settings.get('fingerprint')
-
+                        
                     if security_settings.get('shortIds'):
-                        valid_sids = [sid for sid in security_settings['shortIds'] if sid]
+                        valid_sids = [s for s in security_settings['shortIds'] if s]
                         if valid_sids:
                             params['sid'] = random.choice(valid_sids)
                     
@@ -164,24 +170,14 @@ class ConfigGenerator:
                         params['spiderX'] = security_settings.get('spiderX')
                     elif nested_reality_settings.get('spiderX'):
                         params['spiderX'] = nested_reality_settings.get('spiderX')
-                
-                # پارامترهای TLS
-                elif security == 'tls':
-                    nested_tls_settings = security_settings.get('settings', {})
-                    if security_settings.get('fingerprint'):
-                         params['fp'] = security_settings.get('fingerprint')
-                    elif nested_tls_settings.get('fingerprint'):
-                        params['fp'] = nested_tls_settings.get('fingerprint')
 
-
-            # ۳. ساخت لینک نهایی
+            # 3. Build Final Link
             if protocol == 'vless':
                 try:
                     flow = protocol_settings.get('clients', [{}])[0].get('flow', '')
                     if flow:
                         params['flow'] = flow
-                except (IndexError, TypeError):
-                    pass
+                except (IndexError, TypeError): pass
                 
                 query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v or v == 0])
                 return f"vless://{client_uuid}@{address}:{port}?{query_string}#{quote(remark)}"
@@ -199,8 +195,7 @@ class ConfigGenerator:
 
                     json_str = json.dumps(vmess_data, separators=(',', ':'))
                     return f"vmess://{base64.b64encode(json_str.encode('utf-8')).decode('utf-8')}"
-                except (IndexError, TypeError):
-                    return None
+                except (IndexError, TypeError): return None
 
         except Exception as e:
             logger.error(f"Error in _generate_single_config_url for inbound {inbound_details.get('id')}: {e}", exc_info=True)

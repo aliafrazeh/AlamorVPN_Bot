@@ -26,6 +26,7 @@ from utils import helpers
 from utils.helpers import update_env_file
 from utils.system_helpers import run_shell_command
 from .domain_handlers import register_domain_handlers, start_webhook_setup_flow # <-- تابع جدید را اضافه کنید
+from utils.helpers import normalize_panel_inbounds, parse_config_link
 
 logger = logging.getLogger(__name__)
 
@@ -528,7 +529,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_id = int(parts[3])
             handle_server_selection_for_profile(admin_id, message, profile_id, server_id)
             return
-
+        if state_info.get('state') == 'waiting_for_sample_config':
+            process_sample_config_input(admin_id, message)
+            return
         elif data.startswith("admin_pi_toggle_"): # Profile Inbound Toggle
             parts = data.split('_')
             profile_id = int(parts[3])
@@ -1365,28 +1368,31 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     
         
     def execute_save_inbounds(admin_id, message, server_id):
-        """Saves the selected inbound settings to the database."""
+        """
+        اینباندها را در دیتابیس ذخیره کرده و سپس فرآیند دریافت کانفیگ نمونه را شروع می‌کند.
+        """
         state_info = _admin_states.get(admin_id, {})
-        
-        # Check if the admin was actually in the selection state for this server
         if not state_info or state_info.get('state') != f'selecting_inbounds_for_{server_id}':
-            _bot.answer_callback_query(message.id, "خطایی رخ داده است. لطفاً دوباره تلاش کنید.", show_alert=True)
             return
 
         selected_ids = state_info['data'].get('selected_inbound_ids', [])
+        panel_inbounds = state_info['data'].get('panel_inbounds', [])
         
-        if _db_manager.update_active_inbounds_for_server(server_id, selected_ids):
-            _bot.edit_message_text("✅ تنظیمات اینباندها با موفقیت ذخیره شد.", admin_id, message.message_id)
-        else:
-            _bot.edit_message_text("❌ در ذخیره تنظیمات خطایی رخ داد.", admin_id, message.message_id)
+        inbounds_to_save = [{'id': p_in['id'], 'remark': p_in.get('remark', '')} for p_in in panel_inbounds if p_in['id'] in selected_ids]
+        
+        if not _db_manager.update_server_inbounds(server_id, inbounds_to_save):
+            _bot.edit_message_text("❌ در ذخیره اولیه اینباندها خطایی رخ داد.", admin_id, message.message_id)
+            _clear_admin_state(admin_id)
+            return
 
+        server_data = _db_manager.get_server_by_id(server_id)
+        context = {
+            'type': 'server',
+            'server_id': server_id,
+            'server_name': server_data['name']
+        }
         _clear_admin_state(admin_id)
-        # You can show the server management menu again after this
-        # _show_server_management_menu(admin_id) # Optional
-        
-    
-
-    
+        start_sample_config_flow(admin_id, message, inbounds_to_save, context)
     @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith('panel_type_'))
     def handle_panel_type_selection(call):
         """نوع پنل انتخاب شده توسط ادمین را پردازش می‌کند."""
@@ -1622,23 +1628,31 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.warning(f"Error updating profile inbound checklist: {e}")
 
     def execute_save_profile_inbounds(admin_id, message, profile_id, server_id):
-        """تغییرات چک‌لیست اینباندها را در دیتابیس ذخیره می‌کند."""
+        """تغییرات چک‌لیست اینباندها را برای پروفایل ذخیره کرده و فرآیند دریافت نمونه را شروع می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
             
         selected_ids = state_info['data']['selected_inbound_ids']
-        
-        # --- اصلاح اصلی اینجاست ---
-        # توابع answer_callback_query از اینجا حذف شدند
-        if not _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
-            # اگر خطایی رخ داد، می‌توانیم یک پیام هشدار به کاربر بدهیم
-            _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
+        panel_inbounds = state_info['data'].get('panel_inbounds', [])
 
-        # کاربر را به مرحله انتخاب سرور برمی‌گردانیم تا بتواند از سرور دیگری هم اینباند اضافه کند
-        handle_profile_selection(admin_id, message, profile_id)
-        
-        
-   
+        inbounds_to_save = [{'id': p_in['id'], 'remark': p_in.get('remark', '')} for p_in in panel_inbounds if p_in['id'] in selected_ids]
+
+        if not _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
+            _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
+            _clear_admin_state(admin_id)
+            return
+
+        server_data = _db_manager.get_server_by_id(server_id)
+        profile_data = _db_manager.get_profile_by_id(profile_id)
+        context = {
+            'type': 'profile',
+            'profile_id': profile_id,
+            'profile_name': profile_data['name'],
+            'server_id': server_id,
+            'server_name': server_data['name']
+        }
+        _clear_admin_state(admin_id)
+        start_sample_config_flow(admin_id, message, inbounds_to_save, context)
     
     def start_sync_configs_flow(admin_id, message):
         """
@@ -1858,4 +1872,72 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
         
-    
+    def start_sample_config_flow(admin_id, message, target_inbounds, context):
+        """
+        فرآیند دریافت کانفیگ نمونه را برای لیستی از اینباندها شروع می‌کند.
+        """
+        if not target_inbounds:
+            _bot.send_message(admin_id, "✅ تمام تنظیمات با موفقیت ذخیره شد.")
+            _clear_admin_state(admin_id) # پاک کردن وضعیت در انتها
+            # بسته به نوع، به منوی مربوطه برمی‌گردیم
+            if context.get('type') == 'profile':
+                handle_profile_selection(admin_id, message, context['profile_id'])
+            else:
+                _show_server_management_menu(admin_id, message)
+            return
+
+        current_inbound = target_inbounds[0]
+        remaining_inbounds = target_inbounds[1:]
+
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_sample_config',
+            'data': {
+                'current_inbound': current_inbound,
+                'remaining_inbounds': remaining_inbounds,
+                'context': context
+            }
+        }
+        
+        prompt_text = (
+            f"لطفاً یک **لینک کانفیگ نمونه** برای اینباند زیر ارسال کنید:\n\n"
+            f"▫️ **سرور:** {context['server_name']}\n"
+            f"▫️ **اینباند:** {current_inbound.get('remark', f'ID: {current_inbound.get('id')}')}"
+        )
+        
+        prompt = _show_menu(admin_id, prompt_text, None, message)
+        _admin_states[admin_id]['prompt_message_id'] = prompt.message_id
+
+
+    def process_sample_config_input(admin_id, message):
+        """
+        کانفیگ نمونه ارسال شده توسط ادمین را پردازش، تجزیه و در دیتابیس ذخیره می‌کند.
+        """
+        state_info = _admin_states.get(admin_id)
+        if not state_info or state_info.get('state') != 'waiting_for_sample_config':
+            return
+
+        sample_link = message.text.strip()
+        parsed_params = parse_config_link(sample_link)
+
+        if not parsed_params:
+            _bot.send_message(admin_id, "❌ لینک ارسال شده نامعتبر است. لطفاً یک لینک VLESS صحیح برای همین اینباند ارسال کنید.")
+            # وضعیت تغییر نمی‌کند تا ادمین بتواند دوباره تلاش کند
+            return
+        
+        inbound_info = state_info['data']['current_inbound']
+        context = state_info['data']['context']
+        params_json = json.dumps(parsed_params)
+
+        success = False
+        if context['type'] == 'profile':
+            success = _db_manager.update_profile_inbound_params(context['profile_id'], context['server_id'], inbound_info['id'], params_json)
+        else:
+            success = _db_manager.update_server_inbound_params(context['server_id'], inbound_info['id'], params_json)
+
+        if success:
+            _bot.edit_message_text("✅ پارامترها با موفقیت ذخیره شد. در حال رفتن به اینباند بعدی...", admin_id, state_info['prompt_message_id'])
+        else:
+            _bot.edit_message_text("❌ خطایی در ذخیره پارامترها در دیتابیس رخ داد.", admin_id, state_info['prompt_message_id'])
+
+        # به سراغ اینباند بعدی می‌رویم
+        start_sample_config_flow(admin_id, message, state_info['data']['remaining_inbounds'], context)
