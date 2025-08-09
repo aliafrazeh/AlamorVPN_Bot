@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با منطق استفاده از الگو)
+# utils/config_generator.py (نسخه نهایی با پارامتر اصلاح شده)
 
 import json
 import logging
@@ -9,7 +9,7 @@ from urllib.parse import urlunparse, quote
 # ایمپورت‌های پروژه
 from .helpers import generate_random_string
 from api_client.factory import get_api_client
-from database.db_manager import DatabaseManager # اطمینان از ایمپورت شدن
+from database.db_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,19 +26,14 @@ class ConfigGenerator:
             query_params = {k: v for k, v in params.items() if k not in ['protocol', 'uuid', 'hostname', 'port', 'remark']}
             query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in query_params.items() if v or v == 0])
             
-            # ساختار URL: scheme://user:pass@host:port/path?query#fragment
-            # در VLESS:   vless://UUID@hostname:port?query_string#remark
-            
             netloc = f"{params['uuid']}@{params['hostname']}:{params['port']}"
             
-            # urlunparse یک tuple شش عضوی می‌خواهد
             url_parts = (
-                params['protocol'],   # scheme
-                netloc,               # netloc
-                '',                   # path
-                '',                   # params
-                query_string,         # query
-                quote(params['remark']) # fragment
+                params['protocol'],
+                netloc,
+                '', '',
+                query_string,
+                quote(params.get('remark', ''))
             )
             return urlunparse(url_parts)
         except Exception as e:
@@ -52,8 +47,10 @@ class ConfigGenerator:
         profile_details = self.db_manager.get_profile_by_id(profile_id)
         if not profile_details: return None, None
         
-        # دریافت اینباندهای پروفایل به همراه الگوهایشان
-        inbounds_with_templates = self.db_manager.get_inbounds_for_profile(profile_id, with_server_and_template=True)
+        # --- اصلاح اصلی اینجاست ---
+        # نام پارامتر به 'with_server_info' تغییر کرد
+        inbounds_with_templates = self.db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
+        
         duration_days = profile_details['duration_days']
         
         return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
@@ -62,7 +59,6 @@ class ConfigGenerator:
         """
         کانفیگ‌های یک سرور را بر اساس الگوهای ذخیره شده در دیتابیس می‌سازد.
         """
-        # دریافت اینباندهای فعال یک سرور به همراه الگوهایشان
         inbounds_with_templates = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
         
         return self._build_configs_from_template(user_telegram_id, inbounds_with_templates, total_gb, duration_days, custom_remark)
@@ -113,9 +109,8 @@ class ConfigGenerator:
 
                 generated_uuids.append(client_uuid)
                 
-                # --- بازسازی لینک نهایی از روی الگو ---
-                final_params = dict(config_params) # کپی کردن الگو
-                final_params['uuid'] = client_uuid # جایگزینی UUID
+                final_params = dict(config_params)
+                final_params['uuid'] = client_uuid
                 final_params['remark'] = custom_remark or f"AlamorBot-{user_telegram_id}-{s_inbound.get('remark', '')}"
                 
                 final_config_url = self._rebuild_link_from_params(final_params)
