@@ -1380,7 +1380,8 @@ class DatabaseManager:
             "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
             "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
             
-            # ... در آینده می‌توان دستورات دیگری را به این لیست اضافه کرد ...
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
         ]
         
         conn = None

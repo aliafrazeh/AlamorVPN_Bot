@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ابزار مقایسه کانفیگ VLESS</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #bb86fc;
+        }
+        .input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background-color: #03dac6;
+            color: #121212;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #3700b3;
+            color: #fff;
+        }
+        #results {
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 12px;
+            text-align: left;
+            word-break: break-all;
+        }
+        th {
+            background-color: #1e1e1e;
+            color: #bb86fc;
+        }
+        .highlight {
+            background-color: #4a410a; /* A subtle yellow/brown for dark mode */
+        }
+        .param-name {
+            font-weight: bold;
+            color: #03dac6;
+        }
+        @media (max-width: 768px) {
+            .input-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>ابزار مقایسه کانفیگ VLESS</h1>
+        
+        <div class="input-grid">
+            <textarea id="config1" placeholder="کانفیگ اول را اینجا پیست کنید..."></textarea>
+            <textarea id="config2" placeholder="کانفیگ دوم را اینجا پیست کنید..."></textarea>
+        </div>
+        
+        <button onclick="compareConfigs()">مقایسه کن</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        function parseLink(link) {
+            if (!link || !link.startsWith('vless://')) {
+                return null;
+            }
+            try {
+                const url = new URL(link);
+                const params = {
+                    protocol: url.protocol.replace(':', ''),
+                    uuid: url.username,
+                    hostname: url.hostname,
+                    port: url.port,
+                    path: decodeURIComponent(url.pathname),
+                    remark: decodeURIComponent(url.hash.substring(1)),
+                };
+
+                url.searchParams.forEach((value, key) => {
+                    params[key] = decodeURIComponent(value);
+                });
+                
+                return params;
+            } catch (e) {
+                console.error("Error parsing URL:", e);
+                return null;
+            }
+        }
+
+        function compareConfigs() {
+            const link1 = document.getElementById('config1').value.trim();
+            const link2 = document.getElementById('config2').value.trim();
+            
+            const config1 = parseLink(link1);
+            const config2 = parseLink(link2);
+
+            const resultsDiv = document.getElementById('results');
+            if (!config1 || !config2) {
+                resultsDiv.innerHTML = '<p style="color: #cf6679;">خطا: لطفاً هر دو کانفیگ را با فرمت صحیح vless:// وارد کنید.</p>';
+                return;
+            }
+
+            const allKeys = new Set([...Object.keys(config1), ...Object.keys(config2)]);
+            
+            let tableHTML = '<table><thead><tr><th>پارامتر</th><th>کانفیگ اول</th><th>کانفیگ دوم</th></tr></thead><tbody>';
+
+            const sortedKeys = Array.from(allKeys).sort();
+
+            for (const key of sortedKeys) {
+                const val1 = config1[key] || '---';
+                const val2 = config2[key] || '---';
+                const isDifferent = val1 !== val2;
+                
+                tableHTML += `<tr class="${isDifferent ? 'highlight' : ''}">
+                    <td class="param-name">${key}</td>
+                    <td>${val1}</td>
+                    <td>${val2}</td>
+                </tr>`;
+            }
+
+            tableHTML += '</tbody></table>';
+            resultsDiv.innerHTML = tableHTML;
+        }
+    </script>
+
+</body>
+</html>
