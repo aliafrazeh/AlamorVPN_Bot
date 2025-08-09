@@ -402,7 +402,9 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             profile_details = order_data['profile_details']
             server_name = f"پروفایل: {profile_details['name']}"
             profile_inbounds = _db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
+            
             if profile_inbounds:
+                # یک سرور را به عنوان نماینده برای ثبت در خرید انتخاب می‌کنیم
                 server_id = profile_inbounds[0]['server']['id']
             else:
                 _bot.send_message(user_id, "خطا: پروفایل انتخاب شده هیچ سروری ندارد. لطفاً به ادمین اطلاع دهید.")
@@ -414,7 +416,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             server_info = _db_manager.get_server_by_id(server_id)
             server_name = server_info['name'] if server_info else "سرور ناشناس"
 
-        # ساخت دیکشنری کامل برای ذخیره در دیتابیس
         order_details_for_db = {
             'user_telegram_id': user_id,
             'user_db_id': user_db_info['id'],
@@ -422,7 +423,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             'server_id': server_id,
             'server_name': server_name,
             'purchase_type': order_data.get('purchase_type'),
-            'plan_type': order_data.get('plan_type'), # <-- اطمینان از وجود این کلید
+            'plan_type': order_data.get('plan_type'),
             'profile_details': order_data.get('profile_details'),
             'plan_details': order_data.get('plan_details'),
             'gb_plan_details': order_data.get('gb_plan_details'),

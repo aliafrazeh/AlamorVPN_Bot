@@ -947,24 +947,46 @@ class DatabaseManager:
                 
                 
                 
-    def get_inbounds_for_profile(self, profile_id: int, server_id: int = None):
+    def get_inbounds_for_profile(self, profile_id: int, server_id: int = None, with_server_info: bool = False):
         """
         اینباندهای متصل به یک پروفایل را برمی‌گرداند.
-        اگر server_id داده شود، نتایج را برای آن سرور فیلتر می‌کند.
+        server_id: نتایج را برای یک سرور خاص فیلتر می‌کند.
+        with_server_info: اطلاعات کامل سرور را نیز برمی‌گرداند.
         """
-        sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
-        params = [profile_id]
+        if with_server_info:
+            # کوئری برای گرفتن اطلاعات کامل سرور
+            sql = """
+                SELECT pi.inbound_id, pi.config_params, s.* FROM profile_inbounds pi
+                JOIN servers s ON pi.server_id = s.id
+                WHERE pi.profile_id = %s;
+            """
+            params = (profile_id,)
+        else:
+            # کوئری ساده برای گرفتن ID ها
+            sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
+            params = [profile_id]
+            if server_id:
+                sql += " AND server_id = %s"
+                params.append(server_id)
         
-        if server_id:
-            sql += " AND server_id = %s"
-            params.append(server_id)
-            
         try:
             with self._get_connection() as conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                     cur.execute(sql, tuple(params))
-                    # نتیجه را به صورت یک لیست ساده از ID ها برمی‌گردانیم
-                    return [row[0] for row in cur.fetchall()]
+                    results = []
+                    rows = cur.fetchall()
+                    if with_server_info:
+                        for row in rows:
+                            server_info = self._decrypt_server_row(row)
+                            if server_info:
+                                results.append({
+                                    'inbound_id': row['inbound_id'],
+                                    'config_params': row['config_params'],
+                                    'server': server_info
+                                })
+                    else:
+                        results = [row['inbound_id'] for row in rows]
+                    return results
         except psycopg2.Error as e:
             logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
             return []
