@@ -128,6 +128,7 @@ class ConfigGenerator:
 
                 generated_uuids.append(client_uuid)
                 
+                # --- بازسازی لینک نهایی از روی الگو ---
                 final_params = dict(config_params)
                 final_params['uuid'] = client_uuid
                 final_params['remark'] = custom_remark or f"AlamorBot-{user_telegram_id}-{s_inbound.get('remark', '')}"
