@@ -84,6 +84,8 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("user_select_tutorial_"):
             tutorial_id = int(data.replace("user_select_tutorial_", ""))
             send_tutorial_to_user(user_id, tutorial_id, call.message)
+        elif data == "user_account": 
+            show_user_account_menu(user_id, call.message) 
         elif data == "user_check_join_status":
             required_channel_id_str = _db_manager.get_setting('required_channel_id')
             if required_channel_id_str:
@@ -131,8 +133,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         elif data.startswith("buy_select_profile_"):
             profile_id = int(data.replace("buy_select_profile_", ""))
             select_profile_for_purchase(user_id, profile_id, call.message)
-        elif data == "user_account": 
-            show_user_account_menu(user_id, call.message)   
+          
 
         elif data == "cancel_order":
             _clear_user_state(user_id)
