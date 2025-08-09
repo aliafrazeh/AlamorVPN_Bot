@@ -284,7 +284,34 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             process_edit_plan_name(admin_id, message)
         elif state == 'waiting_for_new_plan_price':
             process_edit_plan_price(admin_id, message)
-    
+            
+        elif data == "admin_manage_profile_templates": # <-- بلوک جدید
+            show_profile_template_management_menu(admin_id, message)
+            return
+
+        elif data.startswith("admin_edit_profile_template_"): # <-- بلوک جدید
+            parts = data.split('_')
+            profile_id = int(parts[4])
+            server_id = int(parts[5])
+            inbound_id = int(parts[6])
+
+            # دریافت اطلاعات لازم برای شروع فرآیند
+            server_data = _db_manager.get_server_by_id(server_id)
+            profile_data = _db_manager.get_profile_by_id(profile_id)
+            # ما فقط به ID و remark نیاز داریم تا پیام را به ادمین نمایش دهیم
+            inbound_info_db = _db_manager.get_server_inbound_details(server_id, inbound_id)
+            inbound_info = {'id': inbound_id, 'remark': inbound_info_db.get('remark', '') if inbound_info_db else ''}
+            
+            context = {
+                'type': 'profile',
+                'profile_id': profile_id,
+                'profile_name': profile_data['name'],
+                'server_id': server_id,
+                'server_name': server_data['name']
+            }
+            # از همان تابع قبلی برای شروع فرآیند دریافت کانفیگ نمونه استفاده می‌کنیم
+            start_sample_config_flow(admin_id, message, [inbound_info], context)
+            return
         # --- Profile Flows ---
         elif state == 'waiting_for_profile_name':
             data['name'] = text
@@ -1970,3 +1997,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         all_inbounds = _db_manager.get_all_active_inbounds_with_server_info()
         markup = inline_keyboards.get_template_management_menu(all_inbounds)
         _show_menu(admin_id, "برای ثبت یا ویرایش الگوی یک اینباند، روی آن کلیک کنید:", markup, message)
+
+
+
+
+    def show_profile_template_management_menu(admin_id, message):
+        """منوی مدیریت الگوهای کانفیگ برای پروفایل‌ها را نمایش می‌دهد."""
+        # ما به یک تابع جدید در db_manager نیاز داریم تا این اطلاعات را بخواند
+        all_profile_inbounds = _db_manager.get_all_profile_inbounds_with_status()
+        # از یک کیبورد جدید برای نمایش این اطلاعات استفاده خواهیم کرد
+        markup = inline_keyboards.get_profile_template_management_menu(all_profile_inbounds)
+        _show_menu(admin_id, "برای ثبت یا ویرایش الگوی یک اینباند در پروفایل، روی آن کلیک کنید:", markup, message)
