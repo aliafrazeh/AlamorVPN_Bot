@@ -463,9 +463,12 @@ def get_template_management_menu(all_active_inbounds):
     else:
         for inbound in all_active_inbounds:
             status_emoji = "✅" if inbound.get('config_params') else "⚠️"
+            
+            # --- اصلاح اصلی در این خط انجام شده است ---
+            inbound_remark = inbound.get('remark', f"ID: {inbound['inbound_id']}")
+            
             btn_text = (
-                f"{status_emoji} {inbound['server_name']} - "
-                f"{inbound.get('remark', f'ID: {inbound['inbound_id']}')}"
+                f"{status_emoji} {inbound['server_name']} - {inbound_remark}"
             )
             # callback_data شامل آیدی سرور و اینباند است تا بدانیم کدام الگو را باید ویرایش کنیم
             callback_data = f"admin_edit_template_{inbound['server_id']}_{inbound['inbound_id']}"
