@@ -1588,10 +1588,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}"))
             return
             
-        # دریافت اینباندهایی که از قبل برای این پروفایل (از همه سرورها) انتخاب شده‌اند
-        selected_inbound_ids = _db_manager.get_inbounds_for_profile(profile_id)
+        # --- اصلاح اصلی اینجاست ---
+        # حالا فقط اینباندهای مربوط به همین سرور را از دیتابیس می‌خوانیم
+        selected_inbound_ids = _db_manager.get_inbounds_for_profile(profile_id, server_id=server_id)
         
-        # ذخیره اطلاعات در state برای استفاده در هنگام تیک زدن
         _admin_states[admin_id] = {
             'state': 'selecting_inbounds_for_profile',
             'data': {
@@ -1603,9 +1603,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         }
         
         markup = inline_keyboards.get_inbound_selection_menu_for_profile(profile_id, server_id, panel_inbounds, selected_inbound_ids)
-        profile = _db_manager.get_profile_by_id(profile_id) # برای نمایش نام پروفایل
+        profile = _db_manager.get_profile_by_id(profile_id)
         _show_menu(admin_id, f"اینباندها را برای پروفایل '{profile['name']}' از سرور '{server_data['name']}' انتخاب کنید:", markup, message)
-
     def handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id):
         """تیک زدن یا برداشتن تیک یک اینباند در چک‌لیست را مدیریت می‌کند."""
         state_info = _admin_states.get(admin_id)

@@ -947,38 +947,24 @@ class DatabaseManager:
                 
                 
                 
-    def get_inbounds_for_profile(self, profile_id, with_server_and_template=False):
-        """لیست اینباندهای متصل به یک پروفایل خاص را برمی‌گرداند."""
-        if not with_server_and_template:
-            # منطق قدیمی برای استفاده‌های دیگر
-            sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
-            params = (profile_id,)
-        else:
-            # کوئری جدید برای گرفتن اطلاعات کامل سرور و الگوی کانفیگ
-            sql = """
-                SELECT pi.inbound_id, pi.config_params, s.* FROM profile_inbounds pi
-                JOIN servers s ON pi.server_id = s.id
-                WHERE pi.profile_id = %s;
-            """
-            params = (profile_id,)
-
+    def get_inbounds_for_profile(self, profile_id: int, server_id: int = None):
+        """
+        اینباندهای متصل به یک پروفایل را برمی‌گرداند.
+        اگر server_id داده شود، نتایج را برای آن سرور فیلتر می‌کند.
+        """
+        sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
+        params = [profile_id]
+        
+        if server_id:
+            sql += " AND server_id = %s"
+            params.append(server_id)
+            
         try:
             with self._get_connection() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(sql, params)
-                    results = []
-                    for row in cur.fetchall():
-                        if not with_server_and_template:
-                            results.append(row['inbound_id'])
-                        else:
-                            server_info = self._decrypt_server_row(row)
-                            if server_info:
-                                results.append({
-                                    'inbound_id': row['inbound_id'],
-                                    'config_params': row['config_params'], # الگو را هم اضافه می‌کنیم
-                                    'server': server_info
-                                })
-                    return results
+                with conn.cursor() as cur:
+                    cur.execute(sql, tuple(params))
+                    # نتیجه را به صورت یک لیست ساده از ID ها برمی‌گردانیم
+                    return [row[0] for row in cur.fetchall()]
         except psycopg2.Error as e:
             logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
             return []
