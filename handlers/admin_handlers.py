@@ -546,10 +546,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data == "admin_change_brand_name":
             start_change_brand_name_flow(admin_id, message)
             return
+        # --- مدیریت پیام‌ها با صفحه‌بندی ---
+        if data == "admin_message_management":
+            show_message_management_menu(admin_id, message, page=1)
+            return
+        elif data.startswith("admin_msg_page_"):
+            page = int(data.split('_')[-1])
+            show_message_management_menu(admin_id, message, page=page)
+            return
         elif data.startswith("admin_edit_msg_"):
             message_key = data.replace("admin_edit_msg_", "", 1)
             start_edit_message_flow(admin_id, message, message_key)
             return
+
         # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)
