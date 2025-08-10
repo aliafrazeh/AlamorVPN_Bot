@@ -6,7 +6,7 @@ import uuid
 import datetime
 import requests
 import base64
-from urllib.parse import quote
+from urllib.parse import quote, urlunparse
 
 from .helpers import generate_random_string
 from api_client.factory import get_api_client
