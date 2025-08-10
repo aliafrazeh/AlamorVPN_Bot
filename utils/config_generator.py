@@ -55,25 +55,47 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
-            clients_created_on_server = 0
+            uuids_on_this_server = []
             for s_inbound in inbounds_on_server:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
                 
+                flow = ""
+                try:
+                    inbound_details = api_client.get_inbound(inbound_id)
+                    if inbound_details:
+                        clients_settings = json.loads(inbound_details.get('settings', '{}')).get('clients', [{}])
+                        flow = clients_settings[0].get('flow', '') if clients_settings else ''
+                except Exception: pass
+
+                # --- اصلاح اصلی: ساخت دیکشنری کامل و صحیح ---
                 client_settings = {
-                    "id": client_uuid, "email": f"in{inbound_id}.{base_client_email}",
-                    "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id
+                    "id": client_uuid,
+                    "flow": flow,
+                    "email": f"in{inbound_id}.{base_client_email}",
+                    "totalGB": total_traffic_bytes,
+                    "expiryTime": expiry_time_ms,
+                    "enable": True,
+                    "tgId": str(user_telegram_id),
+                    "subId": shared_sub_id,
+                    "reset": 0
                 }
                 
-                add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
+                # --- اصلاح اصلی: حذف json.dumps و ارسال آبجکت تو در تو ---
+                add_client_payload = {
+                    "id": inbound_id,
+                    "settings": {
+                        "clients": [client_settings]
+                    }
+                }
+                
                 if api_client.add_client(add_client_payload):
                     all_generated_uuids.append(client_uuid)
-                    clients_created_on_server += 1
+                    uuids_on_this_server.append(client_uuid)
                 else:
                     logger.error(f"Failed to add client to inbound {inbound_id} on server {server_id}.")
 
-            if clients_created_on_server == 0:
+            if not uuids_on_this_server:
                 logger.error(f"No clients were created on server {server_data['name']}. Skipping subscription fetch.")
                 continue
 
@@ -84,12 +106,11 @@ class ConfigGenerator:
                 
                 decoded_content = base64.b64decode(response.content).decode('utf-8')
                 user_configs_from_this_server = decoded_content.strip().split('\n')
+                
                 all_final_configs.extend(user_configs_from_this_server)
-                logger.info(f"Successfully fetched {len(user_configs_from_this_server)} configs from server {server_data['name']}.")
             except Exception as e:
-                logger.error(f"Error fetching subscription for server {server_id}: {e}")
+                logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
 
-        # تغییر Remark تمام کانفیگ‌های جمع‌آوری شده
         final_remarked_configs = []
         final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
         for config in all_final_configs:
