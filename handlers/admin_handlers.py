@@ -1575,28 +1575,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def handle_server_selection_for_profile(admin_id, message, profile_id, server_id):
-        """
-        پس از انتخاب سرور، به پنل وصل شده و لیست اینباندها را به صورت چک‌لیست نمایش می‌دهد.
-        """
         _bot.edit_message_text(messages.FETCHING_INBOUNDS, admin_id, message.message_id)
         
         server_data = _db_manager.get_server_by_id(server_id)
         if not server_data:
-            _bot.answer_callback_query(message.id, "سرور یافت نشد.", show_alert=True)
-            return
+            _bot.answer_callback_query(message.id, "سرور یافت نشد.", show_alert=True); return
 
         api_client = get_api_client(server_data)
         if not api_client or not api_client.check_login():
-            _bot.edit_message_text("❌ اتصال به پنل سرور ناموفق بود.", admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}"))
-            return
+            _bot.edit_message_text("❌ اتصال به پنل سرور ناموفق بود.", admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}")); return
 
         panel_inbounds = api_client.list_inbounds()
         if not panel_inbounds:
-            _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}"))
-            return
+            _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}")); return
             
         # --- اصلاح اصلی اینجاست ---
-        # حالا فقط اینباندهای مربوط به همین سرور را از دیتابیس می‌خوانیم
+        # فقط اینباندهایی که برای این پروفایل و همین سرور انتخاب شده‌اند را می‌خوانیم
         selected_inbound_ids = _db_manager.get_inbounds_for_profile(profile_id, server_id=server_id)
         
         _admin_states[admin_id] = {
@@ -1613,12 +1607,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         profile = _db_manager.get_profile_by_id(profile_id)
         _show_menu(admin_id, f"اینباندها را برای پروفایل '{profile['name']}' از سرور '{server_data['name']}' انتخاب کنید:", markup, message)
     def handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id):
-        """تیک زدن یا برداشتن تیک یک اینباند در چک‌لیست را مدیریت می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
         
         data = state_info['data']
-        # اطمینان از اینکه اطلاعات state با callback همخوانی دارد
         if data['profile_id'] != profile_id or data['server_id'] != server_id: return
 
         selected_ids = data['selected_inbound_ids']
@@ -1637,32 +1629,30 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.warning(f"Error updating profile inbound checklist: {e}")
 
     def execute_save_profile_inbounds(admin_id, message, profile_id, server_id):
-        """تغییرات چک‌لیست اینباندها را برای پروفایل ذخیره کرده و فرآیند دریافت نمونه را شروع می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
             
+        # --- اصلاح اصلی اینجاست ---
+        # ما فقط لیست نهایی از state را می‌خوانیم و به دیتابیس ارسال می‌کنیم
         selected_ids = state_info['data']['selected_inbound_ids']
-        panel_inbounds = state_info['data'].get('panel_inbounds', [])
-
-        inbounds_to_save = [{'id': p_in['id'], 'remark': p_in.get('remark', '')} for p_in in panel_inbounds if p_in['id'] in selected_ids]
-
+        
         if not _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
             _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
             _clear_admin_state(admin_id)
             return
 
+        # حالا برای اینباندهای تازه ذخیره شده، کانفیگ نمونه را می‌پرسیم
+        panel_inbounds = state_info['data'].get('panel_inbounds', [])
+        inbounds_to_get_template_for = [p for p in panel_inbounds if p['id'] in selected_ids]
+
         server_data = _db_manager.get_server_by_id(server_id)
         profile_data = _db_manager.get_profile_by_id(profile_id)
         context = {
-            'type': 'profile',
-            'profile_id': profile_id,
-            'profile_name': profile_data['name'],
-            'server_id': server_id,
-            'server_name': server_data['name']
+            'type': 'profile', 'profile_id': profile_id, 'profile_name': profile_data['name'],
+            'server_id': server_id, 'server_name': server_data['name']
         }
         _clear_admin_state(admin_id)
-        start_sample_config_flow(admin_id, message, inbounds_to_save, context)
-    
+        start_sample_config_flow(admin_id, message, inbounds_to_get_template_for, context)
     def start_sync_configs_flow(admin_id, message):
         """
         فرآیند همگام‌سازی را با دریافت جزئیات کامل هر اینباند به صورت جداگانه اجرا می‌کند. (نسخه نهایی)
