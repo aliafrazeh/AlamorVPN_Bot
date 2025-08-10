@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با معماری بهینه شده برای مولتی-سرور)
+# utils/config_generator.py (نسخه نهایی با پشتیبانی کامل از هر دو پنل)
 
 import json
 import logging
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator with multi-server profile logic initialized.")
+        logger.info("ConfigGenerator with multi-panel support initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
         profile_details = self.db_manager.get_profile_by_id(profile_id)
@@ -33,8 +33,6 @@ class ConfigGenerator:
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
         all_final_configs, all_generated_uuids = [], []
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
-        
-        # ۱. یک subId یکتا برای کل این خرید ایجاد می‌کنیم (بسیار مهم)
         shared_sub_id = generate_random_string(16)
         
         inbounds_by_server = {}
@@ -57,20 +55,27 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
-            # ۲. ابتدا تمام کلاینت‌ها را روی این سرور با subId مشترک می‌سازیم
             uuids_on_this_server = []
             for s_inbound in inbounds_on_server:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
                 
-                # --- اصلاح اصلی: ارسال یک درخواست استانداردتر ---
+                # --- اصلاح اصلی و نهایی اینجاست: دریافت flow از پنل ---
+                flow = ""
+                try:
+                    inbound_details = api_client.get_inbound(inbound_id)
+                    if inbound_details:
+                        clients_settings = json.loads(inbound_details.get('settings', '{}')).get('clients', [{}])
+                        # مقدار flow را از اولین کلاینت موجود در اینباند کپی می‌کنیم
+                        flow = clients_settings[0].get('flow', '') if clients_settings else ''
+                except Exception as e:
+                    logger.warning(f"Could not get flow for inbound {inbound_id}. Using default empty value. Error: {e}")
+
                 client_settings = {
-                    "id": client_uuid,
-                    "email": f"in{inbound_id}.{base_client_email}",
-                    "totalGB": total_traffic_bytes,
-                    "expiryTime": expiry_time_ms,
-                    "subId": shared_sub_id 
-                    # پارامترهای غیراستاندارد مانند tgId حذف شدند
+                    "id": client_uuid, "email": f"in{inbound_id}.{base_client_email}",
+                    "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
+                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id,
+                    "flow": flow  # <-- افزودن flow به درخواست برای سازگاری با هر دو پنل
                 }
                 
                 add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
@@ -80,12 +85,10 @@ class ConfigGenerator:
                 else:
                     logger.error(f"Failed to add client to inbound {inbound_id} on server {server_id}.")
 
-            # ۳. فقط در صورتی که کلاینتی با موفقیت ساخته شده باشد، ادامه می‌دهیم
             if not uuids_on_this_server:
                 logger.error(f"No clients were created on server {server_data['name']}. Skipping subscription fetch.")
                 continue
 
-            # ۴. دریافت محتوای لینک اشتراک
             try:
                 panel_sub_url = f"{server_data['subscription_base_url'].rstrip('/')}/{server_data['subscription_path_prefix'].strip('/')}/{shared_sub_id}"
                 response = requests.get(panel_sub_url, timeout=20, verify=False)
@@ -98,6 +101,7 @@ class ConfigGenerator:
             except Exception as e:
                 logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
 
+        # ... (بقیه کد برای تغییر Remark و return بدون تغییر باقی می‌ماند)
         # تغییر Remark تمام کانفیگ‌های جمع‌آوری شده
         final_remarked_configs = []
         final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
