@@ -78,6 +78,10 @@ class AlirezaAPIClient:
         response_data = self._request('post', full_path, json=data)
         if response_data and response_data.get('success'):
             return True
+        
+        # --- بخش جدید برای لاگ کردن خطای پنل ---
+        error_msg = response_data.get('msg', 'Unknown error from panel') if response_data else "No response from panel"
+        logger.error(f"AlirezaPanel: Failed to add client. Panel response: '{error_msg}'")
         return False
 
     def get_inbound(self, inbound_id):
