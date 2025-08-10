@@ -34,6 +34,8 @@ class ConfigGenerator:
         return self._build_configs(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
+        brand_name = self.db_manager.get_setting('brand_name') or "Alamor"
+
         all_final_configs, all_generated_uuids = [], []
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
         shared_sub_id = generate_random_string(16)
@@ -107,7 +109,7 @@ class ConfigGenerator:
                 logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
 
         final_remarked_configs = []
-        final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
+        final_remark_str = custom_remark or f"{brand_name}-{user_telegram_id}"
         for config in all_final_configs:
             base_config = config.split('#', 1)[0]
             final_remarked_configs.append(f"{base_config}#{quote(final_remark_str)}")
