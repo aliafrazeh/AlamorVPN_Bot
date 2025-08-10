@@ -1564,6 +1564,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def handle_server_selection_for_profile(admin_id, message, profile_id, server_id):
+        """
+        پس از انتخاب سرور، به پنل وصل شده و لیست اینباندها را به صورت چک‌لیست نمایش می‌دهد.
+        """
         _bot.edit_message_text(messages.FETCHING_INBOUNDS, admin_id, message.message_id)
         
         server_data = _db_manager.get_server_by_id(server_id)
@@ -1578,7 +1581,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if not panel_inbounds:
             _bot.edit_message_text(messages.NO_INBOUNDS_FOUND_ON_PANEL, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button(f"admin_select_profile_{profile_id}")); return
             
-        # --- اصلاح اصلی اینجاست ---
         # فقط اینباندهایی که برای این پروفایل و همین سرور انتخاب شده‌اند را می‌خوانیم
         selected_inbound_ids = _db_manager.get_inbounds_for_profile(profile_id, server_id=server_id)
         
@@ -1596,6 +1598,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         profile = _db_manager.get_profile_by_id(profile_id)
         _show_menu(admin_id, f"اینباندها را برای پروفایل '{profile['name']}' از سرور '{server_data['name']}' انتخاب کنید:", markup, message)
     def handle_profile_inbound_toggle(admin_id, message, profile_id, server_id, inbound_id):
+        """تیک زدن یا برداشتن تیک یک اینباند در چک‌لیست را مدیریت می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
         
@@ -1618,26 +1621,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.warning(f"Error updating profile inbound checklist: {e}")
 
     def execute_save_profile_inbounds(admin_id, message, profile_id, server_id):
+        """تغییرات چک‌لیست اینباندها را برای پروفایل ذخیره می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
-            
-        # --- THE FIX IS HERE ---
-        # Answer the query immediately before doing database work
+
         try:
             _bot.answer_callback_query(message.id, "⏳ در حال ذخیره تغییرات...")
-        except Exception as e:
-            logger.warning(f"Could not answer callback query: {e}")
+        except Exception: pass
 
+        # ما فقط لیست نهایی از state را می‌خوانیم و به دیتابیس ارسال می‌کنیم
         selected_ids = state_info['data']['selected_inbound_ids']
         
         if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
-             # After success, we can edit the message to show the final menu
-             pass # No need for a second answer_callback_query
+            pass # موفقیت آمیز بود
         else:
             _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
 
         _clear_admin_state(admin_id)
-        # Show the profile management menu again after the operation is complete
         _show_profile_management_menu(admin_id, message)
     def start_sync_configs_flow(admin_id, message):
         """
