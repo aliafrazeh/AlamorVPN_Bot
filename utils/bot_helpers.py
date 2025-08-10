@@ -6,7 +6,8 @@ from io import BytesIO
 import logging
 import datetime
 import uuid
-
+import json
+import os
 # ایمپورت‌های پروژه
 from .config_generator import ConfigGenerator # کلاس را وارد می‌کنیم
 from . import messages, helpers
@@ -29,65 +30,66 @@ def send_subscription_info(bot: telebot.TeleBot, user_id: int, sub_link: str):
 
 def finalize_profile_purchase(bot, db_manager, user_telegram_id, order_details):
     """
-    فرآیند خرید پروفایل را با استفاده از کلاس ConfigGenerator نهایی می‌کند.
+    فرآیند خرید پروفایل را با استفاده از کلاس ConfigGenerator نهایی می‌کند. (نسخه اصلاح شده)
     """
     bot.send_message(user_telegram_id, "✅ پرداخت شما تایید شد. لطفاً صبر کنید، در حال ساخت کانفیگ‌های پروفایل شما هستیم...")
     
     profile_details = order_details['profile_details']
     requested_gb = order_details['requested_gb']
     
-    # ۱. ساخت یک نمونه از کلاس ConfigGenerator
     config_gen = ConfigGenerator(db_manager)
     
-    # یک نام پیش‌فرض برای کانفیگ‌ها می‌سازیم
-    default_config_name = f"Profile-{profile_details['id']}-{user_telegram_id}"
-    
-    # ۲. فراخوانی متد کلاس برای ساخت کانفیگ‌ها
+    # --- اصلاح اصلی اینجاست ---
+    # ما هیچ نامی را به صورت دستی نمی‌سازیم و اجازه می‌دهдим ConfigGenerator کار خود را انجام دهد.
+    # با ارسال custom_remark=None، منطق برندینگ در خود ConfigGenerator اجرا خواهد شد.
     generated_configs, client_details = config_gen.create_subscription_for_profile(
         user_telegram_id=user_telegram_id,
         profile_id=profile_details['id'],
         total_gb=requested_gb,
-        custom_remark=default_config_name
+        custom_remark=None 
     )
     
-    if not generated_configs:
+    if not client_details:
         bot.send_message(user_telegram_id, "❌ متاسفانه در ساخت کانفیگ‌های پروفایل شما خطایی رخ داد. لطفاً با پشتیبانی تماس بگیرید.")
         return
 
     user_db_info = db_manager.get_user_by_telegram_id(user_telegram_id)
     duration_days = profile_details['duration_days']
-    expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days))
+    expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days > 0 else None
     
     new_sub_id = str(uuid.uuid4().hex)
     
+    # برای ثبت خرید، به ID یکی از سرورهای پروفایل نیاز داریم
     profile_inbounds = db_manager.get_inbounds_for_profile(profile_details['id'], with_server_info=True)
     representative_server_id = profile_inbounds[0]['server']['id'] if profile_inbounds else None
 
+    # ثبت خرید در دیتابیس
     db_manager.add_purchase(
         user_id=user_db_info['id'], 
         server_id=representative_server_id, 
         plan_id=None,
         profile_id=profile_details['id'], 
-        expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S"),
+        expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
         initial_volume_gb=requested_gb, 
         client_uuids=client_details['uuids'],
         client_email=client_details['email'], 
         sub_id=new_sub_id,
-        single_configs=generated_configs
+        single_configs_json=json.dumps(generated_configs)
     )
     
-    active_domain = db_manager.get_active_subscription_domain()
+    # تحویل سرویس به کاربر
+    active_domain_record = db_manager.get_active_subscription_domain()
+    active_domain = active_domain_record['domain_name'] if active_domain_record else None
+    
+    if not active_domain:
+        webhook_domain = os.getenv("WEBHOOK_DOMAIN")
+        active_domain = webhook_domain
+
     if not active_domain:
         bot.send_message(user_telegram_id, "❌ دامنه فعالی برای لینک اشتراک تنظیم نشده است. لطفاً به پشتیبانی اطلاع دهید.")
         return
 
-    final_sub_link = f"https://{active_domain['domain_name']}/sub/{new_sub_id}"
+    final_sub_link = f"https://{active_domain}/sub/{new_sub_id}"
     
     bot.send_message(user_telegram_id, "🎉 پروفایل شما با موفقیت فعال شد!")
-    
-    configs_text = "\n".join(generated_configs)
-    bot.send_message(user_telegram_id, "کانفیگ‌های خود را کپی کرده و در اپلیکیشن خود وارد کنید:")
-    bot.send_message(user_telegram_id, f"```{configs_text}```", parse_mode="MarkdownV2")
-
-    bot.send_message(user_telegram_id, "همچنین می‌توانید از لینک اشتراک هوشمند زیر استفاده کنید:")
     send_subscription_info(bot, user_telegram_id, final_sub_link)
