@@ -77,6 +77,8 @@ def send_user_id(message):
 def main():
     bot.remove_webhook()
     logger.info("Bot is starting...")
+    
+    # --- بارگذاری ادمین‌های داینامیک از دیتابیس ---
     try:
         db_admins = db_manager.get_all_admins()
         if db_admins:
@@ -86,14 +88,18 @@ def main():
         logger.info(f"Final admin list loaded: {ADMIN_IDS}")
     except Exception as e:
         logger.error(f"Could not load dynamic admins from database: {e}")
-    try:
-        db_manager.create_tables()
-        logger.info("Database tables checked/created successfully.")
-    except Exception as e:
-        logger.critical(f"FATAL: Could not create database tables. Error: {e}")
-        return
-    
 
+    # --- اصلاح اصلی اینجاست ---
+    # به جای create_tables از run_migrations استفاده می‌کنیم
+    try:
+        db_manager.run_migrations()
+        logger.info("Database schema checked/updated successfully.")
+    except Exception as e:
+        logger.critical(f"FATAL: Could not migrate database tables. Error: {e}")
+        return
+    # --- پایان بخش اصلاح شده ---
+
+    # ثبت هندلرها
     admin_handlers.register_admin_handlers(bot, db_manager, XuiAPIClient)
     logger.info("Admin handlers registered.")
 
