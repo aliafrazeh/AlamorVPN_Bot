@@ -1394,11 +1394,8 @@ class DatabaseManager:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
             
             # افزودن ستون برای الگوهای کانفیگ
-            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
-            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+      
             
-            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;",
-            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
         ]
         
         conn = None

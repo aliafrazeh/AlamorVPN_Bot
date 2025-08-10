@@ -1378,31 +1378,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     
         
     def execute_save_inbounds(admin_id, message, server_id):
-        """
-        اینباندها را در دیتابیس ذخیره کرده و سپس فرآیند دریافت کانفیگ نمونه را شروع می‌کند.
-        """
         state_info = _admin_states.get(admin_id, {})
-        if not state_info or state_info.get('state') != f'selecting_inbounds_for_{server_id}':
-            return
+        if not state_info or state_info.get('state') != f'selecting_inbounds_for_{server_id}': return
 
         selected_ids = state_info['data'].get('selected_inbound_ids', [])
         panel_inbounds = state_info['data'].get('panel_inbounds', [])
-        
         inbounds_to_save = [{'id': p_in['id'], 'remark': p_in.get('remark', '')} for p_in in panel_inbounds if p_in['id'] in selected_ids]
         
-        if not _db_manager.update_server_inbounds(server_id, inbounds_to_save):
-            _bot.edit_message_text("❌ در ذخیره اولیه اینباندها خطایی رخ داد.", admin_id, message.message_id)
-            _clear_admin_state(admin_id)
-            return
-
         server_data = _db_manager.get_server_by_id(server_id)
-        context = {
-            'type': 'server',
-            'server_id': server_id,
-            'server_name': server_data['name']
-        }
+        if _db_manager.update_server_inbounds(server_id, inbounds_to_save):
+            _bot.edit_message_text(messages.INBOUND_CONFIG_SUCCESS.format(server_name=server_data['name']), admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_server_management"))
+        else:
+            _bot.edit_message_text(messages.INBOUND_CONFIG_FAILED.format(server_name=server_data['name']), admin_id, message.message_id)
         _clear_admin_state(admin_id)
-        start_sample_config_flow(admin_id, message, inbounds_to_save, context)
+
     @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id) and call.data.startswith('panel_type_'))
     def handle_panel_type_selection(call):
         """نوع پنل انتخاب شده توسط ادمین را پردازش می‌کند."""
@@ -1632,27 +1621,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
             
-        # --- اصلاح اصلی اینجاست ---
-        # ما فقط لیست نهایی از state را می‌خوانیم و به دیتابیس ارسال می‌کنیم
         selected_ids = state_info['data']['selected_inbound_ids']
         
-        if not _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
+        if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
+             _bot.answer_callback_query(message.id, "✅ تغییرات با موفقیت ذخیره شد.")
+        else:
             _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
-            _clear_admin_state(admin_id)
-            return
 
-        # حالا برای اینباندهای تازه ذخیره شده، کانفیگ نمونه را می‌پرسیم
-        panel_inbounds = state_info['data'].get('panel_inbounds', [])
-        inbounds_to_get_template_for = [p for p in panel_inbounds if p['id'] in selected_ids]
-
-        server_data = _db_manager.get_server_by_id(server_id)
-        profile_data = _db_manager.get_profile_by_id(profile_id)
-        context = {
-            'type': 'profile', 'profile_id': profile_id, 'profile_name': profile_data['name'],
-            'server_id': server_id, 'server_name': server_data['name']
-        }
         _clear_admin_state(admin_id)
-        start_sample_config_flow(admin_id, message, inbounds_to_get_template_for, context)
+        _show_profile_management_menu(admin_id, message)
     def start_sync_configs_flow(admin_id, message):
         """
         فرآیند همگام‌سازی را با دریافت جزئیات کامل هر اینباند به صورت جداگانه اجرا می‌کند. (نسخه نهایی)

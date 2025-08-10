@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با پشتیبانی کامل از هر دو پنل)
+# utils/config_generator.py (نسخه نهایی با معماری دریافت از ساب پنل)
 
 import json
 import logging
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator with multi-panel support initialized.")
+        logger.info("ConfigGenerator with panel-based subscription logic initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
         profile_details = self.db_manager.get_profile_by_id(profile_id)
@@ -27,7 +27,7 @@ class ConfigGenerator:
         return self._build_configs(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        inbounds = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
+        inbounds = self.db_manager.get_active_inbounds_for_server(server_id) # Simplified call
         return self._build_configs(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
@@ -55,38 +55,33 @@ class ConfigGenerator:
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
 
-            uuids_on_this_server = []
             for s_inbound in inbounds_on_server:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
                 
-                # --- اصلاح اصلی و نهایی اینجاست: دریافت flow از پنل ---
+                # دریافت flow از اینباند برای سازگاری با هر دو پنل
                 flow = ""
                 try:
                     inbound_details = api_client.get_inbound(inbound_id)
                     if inbound_details:
                         clients_settings = json.loads(inbound_details.get('settings', '{}')).get('clients', [{}])
-                        # مقدار flow را از اولین کلاینت موجود در اینباند کپی می‌کنیم
                         flow = clients_settings[0].get('flow', '') if clients_settings else ''
-                except Exception as e:
-                    logger.warning(f"Could not get flow for inbound {inbound_id}. Using default empty value. Error: {e}")
+                except Exception:
+                    logger.warning(f"Could not get flow for inbound {inbound_id}. Using default empty value.")
 
                 client_settings = {
                     "id": client_uuid, "email": f"in{inbound_id}.{base_client_email}",
                     "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id,
-                    "flow": flow  # <-- افزودن flow به درخواست برای سازگاری با هر دو پنل
+                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id, "flow": flow
                 }
                 
                 add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
                 if api_client.add_client(add_client_payload):
                     all_generated_uuids.append(client_uuid)
-                    uuids_on_this_server.append(client_uuid)
                 else:
                     logger.error(f"Failed to add client to inbound {inbound_id} on server {server_id}.")
 
-            if not uuids_on_this_server:
-                logger.error(f"No clients were created on server {server_data['name']}. Skipping subscription fetch.")
+            if not all_generated_uuids:
                 continue
 
             try:
@@ -96,21 +91,15 @@ class ConfigGenerator:
                 
                 decoded_content = base64.b64decode(response.content).decode('utf-8')
                 user_configs_from_this_server = decoded_content.strip().split('\n')
-                
                 all_final_configs.extend(user_configs_from_this_server)
             except Exception as e:
-                logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
+                logger.error(f"Error fetching subscription for server {server_id}: {e}")
 
-        # ... (بقیه کد برای تغییر Remark و return بدون تغییر باقی می‌ماند)
-        # تغییر Remark تمام کانفیگ‌های جمع‌آوری شده
         final_remarked_configs = []
         final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
         for config in all_final_configs:
-            if '#' in config:
-                base_config = config.split('#', 1)[0]
-                final_remarked_configs.append(f"{base_config}#{quote(final_remark_str)}")
-            else:
-                final_remarked_configs.append(f"{config}#{quote(final_remark_str)}")
+            base_config = config.split('#', 1)[0]
+            final_remarked_configs.append(f"{base_config}#{quote(final_remark_str)}")
 
         client_details_for_db = {'uuids': all_generated_uuids, 'email': base_client_email}
         return (final_remarked_configs, client_details_for_db) if final_remarked_configs else (None, None)

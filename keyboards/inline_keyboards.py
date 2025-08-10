@@ -35,7 +35,6 @@ def get_server_management_inline_menu():
         types.InlineKeyboardButton("📝 لیست سرورها", callback_data="admin_list_servers"),
         types.InlineKeyboardButton("🔌 مدیریت Inboundها", callback_data="admin_manage_inbounds"),
         types.InlineKeyboardButton("🔄 تست اتصال سرورها", callback_data="admin_test_all_servers"),
-        types.InlineKeyboardButton("📝 مدیریت الگوها", callback_data="admin_manage_templates"),
         types.InlineKeyboardButton("❌ حذف سرور", callback_data="admin_delete_server"),
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
@@ -362,7 +361,6 @@ def get_profile_management_inline_menu():
         types.InlineKeyboardButton("➕ افزودن پروفایل", callback_data="admin_add_profile"),
         types.InlineKeyboardButton("📝 لیست پروفایل‌ها", callback_data="admin_list_profiles"),
         types.InlineKeyboardButton("🔗 مدیریت اینباندهای پروفایل", callback_data="admin_manage_profile_inbounds"),
-        types.InlineKeyboardButton("📝 مدیریت الگوها", callback_data="admin_manage_profile_templates"),
         types.InlineKeyboardButton("❌ حذف پروفایل", callback_data="admin_delete_profile"),
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
