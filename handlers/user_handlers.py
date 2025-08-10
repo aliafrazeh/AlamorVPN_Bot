@@ -604,19 +604,36 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             plan_details_for_admin = f"پروفایل: {profile['name']} ({requested_gb}GB)"
 
         else: # خرید سرویس عادی
-            # ... (بقیه کد برای خرید عادی بدون تغییر باقی می‌ماند)
+            server_info = _db_manager.get_server_by_id(order_data['server_id'])
+            summary_text += messages.ORDER_SUMMARY_SERVER.format(server_name=server_info['name'])
+            
+            if order_data['plan_type'] == 'fixed_monthly':
+                plan = order_data['plan_details']
+                summary_text += messages.ORDER_SUMMARY_PLAN.format(plan_name=plan['name'])
+                summary_text += messages.ORDER_SUMMARY_VOLUME.format(volume_gb=plan['volume_gb'])
+                duration_text = f"{plan['duration_days']} روز"
+                total_price = plan['price']
+                plan_details_for_admin = f"{plan['name']} ({plan['volume_gb']}GB, {plan['duration_days']} روز)"
 
+            elif order_data['plan_type'] == 'gigabyte_based':
+                gb_plan = order_data['gb_plan_details']
+                requested_gb = order_data['requested_gb']
+                summary_text += messages.ORDER_SUMMARY_PLAN.format(plan_name=gb_plan['name'])
+                summary_text += messages.ORDER_SUMMARY_VOLUME.format(volume_gb=requested_gb)
+                duration_days = gb_plan.get('duration_days')
+                duration_text = f"{duration_days} روز" if duration_days and duration_days > 0 else "نامحدود"
+                total_price = requested_gb * gb_plan['per_gb_price']
+                plan_details_for_admin = f"{gb_plan['name']} ({requested_gb}GB, {duration_text})"
+        
         summary_text += messages.ORDER_SUMMARY_DURATION.format(duration_days=duration_text)
         summary_text += messages.ORDER_SUMMARY_TOTAL_PRICE.format(total_price=total_price)
         summary_text += messages.ORDER_SUMMARY_CONFIRM_PROMPT
         
-        # این خط کلیدی است که قیمت را برای مرحله بعد ذخیره می‌کند
         order_data['total_price'] = total_price
         order_data['plan_details_for_admin'] = plan_details_for_admin
         
         prompt_id = _user_states[user_id].get('prompt_message_id', message.message_id)
         _bot.edit_message_text(summary_text, user_id, prompt_id, parse_mode='Markdown', reply_markup=inline_keyboards.get_order_confirmation_menu())
-
     def handle_free_test_request(user_id, message):
         _bot.edit_message_text(messages.PLEASE_WAIT, user_id, message.message_id)
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
