@@ -7,12 +7,22 @@ import string
 import re
 # --- ایمپورت‌های جدید در اینجا اضافه شده‌اند ---
 from urllib.parse import urlparse, parse_qs
+from database.db_manager import DatabaseManager
+import utils.messages as messages_module
 
 from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
+_db_for_messages = DatabaseManager()
 
-
+def get_message(key: str, **kwargs):
+    message_text = _db_for_messages.get_message_by_key(key)
+    if message_text is None:
+        message_text = getattr(messages_module, key, f"MSG_NOT_FOUND: {key}")
+    try:
+        return message_text.format(**kwargs)
+    except (KeyError, ValueError):
+        return message_text
 # --- تابع جدید در اینجا اضافه شده است ---
 def parse_config_link(link: str) -> dict or None:
     """

@@ -1475,6 +1475,7 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
+        self._seed_messages_table()
     def add_to_user_balance(self, user_id: int, amount: float):
         """مبلغ مشخص شده را به موجودی کیف پول کاربر اضافه می‌کند."""
         sql = "UPDATE users SET balance = balance + %s WHERE id = %s;"
@@ -1559,28 +1560,49 @@ class DatabaseManager:
             return []
         
         
+    def _seed_messages_table(self):
+        """جدول bot_messages را با مقادیر پیش‌فرض از فایل messages.py پر می‌کند."""
+        import utils.messages as messages_module
+        from psycopg2.extras import execute_batch
+        
+        all_messages = {
+            key: getattr(messages_module, key)
+            for key in dir(messages_module)
+            if not key.startswith('__') and isinstance(getattr(messages_module, key), str)
+        }
+        if not all_messages: return
+
+        sql = "INSERT INTO bot_messages (message_key, message_text) VALUES (%s, %s) ON CONFLICT (message_key) DO NOTHING;"
+        data_to_insert = list(all_messages.items())
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_batch(cur, sql, data_to_insert)
+                conn.commit()
+                logger.info(f"Successfully seeded {len(data_to_insert)} message keys into the database.")
+
+    def get_all_bot_messages(self):
+        """تمام کلیدها و متن‌های پیام را از دیتابیس می‌خواند."""
+        sql = "SELECT message_key, message_text FROM bot_messages ORDER BY message_key;"
+        with self._get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(sql)
+                return [dict(row) for row in cur.fetchall()]
+
+    def get_message_by_key(self, key: str):
+        """متن یک پیام را بر اساس کلید آن از دیتابیس می‌خواند."""
+        sql = "SELECT message_text FROM bot_messages WHERE message_key = %s;"
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (key,))
+                result = cur.fetchone()
+                return result[0] if result else None
+
     def update_bot_message(self, message_key: str, new_text: str):
         """متن یک پیام خاص را در دیتابیس آپدیت می‌کند."""
         sql = "UPDATE bot_messages SET message_text = %s WHERE message_key = %s;"
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(sql, (new_text, message_key))
-                    conn.commit()
-                    return cur.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error updating bot message for key {message_key}: {e}")
-            return False
-        
-        
-    def get_all_bot_messages(self):
-        """Fetches all message keys and texts from the database."""
-        sql = "SELECT message_key, message_text FROM bot_messages ORDER BY message_key;"
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(sql)
-                    return [dict(row) for row in cur.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting all bot messages: {e}")
-            return []
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (new_text, message_key))
+                conn.commit()
+                return cur.rowcount > 0

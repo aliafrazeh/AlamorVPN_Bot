@@ -547,7 +547,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             start_change_brand_name_flow(admin_id, message)
             return
         # --- مدیریت پیام‌ها با صفحه‌بندی ---
-        if data == "admin_message_management":
+        if data == "admin_msg_page_":
             show_message_management_menu(admin_id, message, page=1)
             return
         elif data.startswith("admin_msg_page_"):
@@ -2010,39 +2010,29 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _admin_states[admin_id] = {'state': 'waiting_for_brand_name', 'prompt_message_id': prompt.message_id}
         
         
+    def show_message_management_menu(admin_id, message, page=1):
+        all_messages = _db_manager.get_all_bot_messages()
+        items_per_page = 10
+        total_pages = (len(all_messages) + items_per_page - 1) // items_per_page
+        messages_on_page = all_messages[(page - 1) * items_per_page:page * items_per_page]
+        
+        markup = inline_keyboards.get_message_management_menu(messages_on_page, page, total_pages)
+        text = "✍️ **مدیریت پیام‌ها**\n\nبرای ویرایش هر پیام، روی آن کلیک کنید:"
+        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')
+
     def start_edit_message_flow(admin_id, message, message_key):
-        """فرآیند ویرایش یک پیام را با نمایش متن فعلی و درخواست متن جدید، شروع می‌کند."""
         current_text = _db_manager.get_message_by_key(message_key)
         if current_text is None:
-            _bot.answer_callback_query(message.id, "پیام مورد نظر یافت نشد.", show_alert=True)
+            _bot.answer_callback_query(message.id, "پیام یافت نشد.", show_alert=True)
             return
 
         prompt_text = (
-            f"✍️ در حال ویرایش پیام با کلید: `{message_key}`\n\n"
-            f"**متن فعلی:**\n`{current_text}`\n\n"
-            f"لطفاً متن جدید را ارسال کنید. برای انصراف، `cancel` را بفرستید.\n\n"
-            f"**نکته:** اگر در متن از متغیرهایی مانند `{{first_name}}` استفاده شده، حتماً آنها را در متن جدید خود نیز قرار دهید."
+            f"✍️ ویرایش پیام: `{message_key}`\n\n**متن فعلی:**\n`{current_text}`\n\n"
+            f"لطفاً متن جدید را ارسال کنید. (برای انصراف: `cancel`)"
         )
-        
-        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button(f"admin_message_management"), message, parse_mode='Markdown')
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_message_management"), message, parse_mode='Markdown')
         _admin_states[admin_id] = {
             'state': 'waiting_for_new_message_text',
             'data': {'message_key': message_key},
             'prompt_message_id': prompt.message_id
         }
-        
-    def show_message_management_menu(admin_id, message, page=1):
-        """منوی اصلی برای مدیریت پیام‌های ربات را با صفحه‌بندی نمایش می‌دهد."""
-        all_messages = _db_manager.get_all_bot_messages()
-        
-        items_per_page = 10  # تعداد پیام در هر صفحه
-        total_items = len(all_messages)
-        total_pages = (total_items + items_per_page - 1) // items_per_page
-        
-        start_index = (page - 1) * items_per_page
-        end_index = start_index + items_per_page
-        messages_on_page = all_messages[start_index:end_index]
-        
-        markup = inline_keyboards.get_message_management_menu(messages_on_page, page, total_pages)
-        text = "✍️ **مدیریت پیام‌ها**\n\nبرای ویرایش هر پیام، روی آن کلیک کنید:"
-        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')

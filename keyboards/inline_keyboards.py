@@ -533,3 +533,21 @@ def get_user_account_menu():
     return markup
 
 
+def get_message_management_menu(messages_on_page, current_page, total_pages):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for msg in messages_on_page:
+        preview_text = msg['message_text'][:30].replace('\n', ' ') + "..."
+        btn_text = f"✏️ {msg['message_key']} | {preview_text}"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_edit_msg_{msg['message_key']}"))
+    
+    nav_buttons = []
+    if current_page > 1:
+        nav_buttons.append(types.InlineKeyboardButton("⬅️ قبل", callback_data=f"admin_msg_page_{current_page - 1}"))
+    nav_buttons.append(types.InlineKeyboardButton(f"{current_page}/{total_pages}", callback_data="no_action"))
+    if current_page < total_pages:
+        nav_buttons.append(types.InlineKeyboardButton("بعد ➡️", callback_data=f"admin_msg_page_{current_page + 1}"))
+    if len(nav_buttons) > 1:
+        markup.row(*nav_buttons)
+        
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+    return markup
