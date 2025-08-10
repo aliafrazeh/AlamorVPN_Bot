@@ -2021,3 +2021,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             'data': {'message_key': message_key},
             'prompt_message_id': prompt.message_id
         }
+        
+    def show_message_management_menu(admin_id, message, page=1):
+        """منوی اصلی برای مدیریت پیام‌های ربات را با صفحه‌بندی نمایش می‌دهد."""
+        all_messages = _db_manager.get_all_bot_messages()
+        
+        items_per_page = 10  # تعداد پیام در هر صفحه
+        total_items = len(all_messages)
+        total_pages = (total_items + items_per_page - 1) // items_per_page
+        
+        start_index = (page - 1) * items_per_page
+        end_index = start_index + items_per_page
+        messages_on_page = all_messages[start_index:end_index]
+        
+        markup = inline_keyboards.get_message_management_menu(messages_on_page, page, total_pages)
+        text = "✍️ **مدیریت پیام‌ها**\n\nبرای ویرایش هر پیام، روی آن کلیک کنید:"
+        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')
