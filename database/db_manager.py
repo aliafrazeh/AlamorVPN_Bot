@@ -997,36 +997,47 @@ class DatabaseManager:
             logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
             return []
             
-    def update_inbounds_for_profile(self, profile_id, server_id, inbound_ids):
+    def update_inbounds_for_profile(self, profile_id: int, server_id: int, inbound_ids: list):
         """
-        اینباندهای یک پروفایل برای یک سرور خاص را آپدیت می‌کند.
-        ابتدا رکوردهای قدیمی را حذف و سپس جدیدها را اضافه می‌کند.
+        اینباندهای یک پروفایل برای یک سرور خاص را به صورت اتمیک آپدیت می‌کند.
+        ابتدا تمام رکوردهای قدیمی برای آن سرور را حذف و سپس جدیدها را اضافه می‌کند.
         """
         conn = self._get_connection()
         try:
             with conn.cursor() as cur:
-                # 1. حذف رکوردهای قدیمی برای این پروفایل و این سرور
-                cur.execute("DELETE FROM profile_inbounds WHERE profile_id = %s AND server_id = %s", (profile_id, server_id))
-                
-                # 2. اضافه کردن رکوردهای جدید
+                # قدم ۱: حذف تمام رکوردهای قدیمی فقط برای این پروفایل و این سرور
+                logger.info(f"Deleting old inbounds for profile {profile_id} on server {server_id}...")
+                cur.execute(
+                    "DELETE FROM profile_inbounds WHERE profile_id = %s AND server_id = %s;",
+                    (profile_id, server_id)
+                )
+                logger.info(f"Deletion complete. {cur.rowcount} rows affected.")
+
+                # قدم ۲: اضافه کردن رکوردهای جدید
                 if inbound_ids:
-                    # آماده‌سازی داده‌ها برای executemany
+                    logger.info(f"Inserting {len(inbound_ids)} new inbounds...")
                     data_to_insert = [(profile_id, server_id, inbound_id) for inbound_id in inbound_ids]
-                    cur.executemany(
-                        "INSERT INTO profile_inbounds (profile_id, server_id, inbound_id) VALUES (%s, %s, %s)",
+                    # از psycopg2.extras.execute_values برای درج بهینه استفاده می‌کنیم
+                    from psycopg2.extras import execute_values
+                    execute_values(
+                        cur,
+                        "INSERT INTO profile_inbounds (profile_id, server_id, inbound_id) VALUES %s",
                         data_to_insert
                     )
+                    logger.info("Insertion complete.")
+                
+                # اگر همه چیز موفق بود، تراکنش را نهایی کن
                 conn.commit()
                 return True
-        except psycopg2.Error as e:
-            logger.error(f"Error updating inbounds for profile {profile_id} on server {server_id}: {e}")
-            if conn: conn.rollback()
+        except Exception as e:
+            logger.error(f"DATABASE TRANSACTION FAILED for profile {profile_id} on server {server_id}: {e}")
+            # در صورت بروز هرگونه خطا، تمام تغییرات را به حالت قبل برگردان
+            if conn:
+                conn.rollback()
             return False
         finally:
-            if conn: conn.close()
-            
-            
-            
+            if conn:
+                conn.close()
     def get_profile_by_id(self, profile_id):
         """اطلاعات یک پروفایل خاص را بر اساس ID آن برمی‌گرداند."""
         conn = self._get_connection()
