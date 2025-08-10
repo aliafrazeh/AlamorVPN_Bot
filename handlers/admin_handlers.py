@@ -530,7 +530,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             }
             start_sample_config_flow(admin_id, message, [inbound_info], context)
             return
-
+        elif data == "admin_view_profile_db":
+            show_profile_inbounds_db_status(admin_id, message)
+            return
         # --- مدیریت پرداخت‌ها ---
         elif data.startswith("admin_approve_payment_"):
             process_payment_approval(admin_id, int(data.split('_')[-1]), message)
@@ -1965,7 +1967,4 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
 
-    # این elif را به تابع handle_admin_callbacks اضافه کنید
-            elif data == "admin_view_profile_db":
-                show_profile_inbounds_db_status(admin_id, message)
-                return
+   
