@@ -1,4 +1,4 @@
-# utils/config_generator.py (نسخه نهایی با معماری بهینه شده بر اساس subId)
+# utils/config_generator.py (نسخه نهایی با معماری بهینه شده برای مولتی-سرور)
 
 import json
 import logging
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ConfigGenerator:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        logger.info("ConfigGenerator with SHARED subId architecture initialized.")
+        logger.info("ConfigGenerator with multi-server profile logic initialized.")
 
     def create_subscription_for_profile(self, user_telegram_id: int, profile_id: int, total_gb: float, custom_remark: str = None):
         profile_details = self.db_manager.get_profile_by_id(profile_id)
@@ -34,7 +34,6 @@ class ConfigGenerator:
         all_final_configs, all_generated_uuids = [], []
         base_client_email = f"u{user_telegram_id}.{generate_random_string(6)}"
         
-        # ۱. ساخت یک subId یکتا برای کل این خرید
         shared_sub_id = generate_random_string(16)
         
         inbounds_by_server = {}
@@ -53,12 +52,14 @@ class ConfigGenerator:
         # --- حلقه اصلی: یک بار برای هر سرور ---
         for server_id, inbounds_on_server in inbounds_by_server.items():
             server_data = inbounds_on_server[0]['server']
+            logger.info(f"Processing server: {server_data['name']} (ID: {server_id})")
+            
             api_client = get_api_client(server_data)
             if not api_client or not api_client.check_login():
                 logger.error(f"Could not connect to server {server_data['name']}. Skipping.")
                 continue
             
-            # ۲. ابتدا تمام کلاینت‌ها را روی این سرور با subId مشترک می‌سازیم
+            # ابتدا تمام کلاینت‌ها را روی این سرور با subId مشترک می‌سازیم
             for s_inbound in inbounds_on_server:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
@@ -73,24 +74,31 @@ class ConfigGenerator:
                 else:
                     logger.error(f"Failed to add client to inbound {inbound_id} on server {server_id}.")
 
-            if not all_generated_uuids:
-                continue
-
-            # ۳. فقط یک بار برای کل سرور، محتوای لینک اشتراک را دریافت می‌کنیم
+            # فقط یک بار برای کل سرور، محتوای لینک اشتراک را دریافت می‌کنیم
             try:
                 panel_sub_url = f"{server_data['subscription_base_url'].rstrip('/')}/{server_data['subscription_path_prefix'].strip('/')}/{shared_sub_id}"
                 
                 response = requests.get(panel_sub_url, timeout=20, verify=False)
                 response.raise_for_status()
                 
-                # ۴. محتوای دریافت شده، لیست آماده و فیلتر شده کانفیگ‌های ماست. نیازی به فیلتر نیست.
                 decoded_content = base64.b64decode(response.content).decode('utf-8')
                 user_configs_from_this_server = decoded_content.strip().split('\n')
                 
+                logger.info(f"Found {len(user_configs_from_this_server)} configs for server {server_data['name']}.")
                 all_final_configs.extend(user_configs_from_this_server)
 
             except Exception as e:
-                logger.error(f"Error fetching/parsing panel subscription for server {server_id} using subId {shared_sub_id}: {e}")
+                logger.error(f"Error fetching subscription for server {server_id} using subId {shared_sub_id}: {e}")
+
+        # تغییر Remark تمام کانفیگ‌های جمع‌آوری شده
+        final_remarked_configs = []
+        final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
+        for config in all_final_configs:
+            if '#' in config:
+                base_config = config.split('#', 1)[0]
+                final_remarked_configs.append(f"{base_config}#{quote(final_remark_str)}")
+            else:
+                final_remarked_configs.append(f"{config}#{quote(final_remark_str)}")
 
         client_details_for_db = {'uuids': all_generated_uuids, 'email': base_client_email}
-        return (all_final_configs, client_details_for_db) if all_final_configs else (None, None)
+        return (final_remarked_configs, client_details_for_db) if final_remarked_configs else (None, None)
