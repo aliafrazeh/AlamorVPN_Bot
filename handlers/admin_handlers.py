@@ -379,6 +379,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _clear_admin_state(admin_id)
             # نمایش مجدد منو با نام جدید
             show_branding_settings_menu(admin_id, message)
+        elif state == 'waiting_for_new_message_text':
+            if text.lower() == 'cancel':
+                _bot.edit_message_text("عملیات ویرایش لغو شد.", admin_id, state_info['prompt_message_id'])
+                _clear_admin_state(admin_id)
+                show_message_management_menu(admin_id, message)
+                return
+
+            message_key = state_info['data']['message_key']
+            if _db_manager.update_bot_message(message_key, text):
+                _bot.send_message(admin_id, f"✅ پیام `{message_key}` با موفقیت آپدیت شد.")
+            else:
+                _bot.send_message(admin_id, "❌ خطایی در آپدیت پیام رخ داد.")
+            
+            _clear_admin_state(admin_id)
+            show_message_management_menu(admin_id, message)
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -531,6 +546,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data == "admin_change_brand_name":
             start_change_brand_name_flow(admin_id, message)
             return
+        elif data.startswith("admin_edit_msg_"):
+            message_key = data.replace("admin_edit_msg_", "", 1)
+            start_edit_message_flow(admin_id, message, message_key)
+            return
         # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)
@@ -606,9 +625,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("admin_delete_tutorial_"):
             execute_delete_tutorial(admin_id, message, int(data.split('_')[-1]))
             return
-        elif data.startswith("confirm_delete_domain_"):
-            execute_delete_domain(admin_id, message, int(data.split('_')[-1]))
-            return
+        
 
         # --- مدیریت انتخاب نوع پلن و درگاه ---
         elif data.startswith("plan_type_"):
@@ -1742,25 +1759,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         
         
-    def execute_delete_domain(admin_id, message, domain_id):
-        """Executes the main logic for deleting a domain from the system and database."""
-        domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
-        if not domain:
-            _bot.answer_callback_query(message.id, "Domain not found.", show_alert=True)
-            return
-
-        # --- THE FIX IS HERE ---
-        # Immediately respond to the click before performing slow operations
-        _bot.answer_callback_query(message.id, f"⏳ Deleting domain {domain['domain_name']}...")
-
-        domain_name = domain['domain_name']
-        
-        # Now, perform the time-consuming tasks
-        remove_domain_nginx_files(domain_name)
-        _db_manager.delete_subscription_domain(domain_id)
-        
-        # Finally, show the updated menu
-        show_domain_management_menu(admin_id, message)
+    
     def _show_admin_management_menu(admin_id, message):
         admins = _db_manager.get_all_admins()
         admin_list = "\n".join([f"- `{admin['telegram_id']}` ({admin['first_name']})" for admin in admins])
@@ -2002,4 +2001,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _admin_states[admin_id] = {'state': 'waiting_for_brand_name', 'prompt_message_id': prompt.message_id}
         
         
-    
+    def start_edit_message_flow(admin_id, message, message_key):
+        """فرآیند ویرایش یک پیام را با نمایش متن فعلی و درخواست متن جدید، شروع می‌کند."""
+        current_text = _db_manager.get_message_by_key(message_key)
+        if current_text is None:
+            _bot.answer_callback_query(message.id, "پیام مورد نظر یافت نشد.", show_alert=True)
+            return
+
+        prompt_text = (
+            f"✍️ در حال ویرایش پیام با کلید: `{message_key}`\n\n"
+            f"**متن فعلی:**\n`{current_text}`\n\n"
+            f"لطفاً متن جدید را ارسال کنید. برای انصراف، `cancel` را بفرستید.\n\n"
+            f"**نکته:** اگر در متن از متغیرهایی مانند `{{first_name}}` استفاده شده، حتماً آنها را در متن جدید خود نیز قرار دهید."
+        )
+        
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button(f"admin_message_management"), message, parse_mode='Markdown')
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_new_message_text',
+            'data': {'message_key': message_key},
+            'prompt_message_id': prompt.message_id
+        }

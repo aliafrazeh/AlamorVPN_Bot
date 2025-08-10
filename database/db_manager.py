@@ -1557,3 +1557,17 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error getting all profile inbounds for debug: {e}")
             return []
+        
+        
+    def update_bot_message(self, message_key: str, new_text: str):
+        """متن یک پیام خاص را در دیتابیس آپدیت می‌کند."""
+        sql = "UPDATE bot_messages SET message_text = %s WHERE message_key = %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, (new_text, message_key))
+                    conn.commit()
+                    return cur.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating bot message for key {message_key}: {e}")
+            return False

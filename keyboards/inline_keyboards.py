@@ -209,30 +209,31 @@ def get_single_configs_button(purchase_id: int):
 
 def get_my_services_menu(purchases: list):
     markup = types.InlineKeyboardMarkup(row_width=1)
-    for purchase in purchases:
-        status = "فعال ✅" if purchase['is_active'] else "غیرفعال ❌"
-        btn_text = f"سرویس {purchase['id']} ({purchase['server_name']}) - {status}"
-        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"user_service_details_{purchase['id']}"))
-    markup.add(get_back_button("user_main_menu").keyboard[0][0])
+    if not purchases:
+        markup.add(types.InlineKeyboardButton("شما سرویس فعالی ندارید", callback_data="no_action"))
+    else:
+        for p in purchases:
+            status_emoji = "✅" if p['is_active'] else "❌"
+            
+            # --- THE FIX IS HERE ---
+            if p['expire_date']:
+                # First, format the datetime object into a YYYY-MM-DD string
+                expire_date_str = p['expire_date'].strftime('%Y-%m-%d')
+            else:
+                expire_date_str = "نامحدود"
+            # --- End of fix ---
+
+            btn_text = f"{status_emoji} سرویس {p['id']} ({p.get('server_name', 'N/A')}) - انقضا: {expire_date_str}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"user_service_details_{p['id']}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو اصلی", callback_data="user_main_menu"))
     return markup
 
 
 
 # در فایل keyboards/inline_keyboards.py
 
-def get_my_services_menu(purchases: list):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    if not purchases:
-        markup.add(types.InlineKeyboardButton("شما سرویس فعالی ندارید", callback_data="no_action"))
-    else:
-        for p in purchases:
-            status_emoji = "✅" if p['is_active'] else "❌"
-            expire_date_str = p['expire_date'][:10] if p['expire_date'] else "نامحدود"
-            btn_text = f"{status_emoji} سرویس {p['id']} ({p['server_name']}) - انقضا: {expire_date_str}"
-            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"user_service_details_{p['id']}"))
-    
-    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو اصلی", callback_data="user_main_menu"))
-    return markup
+
 
 
 
