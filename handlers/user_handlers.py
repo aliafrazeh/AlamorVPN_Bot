@@ -15,7 +15,6 @@ from keyboards import inline_keyboards
 from utils.config_generator import ConfigGenerator
 from utils.helpers import is_float_or_int , escape_markdown_v1
 from config import ZARINPAL_MERCHANT_ID, WEBHOOK_DOMAIN , ZARINPAL_SANDBOX
-from main import send_welcome
 from utils.bot_helpers import send_subscription_info , finalize_profile_purchase
 
 logger = logging.getLogger(__name__)
