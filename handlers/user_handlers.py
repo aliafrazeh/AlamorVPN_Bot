@@ -330,9 +330,11 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _bot.edit_message_text(messages.NO_ACTIVE_PAYMENT_GATEWAYS, user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("show_order_summary"))
             return
         
+        # --- این خط جدید را برای دیباگ اضافه کنید ---
+        logger.info(f"DEBUG_WALLET: User={user_id}, Balance={wallet_balance}, OrderPrice={order_price}, OrderData={_user_states[user_id]['data']}")
+        
         markup = inline_keyboards.get_payment_gateway_selection_menu(active_gateways, wallet_balance, order_price)
         _bot.edit_message_text(messages.SELECT_PAYMENT_GATEWAY_PROMPT, user_id, message.message_id, reply_markup=markup)
-
     def select_payment_gateway(user_id, gateway_id, message):
         gateway = _db_manager.get_payment_gateway_by_id(gateway_id)
         if not gateway:
