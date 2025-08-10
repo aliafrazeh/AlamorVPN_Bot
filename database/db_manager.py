@@ -151,9 +151,6 @@ class DatabaseManager:
                 is_active BOOLEAN DEFAULT TRUE,
                 UNIQUE (server_id, inbound_id)
             )
-            """,
-            "DROP TABLE IF EXISTS profile_inbounds CASCADE;",
-            """
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
                 profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -1384,19 +1381,85 @@ class DatabaseManager:
         
     def run_migrations(self):
         """
-        تغییرات لازم در ساختار دیتابیس را به صورت خودکار اعمال می‌کند.
-        این تابع برای اجرای چندباره ایمن است.
+        تغییرات لازم در ساختار دیتابیس را به صورت خودکار اعمال می‌کند. (نسخه نهایی)
         """
         logging.info("Checking for necessary database migrations...")
         
+        # لیست کامل دستورات SQL برای ساخت یا آپدیت جداول
         migrations = [
-            # افزودن ستون برای کیف پول و احراز هویت کاربران
+            # --- جداول پایه ---
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT UNIQUE NOT NULL,
+                first_name TEXT,
+                last_name TEXT,
+                username TEXT,
+                is_admin BOOLEAN DEFAULT FALSE,
+                join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                balance REAL DEFAULT 0.0,
+                is_verified BOOLEAN DEFAULT FALSE
+            );
+            """,
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);",
+            """
+            CREATE TABLE IF NOT EXISTS servers (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, panel_type TEXT NOT NULL DEFAULT 'x-ui',
+                panel_url TEXT NOT NULL, username TEXT NOT NULL, password TEXT NOT NULL,
+                subscription_base_url TEXT NOT NULL, subscription_path_prefix TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE, last_checked TIMESTAMPTZ, is_online BOOLEAN DEFAULT FALSE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS plans (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, plan_type TEXT NOT NULL,
+                volume_gb REAL, duration_days INTEGER, price REAL, per_gb_price REAL,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profiles (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, per_gb_price REAL NOT NULL,
+                duration_days INTEGER NOT NULL, description TEXT, is_active BOOLEAN DEFAULT TRUE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS config_domains (
+                id SERIAL PRIMARY KEY, domain_name TEXT UNIQUE NOT NULL, is_active BOOLEAN DEFAULT FALSE
+            );
+            """,
+            # --- جداول وابسته با ستون‌های جدید ---
+            """
+            CREATE TABLE IF NOT EXISTS server_inbounds (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                config_params JSONB,
+                raw_template TEXT,
+                UNIQUE (server_id, inbound_id)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profile_inbounds (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                config_params JSONB,
+                raw_template TEXT,
+                UNIQUE (profile_id, server_id, inbound_id)
+            );
+            """,
+            # --- دستورات ALTER برای کاربرانی که از نسخه‌های قدیمی‌تر آپدیت می‌کنند ---
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance REAL DEFAULT 0.0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
-            
-            # افزودن ستون برای الگوهای کانفیگ
-      
-            
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
         ]
         
         conn = None
@@ -1414,8 +1477,6 @@ class DatabaseManager:
         finally:
             if conn:
                 conn.close()
-                
-                
     def add_to_user_balance(self, user_id: int, amount: float):
         """مبلغ مشخص شده را به موجودی کیف پول کاربر اضافه می‌کند."""
         sql = "UPDATE users SET balance = balance + %s WHERE id = %s;"
