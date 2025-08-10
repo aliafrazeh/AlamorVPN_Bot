@@ -480,6 +480,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state_info = _admin_states.get(admin_id, {})
 
         actions = {
+            "admin_message_management": lambda a_id, msg: show_message_management_menu(a_id, msg, page=1),
             "admin_main_menu": lambda a_id, msg: (_clear_admin_state(a_id), _show_admin_main_menu(a_id, msg)),
             "admin_server_management": _show_server_management_menu,
             "admin_plan_management": lambda a_id, msg: (_clear_admin_state(a_id), _show_plan_management_menu(a_id, msg)),
