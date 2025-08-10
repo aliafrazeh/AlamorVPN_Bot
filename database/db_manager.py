@@ -1441,6 +1441,12 @@ class DatabaseManager:
             );
             """,
             """
+            CREATE TABLE IF NOT EXISTS bot_messages (
+                message_key TEXT PRIMARY KEY,
+                message_text TEXT
+            );
+            """,
+            """
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
                 profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
