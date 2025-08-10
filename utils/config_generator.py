@@ -68,7 +68,7 @@ class ConfigGenerator:
                         flow = clients_settings[0].get('flow', '') if clients_settings else ''
                 except Exception: pass
 
-                # --- اصلاح اصلی: ساخت دیکشنری کامل و صحیح ---
+                # --- اصلاح اصلی: ساخت دیکشنری کامل ---
                 client_settings = {
                     "id": client_uuid,
                     "flow": flow,
@@ -81,12 +81,10 @@ class ConfigGenerator:
                     "reset": 0
                 }
                 
-                # --- اصلاح اصلی: حذف json.dumps و ارسال آبجکت تو در تو ---
+                # --- اصلاح اصلی: بازگرداندن json.dumps() ---
                 add_client_payload = {
                     "id": inbound_id,
-                    "settings": {
-                        "clients": [client_settings]
-                    }
+                    "settings": json.dumps({"clients": [client_settings]})
                 }
                 
                 if api_client.add_client(add_client_payload):
@@ -110,6 +108,7 @@ class ConfigGenerator:
                 all_final_configs.extend(user_configs_from_this_server)
             except Exception as e:
                 logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
+
 
         final_remarked_configs = []
         final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
