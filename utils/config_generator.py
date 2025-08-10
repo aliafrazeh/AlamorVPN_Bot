@@ -60,33 +60,13 @@ class ConfigGenerator:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
                 
-                flow = ""
-                try:
-                    inbound_details = api_client.get_inbound(inbound_id)
-                    if inbound_details:
-                        clients_settings = json.loads(inbound_details.get('settings', '{}')).get('clients', [{}])
-                        flow = clients_settings[0].get('flow', '') if clients_settings else ''
-                except Exception: pass
-
-                # --- اصلاح اصلی: ساخت دیکشنری کامل ---
                 client_settings = {
-                    "id": client_uuid,
-                    "flow": flow,
-                    "email": f"in{inbound_id}.{base_client_email}",
-                    "totalGB": total_traffic_bytes,
-                    "expiryTime": expiry_time_ms,
-                    "enable": True,
-                    "tgId": str(user_telegram_id),
-                    "subId": shared_sub_id,
-                    "reset": 0
+                    "id": client_uuid, "email": f"in{inbound_id}.{base_client_email}",
+                    "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
+                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id
                 }
                 
-                # --- اصلاح اصلی: بازگرداندن json.dumps() ---
-                add_client_payload = {
-                    "id": inbound_id,
-                    "settings": json.dumps({"clients": [client_settings]})
-                }
-                
+                add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}
                 if api_client.add_client(add_client_payload):
                     all_generated_uuids.append(client_uuid)
                     uuids_on_this_server.append(client_uuid)
@@ -102,13 +82,26 @@ class ConfigGenerator:
                 response = requests.get(panel_sub_url, timeout=20, verify=False)
                 response.raise_for_status()
                 
-                decoded_content = base64.b64decode(response.content).decode('utf-8')
-                user_configs_from_this_server = decoded_content.strip().split('\n')
+                # --- اصلاح اصلی و نهایی اینجاست ---
+                decoded_content = ""
+                try:
+                    # تلاش برای دیکود کردن به عنوان Base64 (برای پنل سنایی)
+                    decoded_content = base64.b64decode(response.content).decode('utf-8')
+                    logger.info(f"Successfully decoded Base64 subscription from server {server_data['name']}.")
+                except Exception:
+                    # اگر دیکود Base64 شکست خورد، فرض می‌کنیم متن خام است (برای پنل علیرضا)
+                    logger.info(f"Could not decode as Base64. Assuming plain text response from server {server_data['name']}.")
+                    decoded_content = response.text
+
+                all_configs_from_panel = decoded_content.strip().split('\n')
                 
+                user_configs_from_this_server = [
+                    config for config in all_configs_from_panel 
+                    if any(uuid in config for uuid in uuids_on_this_server)
+                ]
                 all_final_configs.extend(user_configs_from_this_server)
             except Exception as e:
                 logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
-
 
         final_remarked_configs = []
         final_remark_str = custom_remark or f"AlamorBot-{user_telegram_id}"
