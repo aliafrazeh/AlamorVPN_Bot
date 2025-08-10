@@ -1621,7 +1621,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.warning(f"Error updating profile inbound checklist: {e}")
 
     def execute_save_profile_inbounds(admin_id, message, profile_id, server_id):
-        """تغییرات چک‌لیست اینباندها را برای پروفایل ذخیره می‌کند."""
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
 
@@ -1629,8 +1628,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.answer_callback_query(message.id, "⏳ در حال ذخیره تغییرات...")
         except Exception: pass
 
-        # ما فقط لیست نهایی از state را می‌خوانیم و به دیتابیس ارسال می‌کنیم
         selected_ids = state_info['data']['selected_inbound_ids']
+        
+        # --- لاگ جدید و مهم ---
+        logger.info(f"ADMIN DEBUG: Saving to DB for profile_id={profile_id}, server_id={server_id}. Selected inbound_ids: {selected_ids}")
         
         if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
             pass # موفقیت آمیز بود
@@ -1944,3 +1945,27 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # از یک کیبورد جدید برای نمایش این اطلاعات استفاده خواهیم کرد
         markup = inline_keyboards.get_profile_template_management_menu(all_profile_inbounds)
         _show_menu(admin_id, "برای ثبت یا ویرایش الگوی یک اینباند در پروفایل، روی آن کلیک کنید:", markup, message)
+        
+        
+    def show_profile_inbounds_db_status(admin_id, message):
+        """محتوای جدول profile_inbounds را برای دیباگ نمایش می‌دهد."""
+        records = _db_manager.get_all_profile_inbounds_for_debug()
+        
+        if not records:
+            text = "جدول `profile_inbounds` در حال حاضر خالی است."
+        else:
+            text = "📄 **محتوای فعلی جدول `profile_inbounds`:**\n\n"
+            for rec in records:
+                text += (
+                    f"▫️ **پروفایل:** `{rec['profile_id']}` ({rec['profile_name']})\n"
+                    f"▫️ **سرور:** `{rec['server_id']}` ({rec['server_name']})\n"
+                    f"▫️ **اینباند:** `{rec['inbound_id']}`\n"
+                    "--------------------\n"
+                )
+                
+        _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
+
+    # این elif را به تابع handle_admin_callbacks اضافه کنید
+            elif data == "admin_view_profile_db":
+                show_profile_inbounds_db_status(admin_id, message)
+                return

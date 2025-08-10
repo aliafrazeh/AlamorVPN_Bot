@@ -23,6 +23,8 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("🔑 مدیریت ادمین‌ها", callback_data="admin_manage_admins"),
         types.InlineKeyboardButton("⚙️ بررسی Nginx", callback_data="admin_check_nginx"),
         types.InlineKeyboardButton("🩺 بررسی وضعیت سیستم", callback_data="admin_health_check"),
+        types.InlineKeyboardButton("👁️ مشاهده وضعیت DB", callback_data="admin_view_profile_db"),
+
         types.InlineKeyboardButton("⚙️ تنظیم وبهوک و دامنه", callback_data="admin_webhook_setup"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )

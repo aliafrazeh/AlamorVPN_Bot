@@ -152,6 +152,7 @@ class DatabaseManager:
                 UNIQUE (server_id, inbound_id)
             )
             """,
+            "DROP TABLE IF EXISTS profile_inbounds CASCADE;",
             """
             CREATE TABLE IF NOT EXISTS profile_inbounds (
                 id SERIAL PRIMARY KEY,
@@ -1475,3 +1476,25 @@ class DatabaseManager:
         except psycopg2.Error as e:
             logger.error(f"Error updating profile inbound template for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
             return False
+        
+        
+    def get_all_profile_inbounds_for_debug(self):
+        """تمام رکوردهای جدول profile_inbounds را با نام‌های خوانا برمی‌گرداند."""
+        sql = """
+            SELECT 
+                pi.profile_id, p.name as profile_name,
+                pi.server_id, s.name as server_name,
+                pi.inbound_id
+            FROM profile_inbounds pi
+            JOIN profiles p ON pi.profile_id = p.id
+            JOIN servers s ON pi.server_id = s.id
+            ORDER BY pi.profile_id, pi.server_id, pi.inbound_id;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profile inbounds for debug: {e}")
+            return []
