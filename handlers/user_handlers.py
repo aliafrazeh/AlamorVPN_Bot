@@ -848,7 +848,12 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _bot.edit_message_text(f"{messages.INVALID_NUMBER_INPUT}\n\n{messages.ENTER_PROFILE_GIGABYTES_PROMPT}", user_id, state_data['prompt_message_id'])
             return
                 
+        # --- اصلاح اصلی اینجاست ---
+        # ما purchase_type را به درستی در state ذخیره می‌کنیم
+        state_data['data']['purchase_type'] = 'profile'
         state_data['data']['requested_gb'] = float(message.text)
+        
+        # حالا به سراغ نمایش خلاصه سفارش می‌رویم
         show_order_summary(user_id, message)
         
         
