@@ -706,7 +706,7 @@ class DatabaseManager:
                 cur.execute(sql, (user_id, server_id, plan_id, expire_date, initial_volume_gb, client_uuids_str, client_email, sub_id, single_configs_json, profile_id))
                 purchase_id = cur.fetchone()[0]
                 conn.commit()
-                return purchase_id
+                return purchase_id  
         except psycopg2.Error as e:
             logger.error(f"Error adding purchase for user {user_id}: {e}")
             if conn: conn.rollback()
