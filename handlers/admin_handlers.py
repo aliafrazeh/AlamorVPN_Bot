@@ -366,7 +366,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در حذف ادمین خطایی رخ داد.")
             _clear_admin_state(admin_id)
             _show_admin_management_menu(admin_id, message)
-
+        # --- Branding Settings Flows ---
+        elif state == 'waiting_for_brand_name':
+            new_brand_name = message.text.strip()
+            # یک اعتبارسنجی ساده برای اطمینان از اینکه نام مناسب است
+            if not new_brand_name.isalnum():
+                _bot.send_message(admin_id, "نام برند نامعتبر است. لطفاً فقط از حروف و اعداد انگلیسی بدون فاصله استفاده کنید.")
+                return
+            
+            _db_manager.update_setting('brand_name', new_brand_name)
+            _bot.edit_message_text(f"✅ نام برند با موفقیت به **{new_brand_name}** تغییر کرد.", admin_id, state_info['prompt_message_id'])
+            _clear_admin_state(admin_id)
+            # نمایش مجدد منو با نام جدید
+            show_branding_settings_menu(admin_id, message)
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -512,7 +524,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             context = {'type': 'server', 'server_id': server_id, 'server_name': server_data['name']}
             start_sample_config_flow(admin_id, message, [inbound_info], context)
             return
-        
+        # --- مدیریت برندینگ ---
+        elif data == "admin_branding_settings":
+            show_branding_settings_menu(admin_id, message)
+            return
+        elif data == "admin_change_brand_name":
+            start_change_brand_name_flow(admin_id, message)
+            return
         # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)
@@ -1968,3 +1986,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_profile_management"), message)
 
    
+    def show_branding_settings_menu(admin_id, message):
+        """منوی تنظیمات برندینگ را نمایش می‌دهد."""
+        brand_name = _db_manager.get_setting('brand_name') or "Alamor" # نام پیش‌فرض
+        text = (
+            f"🎨 **تنظیمات برندینگ**\n\n"
+            f"نام برند فعلی شما: **{brand_name}**\n\n"
+            f"این نام در ایمیل و remark کانفیگ‌ها استفاده خواهد شد."
+        )
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✏️ تغییر نام برند", callback_data="admin_change_brand_name"))
+        markup.add(inline_keyboards.get_back_button("admin_main_menu").keyboard[0][0])
+        _show_menu(admin_id, text, markup, message, parse_mode='Markdown')
+
+    def start_change_brand_name_flow(admin_id, message):
+        """فرآیند درخواست نام جدید برند را شروع می‌کند."""
+        _clear_admin_state(admin_id)
+        prompt = _show_menu(admin_id, "لطفاً نام برند جدید را وارد کنید (فقط حروف و اعداد انگلیسی، بدون فاصله):", inline_keyboards.get_back_button("admin_branding_settings"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_brand_name', 'prompt_message_id': prompt.message_id}
