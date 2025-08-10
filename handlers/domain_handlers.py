@@ -49,22 +49,30 @@ def show_domain_management_menu(admin_id, message=None):
         domains_with_status.append(domain_dict)
     markup = inline_keyboards.get_domain_management_menu(domains_with_status)
     _show_menu(admin_id, "🌐 در این بخش می‌توانید دامنه‌های ضد فیلتر را برای لینک‌های اشتراک مدیریت کنید.", markup, message)
-
 def start_add_domain_flow(admin_id, message):
     _clear_admin_state(admin_id)
     prompt = _show_menu(admin_id, messages.ADD_DOMAIN_PROMPT, inline_keyboards.get_back_button("admin_domain_management"), message)
     _admin_states[admin_id] = {'state': 'waiting_for_domain_name', 'data': {}, 'prompt_message_id': prompt.message_id}
 
 def execute_delete_domain(admin_id, message, domain_id):
+    """Executes the main logic for deleting a domain from the system and database."""
     domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
     if not domain:
-        show_domain_management_menu(admin_id, message)
+        _bot.answer_callback_query(message.id, "Domain not found.", show_alert=True)
         return
+
+    # --- THE FIX IS HERE ---
+    # Immediately respond to the click before performing slow operations
+    _bot.answer_callback_query(message.id, f"⏳ Deleting domain {domain['domain_name']}...")
+
     domain_name = domain['domain_name']
+    
+    # Now, perform the time-consuming tasks
     remove_domain_nginx_files(domain_name)
     _db_manager.delete_subscription_domain(domain_id)
+    
+    # Finally, show the updated menu
     show_domain_management_menu(admin_id, message)
-
 def start_webhook_setup_flow(admin_id, message):
     """فرآیند تنظیم دامنه وبهوک را شروع می‌کند."""
     _clear_admin_state(admin_id)

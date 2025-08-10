@@ -1743,25 +1743,24 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         
     def execute_delete_domain(admin_id, message, domain_id):
-        """منطق اصلی حذف دامنه از سیستم و دیتابیس را اجرا می‌کند."""
+        """Executes the main logic for deleting a domain from the system and database."""
         domain = next((d for d in _db_manager.get_all_subscription_domains() if d['id'] == domain_id), None)
         if not domain:
-            _bot.answer_callback_query(message.id, "دامنه یافت نشد.", show_alert=True)
+            _bot.answer_callback_query(message.id, "Domain not found.", show_alert=True)
             return
 
-        # --- اصلاح اصلی اینجاست ---
-        # ابتدا بلافاصله به کلیک پاسخ می‌دهیم
-        _bot.answer_callback_query(message.id, f"⏳ در حال حذف دامنه {domain['domain_name']}...")
+        # --- THE FIX IS HERE ---
+        # Immediately respond to the click before performing slow operations
+        _bot.answer_callback_query(message.id, f"⏳ Deleting domain {domain['domain_name']}...")
 
         domain_name = domain['domain_name']
         
-        # سپس عملیات زمان‌بر را انجام می‌دهیم
+        # Now, perform the time-consuming tasks
         remove_domain_nginx_files(domain_name)
         _db_manager.delete_subscription_domain(domain_id)
         
-        # در نهایت، منوی به‌روز شده را نمایش می‌دهیم
+        # Finally, show the updated menu
         show_domain_management_menu(admin_id, message)
-            
     def _show_admin_management_menu(admin_id, message):
         admins = _db_manager.get_all_admins()
         admin_list = "\n".join([f"- `{admin['telegram_id']}` ({admin['first_name']})" for admin in admins])
@@ -2001,3 +2000,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(admin_id)
         prompt = _show_menu(admin_id, "لطفاً نام برند جدید را وارد کنید (فقط حروف و اعداد انگلیسی، بدون فاصله):", inline_keyboards.get_back_button("admin_branding_settings"), message)
         _admin_states[admin_id] = {'state': 'waiting_for_brand_name', 'prompt_message_id': prompt.message_id}
+        
+        
+    
