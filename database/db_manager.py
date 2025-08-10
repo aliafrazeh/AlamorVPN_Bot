@@ -1442,17 +1442,6 @@ class DatabaseManager:
                 UNIQUE (server_id, inbound_id)
             );
             """,
-            """
-            CREATE TABLE IF NOT EXISTS profile_inbounds (
-                id SERIAL PRIMARY KEY,
-                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                inbound_id INTEGER NOT NULL,
-                config_params JSONB,
-                raw_template TEXT,
-                UNIQUE (profile_id, server_id, inbound_id)
-            );
-            """,
             # --- دستورات ALTER برای کاربرانی که از نسخه‌های قدیمی‌تر آپدیت می‌کنند ---
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance REAL DEFAULT 0.0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
