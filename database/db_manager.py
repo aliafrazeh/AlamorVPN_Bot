@@ -1571,3 +1571,16 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating bot message for key {message_key}: {e}")
             return False
+        
+        
+    def get_all_bot_messages(self):
+        """Fetches all message keys and texts from the database."""
+        sql = "SELECT message_key, message_text FROM bot_messages ORDER BY message_key;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(sql)
+                    return [dict(row) for row in cur.fetchall()]
+        except Exception as e:
+            logger.error(f"Error getting all bot messages: {e}")
+            return []
