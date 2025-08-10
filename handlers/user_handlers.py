@@ -688,8 +688,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         
     def process_custom_config_name(message):
         """
-        نام دلخواه را پردازش کرده، با استفاده از ConfigGenerator جدید کانفیگ را ساخته،
-        خرید را ثبت کرده و لینک اشتراک هوشمند را تحویل می‌دهد. (نسخه نهایی)
+        نام دلخواه را پردازش کرده، کانفیگ را ساخته، خرید را ثبت کرده و لینک را تحویل می‌دهد. (نسخه نهایی)
         """
         user_id = message.from_user.id
         state_info = _user_states.get(user_id, {})
@@ -717,7 +716,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             duration_days = gb_plan.get('duration_days', 0)
             plan_id = gb_plan.get('id')
         
-        # --- اصلاح اصلی اینجاست: استفاده از متد جدید ConfigGenerator ---
         config_gen = ConfigGenerator(_db_manager)
         generated_configs, client_details = config_gen.create_subscription_for_server(
             user_telegram_id=user_id,
@@ -735,33 +733,34 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
         expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
         
-        # ساخت شناسه اشتراک هوشمند جدید
         new_sub_id = str(uuid.uuid4().hex)
 
-        # ثبت خرید در دیتابیس با پارامترهای جدید
+        # --- اصلاح اصلی اینجاست ---
+        # نام پارامتر به 'single_configs_json' تغییر کرد
         _db_manager.add_purchase(
             user_id=user_db_info['id'],
             server_id=server_id,
             plan_id=plan_id,
-            profile_id=None, # این یک خرید عادی است نه پروفایل
+            profile_id=None,
             expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
             initial_volume_gb=total_gb,
-            client_uuids=client_details['uuids'], # ارسال لیست UUID ها
+            client_uuids=client_details['uuids'],
             client_email=client_details['email'],
             sub_id=new_sub_id,
-            single_configs=generated_configs
+            single_configs_json=json.dumps(generated_configs)
         )
 
         _bot.delete_message(user_id, prompt_id)
         _bot.send_message(user_id, messages.SERVICE_ACTIVATION_SUCCESS_USER)
         
-        # ساخت و ارسال لینک اشتراک هوشمند
-        active_domain = _db_manager.get_active_subscription_domain()
+        active_domain_record = _db_manager.get_active_subscription_domain()
+        active_domain = active_domain_record['domain_name'] if active_domain_record else os.getenv("WEBHOOK_DOMAIN")
+
         if not active_domain:
             _bot.send_message(user_id, "❌ دامنه فعالی برای لینک اشتراک تنظیم نشده است. لطفاً به پشتیبانی اطلاع دهید.")
             return
 
-        final_sub_link = f"https://{active_domain['domain_name']}/sub/{new_sub_id}"
+        final_sub_link = f"https://{active_domain}/sub/{new_sub_id}"
         send_subscription_info(_bot, user_id, final_sub_link)
         
         _clear_user_state(user_id)
