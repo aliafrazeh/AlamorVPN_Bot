@@ -1621,14 +1621,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state_info = _admin_states.get(admin_id)
         if not state_info or state_info.get('state') != 'selecting_inbounds_for_profile': return
             
+        # --- THE FIX IS HERE ---
+        # Answer the query immediately before doing database work
+        try:
+            _bot.answer_callback_query(message.id, "⏳ در حال ذخیره تغییرات...")
+        except Exception as e:
+            logger.warning(f"Could not answer callback query: {e}")
+
         selected_ids = state_info['data']['selected_inbound_ids']
         
         if _db_manager.update_inbounds_for_profile(profile_id, server_id, selected_ids):
-             _bot.answer_callback_query(message.id, "✅ تغییرات با موفقیت ذخیره شد.")
+             # After success, we can edit the message to show the final menu
+             pass # No need for a second answer_callback_query
         else:
             _bot.send_message(admin_id, "❌ خطایی در ذخیره تغییرات در دیتابیس رخ داد.")
 
         _clear_admin_state(admin_id)
+        # Show the profile management menu again after the operation is complete
         _show_profile_management_menu(admin_id, message)
     def start_sync_configs_flow(admin_id, message):
         """
