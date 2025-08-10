@@ -27,7 +27,10 @@ class ConfigGenerator:
         return self._build_configs(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def create_subscription_for_server(self, user_telegram_id: int, server_id: int, total_gb: float, duration_days: int, custom_remark: str = None):
-        inbounds = self.db_manager.get_active_inbounds_for_server(server_id)
+        # --- اصلاح اصلی اینجاست ---
+        # نام تابع اشتباه به نام صحیح تغییر کرد
+        inbounds = self.db_manager.get_active_inbounds_for_server_with_template(server_id)
+        
         return self._build_configs(user_telegram_id, inbounds, total_gb, duration_days, custom_remark)
 
     def _build_configs(self, user_telegram_id: int, inbounds_list: list, total_gb: float, duration_days: int, custom_remark: str = None):
