@@ -1749,22 +1749,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.answer_callback_query(message.id, "دامنه یافت نشد.", show_alert=True)
             return
 
+        # --- اصلاح اصلی اینجاست ---
+        # ابتدا بلافاصله به کلیک پاسخ می‌دهیم
+        _bot.answer_callback_query(message.id, f"⏳ در حال حذف دامنه {domain['domain_name']}...")
+
         domain_name = domain['domain_name']
         
-        # حذف فایل‌های سیستمی
+        # سپس عملیات زمان‌بر را انجام می‌دهیم
         remove_domain_nginx_files(domain_name)
+        _db_manager.delete_subscription_domain(domain_id)
         
-        # حذف از دیتابیس
-        if _db_manager.delete_subscription_domain(domain_id):
-            _bot.answer_callback_query(message.id, f"دامنه {domain_name} با موفقیت حذف شد.")
-        else:
-            _bot.answer_callback_query(message.id, "خطا در حذف دامنه از دیتابیس.", show_alert=True)
-            
-        # نمایش مجدد منوی مدیریت دامنه‌ها
-        from .domain_handlers import show_domain_management_menu # ایمپورت محلی برای جلوگیری از خطا
+        # در نهایت، منوی به‌روز شده را نمایش می‌دهیم
         show_domain_management_menu(admin_id, message)
-        
-        
+            
     def _show_admin_management_menu(admin_id, message):
         admins = _db_manager.get_all_admins()
         admin_list = "\n".join([f"- `{admin['telegram_id']}` ({admin['first_name']})" for admin in admins])
