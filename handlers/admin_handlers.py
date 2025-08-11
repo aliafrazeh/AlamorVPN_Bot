@@ -618,8 +618,32 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             message_key = data.replace("admin_edit_msg_", "", 1)
             start_edit_message_flow(admin_id, message, message_key)
             return
+        elif data.startswith("admin_view_subs_"):
+            target_user_id = int(data.split('_')[-1])
+            purchases = _db_manager.get_user_purchases_by_telegram_id(target_user_id)
+            user_info = _db_manager.get_user_by_telegram_id(target_user_id)
+            first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
 
-        # --- مدیریت الگوهای پروفایل ---
+            text = f"🗂️ **لیست اشتراک‌های کاربر {first_name}:**\n\n"
+            if not purchases:
+                text += "این کاربر هیچ اشتراکی ندارد."
+            else:
+                for p in purchases:
+                    status = "✅ فعال" if p['is_active'] else "❌ غیرفعال"
+                    expire = p['expire_date'].strftime('%Y-%m-%d') if p.get('expire_date') else "نامحدود"
+                    server_name = helpers.escape_markdown_v1(p.get('server_name', 'N/A'))
+
+                    text += (
+                        f"{status} **سرویس ID:** `{p['id']}`\n"
+                        f"   - **سرور:** {server_name}\n"
+                        f"   - **تاریخ انقضا:** {expire}\n"
+                        "--------------------\n"
+                    )
+
+            markup = inline_keyboards.get_admin_subs_list_menu(target_user_id)
+            _bot.edit_message_text(text, admin_id, message.message_id, reply_markup=markup, parse_mode='Markdown')
+            return
+                # --- مدیریت الگوهای پروفایل ---
         elif data == "admin_manage_profile_templates":
             show_profile_template_management_menu(admin_id, message)
             return

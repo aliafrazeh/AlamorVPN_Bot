@@ -587,3 +587,12 @@ def get_change_role_menu(user_telegram_id):
     # ما یک callback جدید برای این کار تعریف می‌کنیم
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_manage_user_{user_telegram_id}"))
     return markup
+
+def get_admin_subs_list_menu(user_telegram_id):
+    """یک دکمه بازگشت به پنل مدیریت کاربر خاص ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "🔙 بازگشت به پنل کاربر", 
+        callback_data=f"admin_manage_user_{user_telegram_id}"
+    ))
+    return markup

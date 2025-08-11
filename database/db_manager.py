@@ -1691,3 +1691,5 @@ class DatabaseManager:
             return False
         finally:
             if conn: conn.close()
+            
+    
