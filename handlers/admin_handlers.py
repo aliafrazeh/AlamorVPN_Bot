@@ -226,8 +226,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         state_info['prompt_message_id'] = message.message_id
     def _handle_stateful_message(admin_id, message):
+        # === منطق جدید و هوشمند حذف پیام ===
         state_info = _admin_states.get(admin_id, {})
         state = state_info.get("state")
+        states_to_preserve_message = ['waiting_for_broadcast_message', 'waiting_for_tutorial_forward']
+        
+        if state not in states_to_preserve_message:
+            try:
+                # فقط در صورتی پیام را حذف کن که برای broadcast یا tutorial نباشد
+                _bot.delete_message(admin_id, message.message_id)
+            except Exception:
+                pass
+    # === پایان منطق جدید ===
+        
         prompt_id = state_info.get("prompt_message_id")
         data = state_info.get("data", {})
         text = message.text.strip()
@@ -824,15 +835,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         )
     def handle_admin_stateful_messages(message):
         admin_id = message.from_user.id
-    
-        # حذف پیام ورودی ادمین برای تمیز ماندن چت
-        try:
-            if message.content_type == 'text':
-                _bot.delete_message(admin_id, message.message_id)
-        except Exception:
-            pass
-
-        # فراخوانی تابع اصلی که منطق را پردازش می‌کند
+        # منطق حذف پیام از اینجا حذف می‌شود
         _handle_stateful_message(admin_id, message)
         
         
