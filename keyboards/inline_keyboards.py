@@ -20,13 +20,13 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("📞 مدیریت پشتیبانی", callback_data="admin_support_management"),
         types.InlineKeyboardButton("🗂️ مدیریت پروفایل‌ها", callback_data="admin_profile_management"),
         types.InlineKeyboardButton("🌐 مدیریت دامنه‌ها", callback_data="admin_domain_management"),
-        types.InlineKeyboardButton("🔑 مدیریت ادمین‌ها", callback_data="admin_manage_admins"),
         types.InlineKeyboardButton("⚙️ بررسی Nginx", callback_data="admin_check_nginx"),
         types.InlineKeyboardButton("🩺 بررسی وضعیت سیستم", callback_data="admin_health_check"),
         types.InlineKeyboardButton("👁️ مشاهده وضعیت DB", callback_data="admin_view_profile_db"),
         types.InlineKeyboardButton("🎨 تنظیمات برندینگ", callback_data="admin_branding_settings"),
         types.InlineKeyboardButton("✍️ مدیریت پیام‌ها", callback_data="admin_message_management"),
         types.InlineKeyboardButton("⚙️ تنظیم وبهوک و دامنه", callback_data="admin_webhook_setup"),
+        types.InlineKeyboardButton("📣 ارسال پیام همگانی", callback_data="admin_broadcast"),
         types.InlineKeyboardButton("🗄 تهیه نسخه پشتیبان", callback_data="admin_create_backup")
     )
     return markup
@@ -595,4 +595,14 @@ def get_admin_subs_list_menu(user_telegram_id):
         "🔙 بازگشت به پنل کاربر", 
         callback_data=f"admin_manage_user_{user_telegram_id}"
     ))
+    return markup
+
+
+def get_broadcast_confirmation_menu():
+    """کیبورد تایید نهایی برای ارسال پیام همگانی را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ ارسال نهایی", callback_data="admin_confirm_broadcast"),
+        types.InlineKeyboardButton("❌ انصراف", callback_data="admin_cancel_broadcast")
+    )
     return markup

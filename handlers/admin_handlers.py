@@ -452,7 +452,29 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.error(f"Error adjusting balance for user {target_telegram_id}: {e}")
                 _bot.send_message(admin_id, "❌ خطایی در پردازش مبلغ رخ داد.")
                 _clear_admin_state(admin_id)
+        elif state == 'waiting_for_broadcast_message':
+            # اول دستور کنسل را چک می‌کنیم
+            if message.text and message.text.lower() == '/cancel':
+                _bot.delete_message(admin_id, message.message_id)
+                _bot.edit_message_text("عملیات ارسال پیام همگانی لغو شد.", admin_id, state_info['prompt_message_id'])
+                _clear_admin_state(admin_id)
+                _show_admin_main_menu(admin_id)
+                return
 
+            # پیام ادمین را در state ذخیره می‌کنیم تا در مرحله بعد از آن استفاده کنیم
+            state_info['data']['broadcast_message_id'] = message.message_id
+            state_info['data']['broadcast_chat_id'] = message.chat.id
+            _clear_admin_state(admin_id) # وضعیت را پاک می‌کنیم چون منتظر کلیک هستیم
+
+            total_users = len(_db_manager.get_all_users())
+
+            # پیام ادمین را به خودش فوروارد می‌کنیم تا پیش‌نمایش را ببیند
+            _bot.send_message(admin_id, "👇 **این پیامی است که ارسال خواهد شد.** 👇")
+            _bot.forward_message(admin_id, from_chat_id=message.chat.id, message_id=message.message_id)
+
+            # پیام تاییدیه را ارسال می‌کنیم
+            confirmation_text = f"آیا از ارسال این پیام به **{total_users}** کاربر مطمئن هستید؟"
+            _bot.send_message(admin_id, confirmation_text, reply_markup=inline_keyboards.get_broadcast_confirmation_menu())
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -539,6 +561,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         state_info = _admin_states.get(admin_id, {})
 
         actions = {
+            "admin_broadcast": start_broadcast_flow,
             "admin_message_management": lambda a_id, msg: show_message_management_menu(a_id, msg, page=1),
             "admin_main_menu": lambda a_id, msg: (_clear_admin_state(a_id), _show_admin_main_menu(a_id, msg)),
             "admin_server_management": _show_server_management_menu,
@@ -2199,3 +2222,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             reply_markup=markup,
             parse_mode='Markdown'
         )
+        
+    def start_broadcast_flow(admin_id, message):
+        """فرآیند ارسال پیام همگانی را با درخواست پیام از ادمین شروع می‌کند."""
+        _clear_admin_state(admin_id)
+        prompt_text = (
+            "لطفاً پیامی که می‌خواهید به تمام کاربران ارسال شود را وارد کنید.\n\n"
+            "پیام شما می‌تواند شامل **متن، عکس، فیلم، فایل و...** باشد. "
+            "هرچه ارسال کنید، عیناً به کاربران فوروارد خواهد شد.\n\n"
+            "برای انصراف، /cancel را ارسال کنید."
+        )
+        prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_main_menu"), message)
+        _admin_states[admin_id] = {'state': 'waiting_for_broadcast_message', 'prompt_message_id': prompt.message_id}
