@@ -708,7 +708,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if data.startswith("admin_manage_user_"):
             target_user_id = int(data.split('_')[-1])
             # فراخوانی مستقیم تابع کمکی برای نمایش مجدد پنل
-            _show_user_management_panel(admin_id, target_user_id, message)
+            _show_user_management_panel(admin_id, target_user_id, message.message_id)
             return
 
         elif data.startswith("admin_change_role_"):
@@ -734,7 +734,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.answer_callback_query(call.id, "❌ خطایی در تغییر نقش رخ داد.", show_alert=True)
             
             # فراخوانی مستقیم تابع کمکی برای نمایش مجدد پنل با اطلاعات جدید
-            _show_user_management_panel(admin_id, target_user_id, message)
+            _show_user_management_panel(admin_id, target_user_id, message.message_id)
             return
         elif data.startswith("admin_adjust_balance_"):
             target_user_id = int(data.split('_')[-1])
@@ -2142,11 +2142,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             'data': {'message_key': message_key},
             'prompt_message_id': prompt.message_id
         }
-    def _show_user_management_panel(admin_id, target_user_id, message_to_edit):
-        """پنل مدیریت دقیق برای یک کاربر خاص را نمایش می‌دهد."""
+    def _show_user_management_panel(admin_id, target_user_id, message_id_to_edit):
+        """پنل مدیریت دقیق برای یک کاربر خاص را با استفاده از آیدی پیام نمایش می‌دهد."""
         user_info = _db_manager.get_user_by_telegram_id(target_user_id)
         if not user_info:
-            _bot.edit_message_text(messages.USER_NOT_FOUND, admin_id, message_to_edit.message_id)
+            _bot.edit_message_text(messages.USER_NOT_FOUND, admin_id, message_id_to_edit)
             return
 
         # نمایش اطلاعات کاربر
@@ -2169,7 +2169,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(
             user_details_text,
             admin_id,
-            message_to_edit.message_id,
+            message_id_to_edit,  # مستقیماً از آیدی عددی استفاده می‌کنیم
             reply_markup=markup,
             parse_mode='Markdown'
         )
