@@ -1227,11 +1227,12 @@ class DatabaseManager:
             if conn: conn.close()
 
     def get_all_admins(self):
-        """لیست تمام کاربرانی که ادمین هستند را برمی‌گرداند."""
+        """لیست تمام کاربرانی که نقش ادمین دارند را برمی‌گرداند."""
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT * FROM users WHERE is_admin = TRUE")
+                # شرط را از is_admin = TRUE به role = 'admin' تغییر می‌دهیم
+                cur.execute("SELECT * FROM users WHERE role = 'admin'")
                 return cur.fetchall()
         except psycopg2.Error as e:
             logger.error(f"Error getting all admins: {e}")
@@ -1673,3 +1674,20 @@ class DatabaseManager:
                 cur.execute(sql, (new_text, message_key))
                 conn.commit()
                 return cur.rowcount > 0
+            
+            
+    def set_user_role(self, telegram_id, role):
+        """نقش یک کاربر را تغییر می‌دهد (مثلا به 'user', 'admin', 'reseller')."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # به جای مقدار boolean، یک متن (role) را در دیتابیس آپدیت می‌کنیم
+                cur.execute("UPDATE users SET role = %s WHERE telegram_id = %s", (role, telegram_id))
+                conn.commit()
+                return cur.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error setting role for {telegram_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()

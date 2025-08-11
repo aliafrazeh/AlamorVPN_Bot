@@ -153,22 +153,31 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         else:
             total_users = len(users)
             text = f"👥 **لیست کاربران ربات (تعداد کل: {total_users} نفر):**\n\n"
-            
+
+            # یک دیکشنری برای نمایش زیبای نقش‌ها
+            role_map = {
+                'admin': '👑 مدیر',
+                'reseller': '🤝 نماینده',
+                'user': '👤 کاربر'
+            }
+
             for user in users:
-                # اطلاعات جدید را استخراج می‌کنیم
                 first_name = helpers.escape_markdown_v1(user.get('first_name', ''))
                 username = helpers.escape_markdown_v1(user.get('username', 'N/A'))
-                role = "👑 مدیر" if user.get('is_admin') else "👤 کاربر"
+
+                # خواندن نقش از ستون جدید 'role'
+                user_role_key = user.get('role', 'user')
+                role = role_map.get(user_role_key, '👤 کاربر')
+
                 balance = f"{user.get('balance', 0):,.0f} تومان"
-                
-                # متن هر کاربر را با جزئیات کامل می‌سازیم
+
                 text += (
                     f"**نام:** {first_name} (@{username})\n"
                     f"`ID: {user['telegram_id']}`\n"
                     f"**نقش:** {role} | **موجودی:** {balance}\n"
                     "-----------------------------------\n"
                 )
-        
+
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_user_management"), message)
 
     def test_all_servers(admin_id, message):
@@ -354,10 +363,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.send_message(admin_id, "آیدی نامعتبر است. لطفاً یک عدد وارد کنید.")
                 return
             target_user_id = int(text)
-            if _db_manager.set_user_admin_status(target_user_id, True):
-                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت به لیست ادمین‌ها اضافه شد.")
+            # از تابع جدید set_user_role استفاده می‌کنیم
+            if _db_manager.set_user_role(target_user_id, 'admin'):
+                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت به نقش «مدیر» ارتقا یافت.")
             else:
-                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در افزودن ادمین خطایی رخ داد.")
+                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در تغییر نقش خطایی رخ داد.")
             _clear_admin_state(admin_id)
             _show_admin_management_menu(admin_id, message)
 
@@ -367,12 +377,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 return
             target_user_id = int(text)
             if target_user_id == admin_id:
-                _bot.send_message(admin_id, "❌ شما نمی‌توانید خودتان را از لیست ادمین‌ها حذف کنید.")
+                _bot.send_message(admin_id, "❌ شما نمی‌توانید نقش خودتان را تغییر دهید.")
                 return
-            if _db_manager.set_user_admin_status(target_user_id, False):
-                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت از لیست ادمین‌ها حذف شد.")
+            # از تابع جدید set_user_role برای عادی کردن کاربر استفاده می‌کنیم
+            if _db_manager.set_user_role(target_user_id, 'user'):
+                _bot.send_message(admin_id, f"✅ کاربر با آیدی `{target_user_id}` با موفقیت به نقش «کاربر عادی» تغییر یافت.")
             else:
-                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در حذف ادمین خطایی رخ داد.")
+                _bot.send_message(admin_id, "❌ کاربر یافت نشد یا در تغییر نقش خطایی رخ داد.")
             _clear_admin_state(admin_id)
             _show_admin_management_menu(admin_id, message)
         # --- Branding Settings Flows ---
