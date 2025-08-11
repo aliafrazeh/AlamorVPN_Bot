@@ -619,7 +619,56 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if data in actions:
             actions[data](admin_id, message)
             return
+        # --- Broadcast Confirmation Logic ---
+        if data == "admin_cancel_broadcast":
+            _clear_admin_state(admin_id)
+            _bot.edit_message_text("عملیات ارسال پیام همگانی لغو شد.", admin_id, message.message_id)
+            _show_admin_main_menu(admin_id)
+            return
 
+        elif data == "admin_confirm_broadcast":
+            state_info = _admin_states.get(admin_id, {})
+            if state_info.get('state') != 'waiting_for_broadcast_confirmation':
+                _bot.answer_callback_query(call.id, "اطلاعات پیام یافت نشد. لطفاً دوباره تلاش کنید.", show_alert=True)
+                return
+
+            broadcast_message_id = state_info['data']['broadcast_message_id']
+            broadcast_chat_id = state_info['data']['broadcast_chat_id']
+            _clear_admin_state(admin_id)
+
+            all_users = _db_manager.get_all_users()
+            total_users = len(all_users)
+
+            _bot.edit_message_text(f"⏳ شروع ارسال پیام به **{total_users}** کاربر. این فرآیند ممکن است زمان‌بر باشد...", admin_id, message.message_id, parse_mode='Markdown')
+
+            successful_sends = 0
+            failed_sends = 0
+
+            for user in all_users:
+                try:
+                    _bot.forward_message(
+                        chat_id=user['telegram_id'],
+                        from_chat_id=broadcast_chat_id,
+                        message_id=broadcast_message_id
+                    )
+                    successful_sends += 1
+                except Exception as e:
+                    failed_sends += 1
+                    logger.error(f"Failed to send broadcast to user {user['telegram_id']}: {e}")
+
+                # برای جلوگیری از محدودیت تلگرام، می‌توان یک تاخیر کوتاه اضافه کرد
+                # import time
+                # time.sleep(0.1)
+
+            report_text = (
+                f"📣 **گزارش نهایی ارسال پیام همگانی**\n\n"
+                f"✅ تعداد ارسال موفق: **{successful_sends}**\n"
+                f"❌ تعداد ارسال ناموفق: **{failed_sends}**\n"
+                f"👥 تعداد کل کاربران: **{total_users}**"
+            )
+            _bot.send_message(admin_id, report_text, parse_mode='Markdown')
+            _show_admin_main_menu(admin_id) # نمایش مجدد منوی اصلی
+            return
         # --- مدیریت الگوهای سرور ---
         if data == "admin_manage_templates":
             show_template_management_menu(admin_id, message)
