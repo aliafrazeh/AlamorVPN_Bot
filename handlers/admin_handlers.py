@@ -2233,4 +2233,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "برای انصراف، /cancel را ارسال کنید."
         )
         prompt = _show_menu(admin_id, prompt_text, inline_keyboards.get_back_button("admin_main_menu"), message)
-        _admin_states[admin_id] = {'state': 'waiting_for_broadcast_message', 'prompt_message_id': prompt.message_id}
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_broadcast_message',
+            'data': {},  # <-- این خط مشکل را برطرف می‌کند
+            'prompt_message_id': prompt.message_id
+        }
