@@ -414,6 +414,43 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             _clear_admin_state(admin_id)
             show_message_management_menu(admin_id, message)
+        elif state == 'waiting_for_balance_adjustment':
+            text = message.text.strip()
+            target_telegram_id = state_info['data']['target_user_id']
+            prompt_id = state_info['prompt_message_id']
+
+            if text.lower() == 'cancel':
+                _bot.delete_message(admin_id, message.message_id)
+                _bot.answer_callback_query(call.id, "عملیات لغو شد.") # Assuming call object is available; might need adjustment
+                _clear_admin_state(admin_id)
+                _show_user_management_panel(admin_id, target_telegram_id, prompt_id)
+                return
+
+            if not (text.startswith('+') or text.startswith('-')) or not text[1:].isdigit():
+                _bot.send_message(admin_id, "فرمت ورودی نامعتبر است. لطفاً دوباره با فرمت صحیح (مثلا +50000) تلاش کنید.")
+                return
+
+            try:
+                amount = int(text)
+                user_info = _db_manager.get_user_by_telegram_id(target_telegram_id)
+                if not user_info:
+                    _bot.send_message(admin_id, "کاربر مورد نظر یافت نشد.")
+                    _clear_admin_state(admin_id)
+                    return
+
+                # از user_info['id'] که کلید اصلی دیتابیس است استفاده می‌کنیم
+                if _db_manager.add_to_user_balance(user_info['id'], float(amount)):
+                    _bot.send_message(admin_id, f"✅ موجودی کاربر با موفقیت به مقدار {amount:,.0f} تومان تغییر کرد.")
+                    _clear_admin_state(admin_id)
+                    _show_user_management_panel(admin_id, target_telegram_id, prompt_id)
+                else:
+                    _bot.send_message(admin_id, "❌ خطایی در به‌روزرسانی موجودی کاربر رخ داد.")
+                    _clear_admin_state(admin_id)
+            except Exception as e:
+                logger.error(f"Error adjusting balance for user {target_telegram_id}: {e}")
+                _bot.send_message(admin_id, "❌ خطایی در پردازش مبلغ رخ داد.")
+                _clear_admin_state(admin_id)
+
         # --- Other Flows ---
         elif state == 'waiting_for_server_id_for_inbounds':
             process_manage_inbounds_flow(admin_id, message)
@@ -698,6 +735,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             # فراخوانی مستقیم تابع کمکی برای نمایش مجدد پنل با اطلاعات جدید
             _show_user_management_panel(admin_id, target_user_id, message)
+            return
+        elif data.startswith("admin_adjust_balance_"):
+            target_user_id = int(data.split('_')[-1])
+            user_info = _db_manager.get_user_by_telegram_id(target_user_id)
+            first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
+
+            prompt_text = (
+                f"💰 **تنظیم موجودی برای:** {first_name}\n\n"
+                "لطفاً مبلغ مورد نظر برای افزایش یا کاهش را وارد کنید.\n\n"
+                "**مثال:**\n"
+                "برای افزایش 50,000 تومان: `+50000`\n"
+                "برای کاهش 10,000 تومان: `-10000`\n\n"
+                "برای انصراف، `cancel` را ارسال کنید."
+            )
+
+            # ما از message.message_id استفاده می‌کنیم چون prompt همان پیام قبلی است که ویرایش می‌شود
+            _bot.edit_message_text(
+                prompt_text,
+                admin_id,
+                message.message_id,
+                reply_markup=None, # کیبورد را حذف می‌کنیم تا ادمین پاسخ دهد
+                parse_mode='Markdown'
+            )
+
+            _admin_states[admin_id] = {
+                'state': 'waiting_for_balance_adjustment',
+                'data': {'target_user_id': target_user_id},
+                'prompt_message_id': message.message_id
+            }
             return
                 # اگر هیچکدام از موارد بالا نبود
         else:
