@@ -1514,6 +1514,8 @@ class DatabaseManager:
             "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;",
             "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
             "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';",
+            "UPDATE users SET role = 'admin' WHERE is_admin = TRUE;"
         ]
 
         conn = None
