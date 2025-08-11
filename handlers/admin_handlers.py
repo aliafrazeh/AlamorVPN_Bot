@@ -670,11 +670,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- مدیریت پنل کاربر خاص ---
         if data.startswith("admin_manage_user_"):
             target_user_id = int(data.split('_')[-1])
-            # با ارسال یک پیام ساختگی، پنل کاربر را مجددا نمایش می‌دهیم
-            mock_message = types.Message(message_id=message.message_id, chat=message.chat, date=None, content_type='text', options={}, json_string="")
-            mock_message.text = str(target_user_id)
-            _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
-            process_user_search(admin_id, mock_message)
+            # فراخوانی مستقیم تابع کمکی برای نمایش مجدد پنل
+            _show_user_management_panel(admin_id, target_user_id, message)
             return
 
         elif data.startswith("admin_change_role_"):
@@ -693,19 +690,15 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             parts = data.split('_')
             target_user_id = int(parts[3])
             new_role = parts[4]
-
+            
             if _db_manager.set_user_role(target_user_id, new_role):
                 _bot.answer_callback_query(call.id, f"✅ نقش کاربر به {new_role} تغییر یافت.")
             else:
                 _bot.answer_callback_query(call.id, "❌ خطایی در تغییر نقش رخ داد.", show_alert=True)
-
-            # پس از تغییر، پنل مدیریت کاربر را مجدداً نمایش می‌دهیم تا تغییرات دیده شود
-            mock_message = types.Message(message_id=message.message_id, chat=message.chat, date=None, content_type='text', options={}, json_string="")
-            mock_message.text = str(target_user_id)
-            _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
-            process_user_search(admin_id, mock_message)
+            
+            # فراخوانی مستقیم تابع کمکی برای نمایش مجدد پنل با اطلاعات جدید
+            _show_user_management_panel(admin_id, target_user_id, message)
             return
-
                 # اگر هیچکدام از موارد بالا نبود
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
@@ -1210,7 +1203,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': prompt.message_id}
 
     def process_user_search(admin_id, message):
-        """Processes the user ID, finds the user, and shows their management panel."""
+        """Processes the user ID from a message and shows their management panel."""
         state_info = _admin_states.get(admin_id, {})
         user_id_str = message.text.strip()
 
@@ -1218,42 +1211,12 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.send_message(admin_id, "آیدی وارد شده نامعتبر است. لطفاً یک عدد وارد کنید.")
             return
 
-        user_telegram_id = int(user_id_str)
-        user_info = _db_manager.get_user_by_telegram_id(user_telegram_id)
-
-        if not user_info:
-            _bot.edit_message_text(messages.USER_NOT_FOUND, admin_id, state_info['prompt_message_id'])
-            _clear_admin_state(admin_id)
-            return
-
-        # نمایش اطلاعات کاربر پیدا شده
-        role_map = {'admin': '👑 مدیر', 'reseller': '🤝 نماینده', 'user': '👤 کاربر'}
-        user_role_key = user_info.get('role', 'user')
-        role = role_map.get(user_role_key, '👤 کاربر')
-        balance = f"{user_info.get('balance', 0):,.0f} تومان"
-        first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
-
-        user_details_text = (
-            f"👤 **پنل مدیریت کاربر:** {first_name}\n\n"
-            f"`ID: {user_info['telegram_id']}`\n"
-            f"**نقش فعلی:** {role}\n"
-            f"**موجودی کیف پول:** {balance}\n\n"
-            "لطفاً عملیات مورد نظر را انتخاب کنید:"
-        )
-
-        # ساخت منوی مدیریت جدید برای این کاربر
-        markup = inline_keyboards.get_manage_user_menu(user_telegram_id)
-
-        _bot.edit_message_text(
-            user_details_text,
-            admin_id,
-            state_info['prompt_message_id'],
-            reply_markup=markup,
-            parse_mode='Markdown'
-        )
+        target_user_id = int(user_id_str)
+        
+        # به جای تکرار کد، تابع کمکی جدید را فراخوانی می‌کنیم
+        _show_user_management_panel(admin_id, target_user_id, state_info['prompt_message_id'])
+        
         _clear_admin_state(admin_id)
-        
-        
         
     def execute_delete_purchase(admin_id, message, purchase_id, user_telegram_id):
         """
@@ -2113,3 +2076,34 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             'data': {'message_key': message_key},
             'prompt_message_id': prompt.message_id
         }
+    def _show_user_management_panel(admin_id, target_user_id, message_to_edit):
+        """پنل مدیریت دقیق برای یک کاربر خاص را نمایش می‌دهد."""
+        user_info = _db_manager.get_user_by_telegram_id(target_user_id)
+        if not user_info:
+            _bot.edit_message_text(messages.USER_NOT_FOUND, admin_id, message_to_edit.message_id)
+            return
+
+        # نمایش اطلاعات کاربر
+        role_map = {'admin': '👑 مدیر', 'reseller': '🤝 نماینده', 'user': '👤 کاربر'}
+        user_role_key = user_info.get('role', 'user')
+        role = role_map.get(user_role_key, '👤 کاربر')
+        balance = f"{user_info.get('balance', 0):,.0f} تومان"
+        first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
+        
+        user_details_text = (
+            f"👤 **پنل مدیریت کاربر:** {first_name}\n\n"
+            f"`ID: {user_info['telegram_id']}`\n"
+            f"**نقش فعلی:** {role}\n"
+            f"**موجودی کیف پول:** {balance}\n\n"
+            "لطفاً عملیات مورد نظر را انتخاب کنید:"
+        )
+        
+        markup = inline_keyboards.get_manage_user_menu(target_user_id)
+        
+        _bot.edit_message_text(
+            user_details_text,
+            admin_id,
+            message_to_edit.message_id,
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
