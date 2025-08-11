@@ -819,9 +819,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(
-    content_types=['text'],
+    content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'sticker'],
     func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id, {}).get('state')
-            )
+        )
     def handle_admin_stateful_messages(message):
         admin_id = message.from_user.id
     
