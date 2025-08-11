@@ -418,11 +418,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             text = message.text.strip()
             target_telegram_id = state_info['data']['target_user_id']
             prompt_id = state_info['prompt_message_id']
-
+            
             if text.lower() == 'cancel':
                 _bot.delete_message(admin_id, message.message_id)
-                _bot.answer_callback_query(call.id, "عملیات لغو شد.") # Assuming call object is available; might need adjustment
+                # خطای قبلی اینجا بود، call.id در این تابع وجود ندارد
+                _bot.send_message(admin_id, "عملیات لغو شد.")
                 _clear_admin_state(admin_id)
+                # فراخوانی به تابع کمکی اکنون صحیح است چون prompt_id یک عدد است
                 _show_user_management_panel(admin_id, target_telegram_id, prompt_id)
                 return
 
@@ -437,10 +439,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     _bot.send_message(admin_id, "کاربر مورد نظر یافت نشد.")
                     _clear_admin_state(admin_id)
                     return
-
-                # از user_info['id'] که کلید اصلی دیتابیس است استفاده می‌کنیم
+                
                 if _db_manager.add_to_user_balance(user_info['id'], float(amount)):
-                    _bot.send_message(admin_id, f"✅ موجودی کاربر با موفقیت به مقدار {amount:,.0f} تومان تغییر کرد.")
+                    _bot.delete_message(admin_id, message.message_id)
+                    _bot.answer_callback_query(call.id, f"✅ موجودی کاربر با موفقیت به مقدار {amount:,.0f} تومان تغییر کرد.")
                     _clear_admin_state(admin_id)
                     _show_user_management_panel(admin_id, target_telegram_id, prompt_id)
                 else:
