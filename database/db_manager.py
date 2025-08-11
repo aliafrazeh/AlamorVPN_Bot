@@ -267,7 +267,8 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-                    cursor.execute("SELECT id, telegram_id, first_name, username, join_date FROM users ORDER BY id DESC")
+                    # ستون‌های is_admin و balance را به کوئری اضافه می‌کنیم
+                    cursor.execute("SELECT id, telegram_id, first_name, username, join_date, is_admin, balance FROM users ORDER BY id DESC")
                     return [dict(user) for user in cursor.fetchall()]
         except psycopg2.Error as e:
             logger.error(f"Error getting all users: {e}")

@@ -109,7 +109,9 @@ class ConfigGenerator:
                 logger.error(f"Error fetching/parsing panel subscription for server {server_id}: {e}")
 
         final_remarked_configs = []
-        final_remark_str = custom_remark or f"{brand_name}-{user_telegram_id}"
+        # کد اصلاح شده و دقیق‌تر
+        brand_name = self.db_manager.get_setting('brand_name') or "Alamor"
+        final_remark_str = custom_remark if custom_remark else f"{brand_name}-{user_telegram_id}"
         for config in all_final_configs:
             base_config = config.split('#', 1)[0]
             final_remarked_configs.append(f"{base_config}#{quote(final_remark_str)}")

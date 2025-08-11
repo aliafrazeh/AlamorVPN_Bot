@@ -62,8 +62,15 @@ def send_welcome(message):
     if helpers.is_admin(user_id):
         bot.send_message(user_id, messages.ADMIN_WELCOME, reply_markup=inline_keyboards.get_admin_main_inline_menu())
     else:
-        # We use the get_message helper to allow for dynamic messages in the future
-        welcome_text = helpers.get_message('START_WELCOME', first_name=helpers.escape_markdown_v1(first_name))
+        # نام برند را از دیتابیس می‌خوانیم و یک نام پیش‌فرض برای آن در نظر می‌گیریم
+        brand_name = db_manager.get_setting('brand_name') or "Alamor VPN"
+        
+        # نام برند را به تابع ارسال پیام اضافه می‌کنیم
+        welcome_text = helpers.get_message(
+            'START_WELCOME',
+            brand_name=helpers.escape_markdown_v1(brand_name),
+            first_name=helpers.escape_markdown_v1(first_name)
+        )
         user_menu_markup = inline_keyboards.get_user_main_inline_menu(support_link)
         bot.send_message(user_id, welcome_text, parse_mode='Markdown', reply_markup=user_menu_markup)
 

@@ -151,14 +151,23 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         if not users:
             text = messages.NO_USERS_FOUND
         else:
-            text = messages.LIST_USERS_HEADER
+            total_users = len(users)
+            text = f"👥 **لیست کاربران ربات (تعداد کل: {total_users} نفر):**\n\n"
+            
             for user in users:
-                # --- بخش اصلاح شده ---
-                # نام کاربری نیز escape می‌شود تا از خطا جلوگیری شود
-                username = helpers.escape_markdown_v1(user.get('username', 'N/A'))
+                # اطلاعات جدید را استخراج می‌کنیم
                 first_name = helpers.escape_markdown_v1(user.get('first_name', ''))
-                text += f"👤 `ID: {user['id']}` - **{first_name}** (@{username})\n"
-                # --- پایان بخش اصلاح شده ---
+                username = helpers.escape_markdown_v1(user.get('username', 'N/A'))
+                role = "👑 مدیر" if user.get('is_admin') else "👤 کاربر"
+                balance = f"{user.get('balance', 0):,.0f} تومان"
+                
+                # متن هر کاربر را با جزئیات کامل می‌سازیم
+                text += (
+                    f"**نام:** {first_name} (@{username})\n"
+                    f"`ID: {user['telegram_id']}`\n"
+                    f"**نقش:** {role} | **موجودی:** {balance}\n"
+                    "-----------------------------------\n"
+                )
         
         _show_menu(admin_id, text, inline_keyboards.get_back_button("admin_user_management"), message)
 
