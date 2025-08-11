@@ -1172,7 +1172,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': prompt.message_id}
 
     def process_user_search(admin_id, message):
-        """Processes the user ID, finds the user, and shows their subscriptions."""
+        """Processes the user ID, finds the user, and shows their management panel."""
         state_info = _admin_states.get(admin_id, {})
         user_id_str = message.text.strip()
 
@@ -1181,15 +1181,33 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             return
 
         user_telegram_id = int(user_id_str)
-        purchases = _db_manager.get_user_purchases_by_telegram_id(user_telegram_id)
         user_info = _db_manager.get_user_by_telegram_id(user_telegram_id)
-        user_display = user_info['first_name'] if user_info else f"کاربر {user_telegram_id}"
 
-        # --- THE FIX IS HERE: Pass _db_manager to the keyboard function ---
-        markup = inline_keyboards.get_user_subscriptions_management_menu(_db_manager, purchases, user_telegram_id)
-        
+        if not user_info:
+            _bot.edit_message_text(messages.USER_NOT_FOUND, admin_id, state_info['prompt_message_id'])
+            _clear_admin_state(admin_id)
+            return
+
+        # نمایش اطلاعات کاربر پیدا شده
+        role_map = {'admin': '👑 مدیر', 'reseller': '🤝 نماینده', 'user': '👤 کاربر'}
+        user_role_key = user_info.get('role', 'user')
+        role = role_map.get(user_role_key, '👤 کاربر')
+        balance = f"{user_info.get('balance', 0):,.0f} تومان"
+        first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
+
+        user_details_text = (
+            f"👤 **پنل مدیریت کاربر:** {first_name}\n\n"
+            f"`ID: {user_info['telegram_id']}`\n"
+            f"**نقش فعلی:** {role}\n"
+            f"**موجودی کیف پول:** {balance}\n\n"
+            "لطفاً عملیات مورد نظر را انتخاب کنید:"
+        )
+
+        # ساخت منوی مدیریت جدید برای این کاربر
+        markup = inline_keyboards.get_manage_user_menu(user_telegram_id)
+
         _bot.edit_message_text(
-            f"اشتراک‌های یافت شده برای **{user_display}**:",
+            user_details_text,
             admin_id,
             state_info['prompt_message_id'],
             reply_markup=markup,

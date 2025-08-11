@@ -551,3 +551,19 @@ def get_message_management_menu(messages_on_page, current_page, total_pages):
         
     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
     return markup
+
+
+def get_manage_user_menu(user_telegram_id):
+    """پنل مدیریت برای یک کاربر خاص را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🔄 تغییر نقش", callback_data=f"admin_change_role_{user_telegram_id}"),
+        types.InlineKeyboardButton("💰 تنظیم موجودی", callback_data=f"admin_adjust_balance_{user_telegram_id}")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🗂️ مشاهده اشتراک‌ها", callback_data=f"admin_view_subs_{user_telegram_id}")
+    )
+    markup.add(
+        types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_user_management")
+    )
+    return markup
