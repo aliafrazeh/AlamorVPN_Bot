@@ -461,13 +461,14 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _show_admin_main_menu(admin_id)
                 return
 
-            # پیام ادمین را در state ذخیره می‌کنیم تا در مرحله بعد از آن استفاده کنیم
+            # پیام ادمین را در state ذخیره می‌کنیم
             state_info['data']['broadcast_message_id'] = message.message_id
             state_info['data']['broadcast_chat_id'] = message.chat.id
-            _clear_admin_state(admin_id) # وضعیت را پاک می‌کنیم چون منتظر کلیک هستیم
+            # وضعیت را به مرحله بعد منتقل می‌کنیم تا اطلاعات پیام حفظ شود
+            state_info['state'] = 'waiting_for_broadcast_confirmation'
 
             total_users = len(_db_manager.get_all_users())
-
+            
             # پیام ادمین را به خودش فوروارد می‌کنیم تا پیش‌نمایش را ببیند
             _bot.send_message(admin_id, "👇 **این پیامی است که ارسال خواهد شد.** 👇")
             _bot.forward_message(admin_id, from_chat_id=message.chat.id, message_id=message.message_id)
