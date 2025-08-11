@@ -1379,13 +1379,13 @@ class DatabaseManager:
         
     def run_migrations(self):
         """
-        تغییرات لازم در ساختار دیتابیس را به صورت خودکار اعمال می‌کند. (نسخه نهایی)
+        تغییرات لازم در ساختار دیتابیس را به صورت خودکار و امن اعمال می‌کند. (نسخه نهایی و کامل)
         """
         logging.info("Checking for necessary database migrations...")
-        
-        # لیست کامل دستورات SQL برای ساخت یا آپدیت جداول
+
+        # لیست کامل و صحیح دستورات SQL برای ساخت تمام جداول
         migrations = [
-            # --- جداول پایه ---
+            # --- بخش ۱: جداول پایه ---
             """
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -1395,9 +1395,7 @@ class DatabaseManager:
                 username TEXT,
                 is_admin BOOLEAN DEFAULT FALSE,
                 join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                balance REAL DEFAULT 0.0,
-                is_verified BOOLEAN DEFAULT FALSE
+                last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
             """,
             "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);",
@@ -1417,33 +1415,43 @@ class DatabaseManager:
             );
             """,
             """
+            CREATE TABLE IF NOT EXISTS tutorials (
+                id SERIAL PRIMARY KEY, platform TEXT NOT NULL, app_name TEXT NOT NULL,
+                forward_chat_id BIGINT NOT NULL, forward_message_id BIGINT NOT NULL,
+                UNIQUE (platform, app_name)
+            );
+            """,
+            """
             CREATE TABLE IF NOT EXISTS profiles (
                 id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, per_gb_price REAL NOT NULL,
                 duration_days INTEGER NOT NULL, description TEXT, is_active BOOLEAN DEFAULT TRUE
             );
             """,
             """
-            CREATE TABLE IF NOT EXISTS config_domains (
-                id SERIAL PRIMARY KEY, domain_name TEXT UNIQUE NOT NULL, is_active BOOLEAN DEFAULT FALSE
+            CREATE TABLE IF NOT EXISTS subscription_domains (
+                id SERIAL PRIMARY KEY, domain_name TEXT UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
             """,
-            # --- جداول وابسته با ستون‌های جدید ---
             """
-            CREATE TABLE IF NOT EXISTS server_inbounds (
-                id SERIAL PRIMARY KEY,
-                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                inbound_id INTEGER NOT NULL,
-                remark TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                config_params JSONB,
-                raw_template TEXT,
-                UNIQUE (server_id, inbound_id)
+            CREATE TABLE IF NOT EXISTS payment_gateways (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, type TEXT NOT NULL,
+                card_number TEXT, card_holder_name TEXT, merchant_id TEXT,
+                description TEXT, is_active BOOLEAN DEFAULT TRUE, priority INTEGER DEFAULT 0
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS bot_messages (
-                message_key TEXT PRIMARY KEY,
-                message_text TEXT
+                message_key TEXT PRIMARY KEY, message_text TEXT
+            );
+            """,
+            # --- بخش ۲: جداول وابسته (با Foreign Key) ---
+            """
+            CREATE TABLE IF NOT EXISTS server_inbounds (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL, remark TEXT, is_active BOOLEAN DEFAULT TRUE,
+                UNIQUE (server_id, inbound_id)
             );
             """,
             """
@@ -1452,12 +1460,53 @@ class DatabaseManager:
                 profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                 server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
                 inbound_id INTEGER NOT NULL,
-                config_params JSONB,
-                raw_template TEXT,
                 UNIQUE (profile_id, server_id, inbound_id)
             );
             """,
-            # --- دستورات ALTER برای کاربرانی که از نسخه‌های قدیمی‌تر آپدیت می‌کنند ---
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                server_id INTEGER REFERENCES servers(id) ON DELETE SET NULL,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+                purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expire_date TIMESTAMPTZ,
+                initial_volume_gb REAL NOT NULL,
+                client_uuid TEXT, client_email TEXT, sub_id TEXT, is_active BOOLEAN DEFAULT TRUE,
+                single_configs_json TEXT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS free_test_usage (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                usage_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS payments (
+                id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                amount REAL NOT NULL, payment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                receipt_message_id BIGINT, is_confirmed BOOLEAN DEFAULT FALSE,
+                admin_confirmed_by BIGINT, confirmation_date TIMESTAMPTZ,
+                order_details_json TEXT, admin_notification_message_id BIGINT,
+                authority TEXT, ref_id TEXT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS synced_configs (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                port INTEGER,
+                protocol TEXT,
+                settings TEXT,
+                stream_settings TEXT,
+                UNIQUE (server_id, inbound_id)
+            );
+            """,
+            # --- بخش ۳: دستورات ALTER برای آپدیت از نسخه‌های قدیمی ---
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance REAL DEFAULT 0.0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
@@ -1465,22 +1514,31 @@ class DatabaseManager:
             "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
             "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
         ]
-        
+
         conn = None
         try:
             conn = self._get_connection()
             with conn.cursor() as cur:
                 for sql in migrations:
+                    # لاگ کردن هر دستور قبل از اجرا برای دیباگ بهتر
+                    # logging.debug(f"Executing migration: {sql.strip()}")
                     cur.execute(sql)
             conn.commit()
             logging.info("Database schema is up to date.")
+
+            # فقط پس از موفقیت کامل مایگریشن، پیام‌ها را اضافه می‌کنیم
+            self._seed_messages_table()
+
         except Exception as e:
-            logging.error(f"A critical error occurred during database migration: {e}")
+            logging.critical(f"A critical error occurred during database migration: {e}")
             if conn:
                 conn.rollback()
+            # این خطا باید باعث توقف برنامه شود تا از اجرای ناقص جلوگیری شود
+            raise e
         finally:
             if conn:
                 conn.close()
+
         self._seed_messages_table()
     def add_to_user_balance(self, user_id: int, amount: float):
         """مبلغ مشخص شده را به موجودی کیف پول کاربر اضافه می‌کند."""
