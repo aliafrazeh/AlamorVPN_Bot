@@ -567,3 +567,23 @@ def get_manage_user_menu(user_telegram_id):
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_user_management")
     )
     return markup
+
+
+def get_change_role_menu(user_telegram_id):
+    """منوی انتخاب نقش جدید برای یک کاربر را ایجاد می‌کند."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    roles = {
+        'admin': '👑 مدیر',
+        'reseller': '🤝 نماینده',
+        'user': '👤 کاربر'
+    }
+    for role_key, role_name in roles.items():
+        markup.add(types.InlineKeyboardButton(
+            f"تنظیم به: {role_name}", 
+            callback_data=f"admin_set_role_{user_telegram_id}_{role_key}"
+        ))
+
+    # دکمه بازگشت به پنل مدیریت همین کاربر
+    # ما یک callback جدید برای این کار تعریف می‌کنیم
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_manage_user_{user_telegram_id}"))
+    return markup

@@ -667,8 +667,46 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("panel_type_"):
             handle_panel_type_selection(call)
             return
+        # --- مدیریت پنل کاربر خاص ---
+        if data.startswith("admin_manage_user_"):
+            target_user_id = int(data.split('_')[-1])
+            # با ارسال یک پیام ساختگی، پنل کاربر را مجددا نمایش می‌دهیم
+            mock_message = types.Message(message_id=message.message_id, chat=message.chat, date=None, content_type='text', options={}, json_string="")
+            mock_message.text = str(target_user_id)
+            _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
+            process_user_search(admin_id, mock_message)
+            return
 
-        # اگر هیچکدام از موارد بالا نبود
+        elif data.startswith("admin_change_role_"):
+            target_user_id = int(data.split('_')[-1])
+            user_info = _db_manager.get_user_by_telegram_id(target_user_id)
+            first_name = helpers.escape_markdown_v1(user_info.get('first_name', ''))
+            _bot.edit_message_text(
+                f"لطفاً نقش جدید را برای کاربر **{first_name}** انتخاب کنید:",
+                admin_id, message.message_id,
+                reply_markup=inline_keyboards.get_change_role_menu(target_user_id),
+                parse_mode='Markdown'
+            )
+            return
+
+        elif data.startswith("admin_set_role_"):
+            parts = data.split('_')
+            target_user_id = int(parts[3])
+            new_role = parts[4]
+
+            if _db_manager.set_user_role(target_user_id, new_role):
+                _bot.answer_callback_query(call.id, f"✅ نقش کاربر به {new_role} تغییر یافت.")
+            else:
+                _bot.answer_callback_query(call.id, "❌ خطایی در تغییر نقش رخ داد.", show_alert=True)
+
+            # پس از تغییر، پنل مدیریت کاربر را مجدداً نمایش می‌دهیم تا تغییرات دیده شود
+            mock_message = types.Message(message_id=message.message_id, chat=message.chat, date=None, content_type='text', options={}, json_string="")
+            mock_message.text = str(target_user_id)
+            _admin_states[admin_id] = {'state': 'waiting_for_user_id_to_search', 'prompt_message_id': message.message_id}
+            process_user_search(admin_id, mock_message)
+            return
+
+                # اگر هیچکدام از موارد بالا نبود
         else:
             _bot.edit_message_text(messages.UNDER_CONSTRUCTION, admin_id, message.message_id, reply_markup=inline_keyboards.get_back_button("admin_main_menu"))
     @_bot.message_handler(
