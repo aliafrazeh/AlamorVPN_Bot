@@ -576,6 +576,24 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             text += f"**{config['remark']} ({config['protocol']}/{config['network']})**:\n`{config['url']}`\n\n"
         
         _bot.send_message(user_id, text, parse_mode='Markdown')
+    
+    def send_configs_to_user(user_id, configs, config_type="کانفیگ"):
+        """ارسال کانفیگ‌ها به کاربر"""
+        if not configs:
+            _bot.send_message(user_id, "❌ خطا در تولید کانفیگ‌ها")
+            return
+            
+        text = f"📄 **{config_type} شما:**\n\n"
+        for i, config in enumerate(configs, 1):
+            text += f"**{config_type} {i}:**\n`{config}`\n\n"
+        
+        # اگر متن خیلی طولانی باشد، آن را تقسیم می‌کنیم
+        if len(text) > 4000:
+            parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
+            for part in parts:
+                _bot.send_message(user_id, part, parse_mode='Markdown')
+        else:
+            _bot.send_message(user_id, text, parse_mode='Markdown')
         
         
     # در فایل handlers/user_handlers.py
@@ -653,16 +671,15 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         test_duration_days = 1 # 1 day
 
         from utils.config_generator import ConfigGenerator
-        config_gen = ConfigGenerator(_xui_api, _db_manager)
-        client_details, sub_link, _ = config_gen.create_client_and_configs(user_id, test_server_id, test_volume_gb, test_duration_days)
+        config_gen = ConfigGenerator(_db_manager)
+        configs, client_details = config_gen.create_subscription_for_server(user_id, test_server_id, test_volume_gb, test_duration_days)
 
-        if sub_link:
+        if configs and client_details:
             print("Free test subscription created successfully.")
-            print(f"Subscription Link: {sub_link}")
             _db_manager.record_free_test_usage(user_db_info['id'])
             _bot.delete_message(user_id, message.message_id)
             _bot.send_message(user_id, messages.GET_FREE_TEST_SUCCESS)
-            send_subscription_info(user_id, sub_link)
+            send_configs_to_user(user_id, configs, "اکانت تست رایگان")
         else:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
 
