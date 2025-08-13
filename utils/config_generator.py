@@ -65,10 +65,20 @@ class ConfigGenerator:
                 inbound_id = s_inbound['inbound_id']
                 client_uuid = str(uuid.uuid4())
                 
+                # استفاده از برندینگ در نام کلاینت
+                brand_name = self.db_manager.get_setting('brand_name') or "Alamor"
+                client_name = f"{brand_name}-{user_telegram_id}"
+                
                 client_settings = {
-                    "id": client_uuid, "email": f"in{inbound_id}.{base_client_email}",
-                    "totalGB": total_traffic_bytes, "expiryTime": expiry_time_ms,
-                    "enable": True, "tgId": str(user_telegram_id), "subId": shared_sub_id
+                    "id": client_uuid, 
+                    "email": f"in{inbound_id}.{base_client_email}",
+                    "flow": "",
+                    "totalGB": total_traffic_bytes, 
+                    "expiryTime": expiry_time_ms,
+                    "enable": True, 
+                    "tgId": str(user_telegram_id), 
+                    "subId": shared_sub_id,
+                    "name": client_name  # اضافه کردن نام کلاینت با برندینگ
                 }
                 
                 add_client_payload = {"id": inbound_id, "settings": json.dumps({"clients": [client_settings]})}

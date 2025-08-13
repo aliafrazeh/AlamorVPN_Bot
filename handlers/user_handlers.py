@@ -162,10 +162,22 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             select_profile_for_purchase(user_id, profile_id, call.message)
         elif data == "pay_with_wallet":
             process_wallet_payment(user_id, call.message)
+        elif data == "show_order_summary":
+            # بازگشت به خلاصه سفارش
+            show_order_summary(user_id, call.message)
 
         elif data == "cancel_order":
+            logger.info(f"User {user_id} cancelled order")
             _clear_user_state(user_id)
-            _bot.edit_message_text(messages.ORDER_CANCELED, user_id, call.message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
+            try:
+                _bot.edit_message_text(messages.ORDER_CANCELED, user_id, call.message.message_id, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
+            except Exception as e:
+                # اگر edit نشد، پیام جدید ارسال می‌کنیم
+                logger.warning(f"Could not edit message for cancel order: {e}")
+                _bot.send_message(user_id, messages.ORDER_CANCELED, reply_markup=inline_keyboards.get_back_button("user_main_menu"))
+            finally:
+                # پاسخ به callback query
+                _bot.answer_callback_query(call.id, "سفارش لغو شد")
 
 
     @_bot.message_handler(content_types=['text', 'photo'], func=lambda msg: _user_states.get(msg.from_user.id))
