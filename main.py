@@ -36,7 +36,7 @@ def send_welcome(message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name
     logger.info(f"Received /start from user ID: {user_id} ({first_name})")
-
+    brand_name = db_manager.get_setting('brand_name') or "Alamor VPN"
     # --- Channel Lock Logic ---
     required_channel_id_str = db_manager.get_setting('required_channel_id')
     if required_channel_id_str:
@@ -68,11 +68,7 @@ def send_welcome(message):
         brand_name = db_manager.get_setting('brand_name') or "Alamor VPN"
         
         # نام برند را به تابع ارسال پیام اضافه می‌کنیم
-        welcome_text = helpers.get_message(
-            'START_WELCOME',
-            brand_name=helpers.escape_markdown_v1(brand_name),
-            first_name=helpers.escape_markdown_v1(first_name)
-        )
+        welcome_text = messages.START_WELCOME.format(brand_name=brand_name, first_name=first_name)
         user_menu_markup = inline_keyboards.get_user_main_inline_menu(support_link)
         bot.send_message(user_id, welcome_text, parse_mode='Markdown', reply_markup=user_menu_markup)
 
