@@ -130,7 +130,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 _bot.delete_message(call.message.chat.id, call.message.message_id)
                 from main import send_welcome 
                 send_welcome(call.message)
-    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_', 'pay_')))
+    @_bot.callback_query_handler(func=lambda call: not call.from_user.is_bot and call.data.startswith(('buy_', 'select_', 'confirm_', 'cancel_', 'pay_', 'show_')))
 
     def handle_purchase_callbacks(call):
         """هندل کردن دکمه‌های فرآیند خرید"""
