@@ -61,11 +61,29 @@ BOT_TOKEN = os.getenv("BOT_TOKEN_ALAMOR")
 admin_ids_str = os.getenv("ADMIN_IDS_ALAMOR", "")
 try:
     ADMIN_IDS = [int(s) for s in re.findall(r'\d+', admin_ids_str)]
-except:
+except Exception as e:
+    print(f"Warning: Could not parse admin IDs from '{admin_ids_str}': {e}")
     ADMIN_IDS = []
 
 # تنظیمات دیتابیس
-DATABASE_NAME = os.getenv("DATABASE_NAME_ALAMOR", "database/alamor_vpn.db")
+DB_TYPE = os.getenv("DB_TYPE", "sqlite")
+
+if DB_TYPE == "postgres":
+    # خواندن متغیرهای جدید برای PostgreSQL
+    DB_NAME = os.getenv("DB_NAME")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DATABASE_NAME = None  # برای PostgreSQL استفاده نمی‌شود
+else:
+    # منطق قدیمی برای SQLite (برای سازگاری در آینده)
+    DATABASE_NAME = os.getenv("DATABASE_NAME_ALAMOR", "database/alamor_vpn.db")
+    DB_NAME = None
+    DB_USER = None
+    DB_PASSWORD = None
+    DB_HOST = None
+    DB_PORT = None
 
 # تنظیمات رمزنگاری
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY_ALAMOR")
@@ -86,27 +104,8 @@ REQUIRED_CHANNEL_ID_STR = os.getenv("REQUIRED_CHANNEL_ID_ALAMOR")
 REQUIRED_CHANNEL_ID = int(REQUIRED_CHANNEL_ID_STR) if REQUIRED_CHANNEL_ID_STR and REQUIRED_CHANNEL_ID_STR.lstrip('-').isdigit() else None
 REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK_ALAMOR", "https://t.me/YourChannelLink")
 MAX_API_RETRIES = 3
-# در فایل config.py
+# تنظیمات درگاه پرداخت
 WEBHOOK_DOMAIN = os.getenv("WEBHOOK_DOMAIN")
 ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
-
-
-
-# در انتهای فایل config.py
 ZARINPAL_SANDBOX = os.getenv("ZARINPAL_SANDBOX", "False").lower() in ['true', '1', 't']
-ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
 BOT_USERNAME_ALAMOR = os.getenv("BOT_USERNAME_ALAMOR", "YourBotUsername")
-
-
-
-DB_TYPE = os.getenv("DB_TYPE", "sqlite")
-if DB_TYPE == "postgres":
-    # خواندن متغیرهای جدید برای PostgreSQL
-    DB_NAME = os.getenv("DB_NAME")
-    DB_USER = os.getenv("DB_USER")
-    DB_PASSWORD = os.getenv("DB_PASSWORD")
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "5432")
-else:
-    # منطق قدیمی برای SQLite (برای سازگاری در آینده)
-    DATABASE_NAME = os.getenv("DATABASE_NAME_ALAMOR", "database/alamor_vpn.db")

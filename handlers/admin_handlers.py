@@ -90,7 +90,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
         return message
 
-    def _show_admin_main_menu(admin_id, message=None): _show_menu(admin_id, messages.ADMIN_WELCOME, inline_keyboards.get_admin_main_inline_menu(), message)
+    def _show_admin_main_menu(admin_id, message=None): 
+        brand_name = _db_manager.get_setting('brand_name') or "Alamor VPN"
+        welcome_text = messages.ADMIN_WELCOME.format(brand_name=brand_name)
+        _show_menu(admin_id, welcome_text, inline_keyboards.get_admin_main_inline_menu(), message)
     def _show_server_management_menu(admin_id, message=None): _show_menu(admin_id, messages.SERVER_MGMT_MENU_TEXT, inline_keyboards.get_server_management_inline_menu(), message)
     def _show_plan_management_menu(admin_id, message=None): _show_menu(admin_id, messages.PLAN_MGMT_MENU_TEXT, inline_keyboards.get_plan_management_inline_menu(), message)
     def _show_payment_gateway_management_menu(admin_id, message=None): _show_menu(admin_id, messages.PAYMENT_GATEWAY_MGMT_MENU_TEXT, inline_keyboards.get_payment_gateway_management_inline_menu(), message)
@@ -429,6 +432,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             text = message.text.strip()
             target_telegram_id = state_info['data']['target_user_id']
             prompt_id = state_info['prompt_message_id']
+            
             
             if text.lower() == 'cancel':
                 # پیام 'cancel' توسط منطق عمومی در بالای تابع حذف شده است

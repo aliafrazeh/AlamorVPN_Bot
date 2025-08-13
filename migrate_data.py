@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # SQLite (منبع)
 SQLITE_DB_PATH = os.getenv("DATABASE_NAME_ALAMOR", "database/alamor_vpn.db")
 
-# PostgreSQL (مقصد)
+# PostgreSQL (مقصد) - استفاده از متغیرهای جدید
 PG_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
     "user": os.getenv("DB_USER"),
@@ -24,6 +24,12 @@ PG_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": os.getenv("DB_PORT", "5432")
 }
+
+# بررسی وجود متغیرهای PostgreSQL
+if not all([PG_CONFIG["dbname"], PG_CONFIG["user"], PG_CONFIG["password"]]):
+    logging.error("❌ متغیرهای PostgreSQL در فایل .env تنظیم نشده‌اند!")
+    logging.error("لطفاً DB_NAME، DB_USER و DB_PASSWORD را در فایل .env تنظیم کنید.")
+    exit(1)
 
 # ترتیب جداول برای رعایت وابستگی‌ها (Foreign Keys)
 TABLES_IN_ORDER = [

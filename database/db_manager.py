@@ -6,26 +6,36 @@ import logging
 from cryptography.fernet import Fernet
 import os
 import json
-from config import ENCRYPTION_KEY, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
+import sqlite3
+from config import ENCRYPTION_KEY, DB_TYPE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DATABASE_NAME
 
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        self.db_name = DB_NAME
-        self.db_user = DB_USER
-        self.db_password = DB_PASSWORD
-        self.db_host = DB_HOST
-        self.db_port = DB_PORT
+        self.db_type = DB_TYPE
+        if self.db_type == "postgres":
+            self.db_name = DB_NAME
+            self.db_user = DB_USER
+            self.db_password = DB_PASSWORD
+            self.db_host = DB_HOST
+            self.db_port = DB_PORT
+            logger.info(f"DatabaseManager initialized for PostgreSQL DB: {self.db_name}")
+        else:
+            self.db_path = DATABASE_NAME
+            logger.info(f"DatabaseManager initialized for SQLite DB: {self.db_path}")
+        
         self.fernet = Fernet(ENCRYPTION_KEY.encode('utf-8'))
-        logger.info(f"DatabaseManager initialized for PostgreSQL DB: {self.db_name}")
 
     def _get_connection(self):
-        """Establishes a new connection to the PostgreSQL database."""
-        return psycopg2.connect(
-            dbname=self.db_name, user=self.db_user, password=self.db_password,
-            host=self.db_host, port=self.db_port
-        )
+        """Establishes a new connection to the database."""
+        if self.db_type == "postgres":
+            return psycopg2.connect(
+                dbname=self.db_name, user=self.db_user, password=self.db_password,
+                host=self.db_host, port=self.db_port
+            )
+        else:
+            return sqlite3.connect(self.db_path)
 
     def _encrypt(self, data: str) -> str:
         if data is None: return None
@@ -37,7 +47,7 @@ class DatabaseManager:
 
     def create_tables(self):
         """
-        جداول لازم را با ترتیب صحیح وابستگی‌ها در دیتاب斯 PostgreSQL ایجاد می‌کند. (نسخه نهایی و کامل)
+        جداول لازم را با ترتیب صحیح وابستگی‌ها در دیتابس PostgreSQL ایجاد می‌کند. (نسخه نهایی و کامل)
         """
         # --- لیست کامل دستورات ساخت جداول با ترتیب صحیح ---
         commands = [
@@ -500,19 +510,28 @@ class DatabaseManager:
             return False
 
     def get_plans_for_server(self, server_id: int, plan_type: str = 'fixed_monthly'):
-        # This function seems to have a logical error as plans are not tied to servers directly.
-        # Assuming a global plan system as per the schema.
-        # If plans were per server, the 'plans' table would need a 'server_id' column.
-        # Re-implementing based on global plans.
+        """
+        دریافت پلن‌های موجود برای یک سرور خاص.
+        در حال حاضر سیستم پلن‌ها سراسری است و به سرور خاصی تعلق ندارند.
+        """
         try:
             with self._get_connection() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                if self.db_type == "postgres":
+                    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                        cursor.execute(
+                            "SELECT * FROM plans WHERE plan_type = %s AND is_active = TRUE ORDER BY price",
+                            (plan_type,)
+                        )
+                        return [dict(row) for row in cursor.fetchall()]
+                else:
+                    cursor = conn.cursor()
                     cursor.execute(
-                        "SELECT * FROM plans WHERE plan_type = %s AND is_active = TRUE ORDER BY price",
+                        "SELECT * FROM plans WHERE plan_type = ? AND is_active = 1 ORDER BY price",
                         (plan_type,)
                     )
-                    return [dict(row) for row in cursor.fetchall()]
-        except psycopg2.Error as e:
+                    columns = [description[0] for description in cursor.description]
+                    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except Exception as e:
             logger.error(f"Error getting plans for type {plan_type}: {e}")
             return []
 
