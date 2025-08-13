@@ -533,11 +533,21 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             return
             
         sub_link = ""
-        server = _db_manager.get_server_by_id(purchase['server_id'])
-        if server and purchase['sub_id']: # Use sub_id which is correct
-            sub_base = server['subscription_base_url'].rstrip('/')
-            sub_path = server['subscription_path_prefix'].strip('/')
-            sub_link = f"{sub_base}/{sub_path}/{purchase['sub_id']}"
+        if purchase['sub_id']: # Use sub_id which is correct
+            # استفاده از دامنه فعال به جای دامنه سرور
+            active_domain_record = _db_manager.get_active_subscription_domain()
+            active_domain = active_domain_record['domain_name'] if active_domain_record else None
+            
+            if not active_domain:
+                # اگر دامنه فعال نباشد، از دامنه سرور استفاده می‌کنیم
+                server = _db_manager.get_server_by_id(purchase['server_id'])
+                if server:
+                    sub_base = server['subscription_base_url'].rstrip('/')
+                    sub_path = server['subscription_path_prefix'].strip('/')
+                    sub_link = f"{sub_base}/{sub_path}/{purchase['sub_id']}"
+            else:
+                # استفاده از دامنه فعال
+                sub_link = f"https://{active_domain}/sub/{purchase['sub_id']}"
         
         if sub_link:
             text = messages.CONFIG_DELIVERY_HEADER + \
