@@ -60,7 +60,9 @@ def send_welcome(message):
     support_link = db_manager.get_setting('support_link')
     
     if helpers.is_admin(user_id):
-        bot.send_message(user_id, messages.ADMIN_WELCOME, reply_markup=inline_keyboards.get_admin_main_inline_menu())
+        brand_name = db_manager.get_setting('brand_name') or "Alamor VPN"
+        admin_welcome = messages.ADMIN_WELCOME.format(brand_name=brand_name)
+        bot.send_message(user_id, admin_welcome, reply_markup=inline_keyboards.get_admin_main_inline_menu())
     else:
         # نام برند را از دیتابیس می‌خوانیم و یک نام پیش‌فرض برای آن در نظر می‌گیریم
         brand_name = db_manager.get_setting('brand_name') or "Alamor VPN"

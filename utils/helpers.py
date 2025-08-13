@@ -11,18 +11,37 @@ from database.db_manager import DatabaseManager
 import utils.messages as messages_module
 
 from config import ADMIN_IDS
+from collections import UserDict
 
 logger = logging.getLogger(__name__)
 _db_for_messages = DatabaseManager()
 
+class _SafeFormatDict(UserDict):
+    def __missing__(self, key):
+        # Leave unknown placeholders intact like {unknown}
+        return '{' + key + '}'
+
+
 def get_message(key: str, **kwargs):
-    message_text = _db_for_messages.get_message_by_key(key)
-    if message_text is None:
-        message_text = getattr(messages_module, key, f"MSG_NOT_FOUND: {key}")
+    """Fetches a message template by key (DB overrides > defaults) and safely formats it.
+
+    Unknown placeholders remain unchanged instead of breaking formatting.
+    If the DB template is invalid, falls back to the default messages.py template.
+    """
+    db_template = _db_for_messages.get_message_by_key(key)
+    default_template = getattr(messages_module, key, f"MSG_NOT_FOUND: {key}")
+
+    template = db_template if db_template is not None else default_template
+
     try:
-        return message_text.format(**kwargs)
-    except (KeyError, ValueError):
-        return message_text
+        return template.format_map(_SafeFormatDict(kwargs))
+    except Exception:
+        # Fallback to default template if DB template is malformed
+        try:
+            return default_template.format_map(_SafeFormatDict(kwargs))
+        except Exception:
+            # As a last resort, return unformatted template to avoid crashes
+            return default_template
 # --- تابع جدید در اینجا اضافه شده است ---
 def parse_config_link(link: str) -> dict or None:
     """
