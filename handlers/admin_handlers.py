@@ -370,6 +370,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             execute_add_gateway(admin_id, data)
         elif state == 'waiting_for_gateway_id_to_toggle':
             execute_toggle_gateway_status(admin_id, text)
+        elif state == 'waiting_for_gateway_edit_name':
+            data['new_name'] = text
+            state_info['state'] = 'waiting_for_gateway_edit_type'
+            current_gateway = data['current_gateway']
+            _bot.edit_message_text(
+                f"نام جدید: **{text}**\n\n"
+                f"لطفاً نوع درگاه را انتخاب کنید:",
+                admin_id, 
+                prompt_id,
+                reply_markup=inline_keyboards.get_gateway_type_selection_menu(),
+                parse_mode='Markdown'
+            )
+        elif state == 'waiting_for_gateway_edit_merchant_id':
+            data['new_merchant_id'] = text
+            state_info['state'] = 'waiting_for_gateway_edit_description'
+            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
+        elif state == 'waiting_for_gateway_edit_card_number':
+            if not text.isdigit() or len(text) != 16:
+                _bot.edit_message_text(f"شماره کارت نامعتبر است.\n\n{messages.ADD_GATEWAY_PROMPT_CARD_NUMBER}", admin_id, prompt_id); return
+            data['new_card_number'] = text
+            state_info['state'] = 'waiting_for_gateway_edit_card_holder_name'
+            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_HOLDER_NAME, admin_id, prompt_id)
+        elif state == 'waiting_for_gateway_edit_card_holder_name':
+            data['new_card_holder_name'] = text
+            state_info['state'] = 'waiting_for_gateway_edit_description'
+            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_DESCRIPTION, admin_id, prompt_id)
+        elif state == 'waiting_for_gateway_edit_description':
+            data['new_description'] = None if text.lower() == 'skip' else text
+            execute_update_gateway(admin_id, data)
             
         # --- Admin Management Flows ---
         elif state == 'waiting_for_admin_id_to_add':
@@ -555,6 +584,64 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _bot.edit_message_text(f"{gateways_text}\n\n{messages.TOGGLE_GATEWAY_STATUS_PROMPT}", admin_id, message.message_id, parse_mode='Markdown')
         _admin_states[admin_id] = {'state': 'waiting_for_gateway_id_to_toggle', 'prompt_message_id': message.message_id}
 
+    def start_edit_gateway_flow(admin_id, message):
+        """شروع فرآیند ویرایش درگاه پرداخت"""
+        _clear_admin_state(admin_id)
+        gateways = _db_manager.get_all_payment_gateways()
+        if not gateways:
+            _bot.edit_message_text("❌ هیچ درگاهی برای ویرایش یافت نشد.", admin_id, message.message_id)
+            return
+        
+        _bot.edit_message_text(
+            "✏️ لطفاً درگاهی که می‌خواهید ویرایش کنید را انتخاب کنید:",
+            admin_id, 
+            message.message_id,
+            reply_markup=inline_keyboards.get_gateway_selection_menu_for_edit(gateways)
+        )
+
+    def start_delete_gateway_flow(admin_id, message):
+        """شروع فرآیند حذف درگاه پرداخت"""
+        _clear_admin_state(admin_id)
+        gateways = _db_manager.get_all_payment_gateways()
+        if not gateways:
+            _bot.edit_message_text("❌ هیچ درگاهی برای حذف یافت نشد.", admin_id, message.message_id)
+            return
+        
+        _bot.edit_message_text(
+            "🗑️ لطفاً درگاهی که می‌خواهید حذف کنید را انتخاب کنید:",
+            admin_id, 
+            message.message_id,
+            reply_markup=inline_keyboards.get_gateway_selection_menu_for_delete(gateways)
+        )
+
+    def start_gateway_edit_flow(admin_id, message, gateway_id):
+        """شروع فرآیند ویرایش درگاه پرداخت خاص"""
+        gateway = _db_manager.get_payment_gateway_by_id(gateway_id)
+        if not gateway:
+            _bot.answer_callback_query(message.id, "❌ درگاه مورد نظر یافت نشد.", show_alert=True)
+            return
+        
+        _clear_admin_state(admin_id)
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_gateway_edit_name',
+            'data': {'gateway_id': gateway_id, 'current_gateway': gateway},
+            'prompt_message_id': message.message_id
+        }
+        
+        current_name = gateway['name']
+        current_type = gateway['type']
+        current_config = gateway['config']
+        
+        edit_text = (
+            f"✏️ **ویرایش درگاه پرداخت**\n\n"
+            f"**درگاه فعلی:** {current_name}\n"
+            f"**نوع:** {current_type}\n"
+            f"**تنظیمات فعلی:** {current_config}\n\n"
+            f"لطفاً نام جدید درگاه را وارد کنید (یا برای حفظ نام فعلی، همان نام را وارد کنید):"
+        )
+        
+        _bot.edit_message_text(edit_text, admin_id, message.message_id, parse_mode='Markdown')
+
 
 
     # =============================================================================
@@ -599,6 +686,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_add_gateway": start_add_gateway_flow,
             "admin_list_gateways": list_all_gateways,
             "admin_toggle_gateway_status": start_toggle_gateway_status_flow,
+            "admin_edit_gateway": start_edit_gateway_flow,
+            "admin_delete_gateway": start_delete_gateway_flow,
             "admin_list_users": list_all_users,
             "admin_search_user": start_search_user_flow,
             "admin_channel_lock_management": show_channel_lock_menu,
@@ -816,6 +905,34 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         elif data.startswith("gateway_type_"):
             handle_gateway_type_selection(admin_id, message, data.replace('gateway_type_', ''))
             return
+        elif data.startswith("admin_edit_gateway_"):
+            gateway_id = int(data.split('_')[-1])
+            start_gateway_edit_flow(admin_id, message, gateway_id)
+            return
+        elif data.startswith("admin_delete_gateway_"):
+            gateway_id = int(data.split('_')[-1])
+            gateway = _db_manager.get_payment_gateway_by_id(gateway_id)
+            if gateway:
+                _bot.edit_message_text(
+                    f"🗑️ **تایید حذف درگاه پرداخت**\n\n"
+                    f"آیا مطمئن هستید که می‌خواهید درگاه **{gateway['name']}** را حذف کنید؟\n\n"
+                    f"⚠️ این عملیات غیرقابل بازگشت است!",
+                    admin_id,
+                    message.message_id,
+                    reply_markup=inline_keyboards.get_gateway_delete_confirmation_menu(gateway_id, gateway['name']),
+                    parse_mode='Markdown'
+                )
+            else:
+                _bot.answer_callback_query(call.id, "❌ درگاه مورد نظر یافت نشد.", show_alert=True)
+            return
+        elif data.startswith("admin_confirm_delete_gateway_"):
+            gateway_id = int(data.split('_')[-1])
+            if _db_manager.delete_payment_gateway(gateway_id):
+                _bot.answer_callback_query(call.id, "✅ درگاه پرداخت با موفقیت حذف شد.")
+                _show_payment_gateway_management_menu(admin_id, message)
+            else:
+                _bot.answer_callback_query(call.id, "❌ خطایی در حذف درگاه رخ داد.", show_alert=True)
+            return
         elif data.startswith("panel_type_"):
             handle_panel_type_selection(call)
             return
@@ -949,6 +1066,47 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         msg_to_send = messages.ADD_GATEWAY_SUCCESS if gateway_id else messages.ADD_GATEWAY_DB_ERROR
         _bot.send_message(admin_id, msg_to_send.format(gateway_name=data['name']))
+        _show_payment_gateway_management_menu(admin_id)
+
+    def execute_update_gateway(admin_id, data):
+        """اجرای عملیات ویرایش درگاه پرداخت"""
+        _clear_admin_state(admin_id)
+        
+        gateway_id = data.get('gateway_id')
+        new_name = data.get('new_name')
+        new_gateway_type = data.get('new_gateway_type')
+        new_description = data.get('new_description')
+        
+        # ساخت config جدید بر اساس نوع درگاه
+        new_config = {}
+        if new_gateway_type == 'zarinpal':
+            new_config = {
+                'merchant_id': data.get('new_merchant_id')
+            }
+        elif new_gateway_type == 'card_to_card':
+            new_config = {
+                'card_number': data.get('new_card_number'),
+                'card_holder_name': data.get('new_card_holder_name')
+            }
+        
+        # تبدیل config به JSON
+        import json
+        config_json = json.dumps(new_config)
+        
+        # آپدیت درگاه در دیتابیس
+        success = _db_manager.update_payment_gateway(
+            gateway_id=gateway_id,
+            name=new_name,
+            gateway_type=new_gateway_type,
+            config=config_json,
+            description=new_description
+        )
+        
+        if success:
+            _bot.send_message(admin_id, f"✅ درگاه پرداخت **{new_name}** با موفقیت ویرایش شد.")
+        else:
+            _bot.send_message(admin_id, "❌ خطایی در ویرایش درگاه رخ داد.")
+        
         _show_payment_gateway_management_menu(admin_id)
 
     def execute_toggle_plan_status(admin_id, plan_id_str: str): # ورودی به text تغییر کرد
@@ -1286,16 +1444,31 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
     def handle_gateway_type_selection(admin_id, message, gateway_type):
         state_info = _admin_states.get(admin_id)
-        if not state_info or state_info.get('state') != 'waiting_for_gateway_type': return
+        if not state_info: return
         
-        state_info['data']['gateway_type'] = gateway_type
+        # بررسی اینکه آیا در حال ویرایش هستیم یا اضافه کردن
+        if state_info.get('state') == 'waiting_for_gateway_type':
+            # حالت اضافه کردن درگاه جدید
+            state_info['data']['gateway_type'] = gateway_type
+            
+            if gateway_type == 'zarinpal':
+                state_info['state'] = 'waiting_for_merchant_id'
+                _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_MERCHANT_ID, admin_id, message.message_id)
+            elif gateway_type == 'card_to_card':
+                state_info['state'] = 'waiting_for_card_number'
+                _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_NUMBER, admin_id, message.message_id)
         
-        if gateway_type == 'zarinpal':
-            state_info['state'] = 'waiting_for_merchant_id'
-            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_MERCHANT_ID, admin_id, message.message_id)
-        elif gateway_type == 'card_to_card':
-            state_info['state'] = 'waiting_for_card_number'
-            _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_NUMBER, admin_id, message.message_id)
+        elif state_info.get('state') == 'waiting_for_gateway_edit_type':
+            # حالت ویرایش درگاه موجود
+            data = state_info['data']
+            data['new_gateway_type'] = gateway_type
+            
+            if gateway_type == 'zarinpal':
+                state_info['state'] = 'waiting_for_gateway_edit_merchant_id'
+                _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_MERCHANT_ID, admin_id, message.message_id)
+            elif gateway_type == 'card_to_card':
+                state_info['state'] = 'waiting_for_gateway_edit_card_number'
+                _bot.edit_message_text(messages.ADD_GATEWAY_PROMPT_CARD_NUMBER, admin_id, message.message_id)
             
             
             

@@ -62,6 +62,8 @@ def get_payment_gateway_management_inline_menu():
         types.InlineKeyboardButton("➕ افزودن درگاه", callback_data="admin_add_gateway"),
         types.InlineKeyboardButton("📝 لیست درگاه‌ها", callback_data="admin_list_gateways"),
         types.InlineKeyboardButton("🔄 تغییر وضعیت درگاه", callback_data="admin_toggle_gateway_status"),
+        types.InlineKeyboardButton("✏️ ویرایش درگاه", callback_data="admin_edit_gateway"),
+        types.InlineKeyboardButton("🗑️ حذف درگاه", callback_data="admin_delete_gateway"),
         types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
     )
     return markup
@@ -604,5 +606,49 @@ def get_broadcast_confirmation_menu():
     markup.add(
         types.InlineKeyboardButton("✅ ارسال نهایی", callback_data="admin_confirm_broadcast"),
         types.InlineKeyboardButton("❌ انصراف", callback_data="admin_cancel_broadcast")
+    )
+    return markup
+
+
+def get_gateway_selection_menu_for_edit(gateways: list):
+    """منوی انتخاب درگاه برای ویرایش"""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    if not gateways:
+        markup.add(types.InlineKeyboardButton("❌ هیچ درگاهی یافت نشد", callback_data="no_action"))
+    else:
+        for gateway in gateways:
+            status_emoji = "✅" if gateway.get('is_active', False) else "❌"
+            gateway_type_emoji = "💳" if gateway.get('type') == 'card_to_card' else "🟢"
+            btn_text = f"{status_emoji} {gateway_type_emoji} {gateway['name']}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_edit_gateway_{gateway['id']}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_payment_management"))
+    return markup
+
+
+def get_gateway_selection_menu_for_delete(gateways: list):
+    """منوی انتخاب درگاه برای حذف"""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    if not gateways:
+        markup.add(types.InlineKeyboardButton("❌ هیچ درگاهی یافت نشد", callback_data="no_action"))
+    else:
+        for gateway in gateways:
+            status_emoji = "✅" if gateway.get('is_active', False) else "❌"
+            gateway_type_emoji = "💳" if gateway.get('type') == 'card_to_card' else "🟢"
+            btn_text = f"{status_emoji} {gateway_type_emoji} {gateway['name']}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_delete_gateway_{gateway['id']}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_payment_management"))
+    return markup
+
+
+def get_gateway_delete_confirmation_menu(gateway_id: int, gateway_name: str):
+    """منوی تایید حذف درگاه"""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ بله، حذف کن", callback_data=f"admin_confirm_delete_gateway_{gateway_id}"),
+        types.InlineKeyboardButton("❌ انصراف", callback_data="admin_payment_management")
     )
     return markup

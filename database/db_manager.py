@@ -618,6 +618,41 @@ class DatabaseManager:
             logger.error(f"Error updating gateway status for ID {gateway_id}: {e}")
             return False
 
+    def delete_payment_gateway(self, gateway_id):
+        """حذف درگاه پرداخت"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM payment_gateways WHERE id = %s", (gateway_id,))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error deleting gateway {gateway_id}: {e}")
+            return False
+
+    def update_payment_gateway(self, gateway_id, name, gateway_type, card_number=None, card_holder_name=None, merchant_id=None, description=None, priority=0):
+        """ویرایش درگاه پرداخت"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    # رمزگذاری اطلاعات حساس
+                    encrypted_card_number = self._encrypt(card_number) if card_number else None
+                    encrypted_card_holder_name = self._encrypt(card_holder_name) if card_holder_name else None
+                    encrypted_merchant_id = self._encrypt(merchant_id) if merchant_id else None
+                    
+                    cursor.execute("""
+                        UPDATE payment_gateways 
+                        SET name = %s, type = %s, card_number = %s, card_holder_name = %s, 
+                            merchant_id = %s, description = %s, priority = %s
+                        WHERE id = %s
+                    """, (name, gateway_type, encrypted_card_number, encrypted_card_holder_name, 
+                          encrypted_merchant_id, description, priority, gateway_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating gateway {gateway_id}: {e}")
+            return False
+
     # --- Payment Functions ---
     def add_payment(self, user_id, amount, receipt_message_id, order_details_json):
         sql = """
