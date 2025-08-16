@@ -718,6 +718,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_webhook_setup": start_webhook_setup_flow,
             "admin_create_backup": create_backup,
             "admin_check_subscription_links": check_and_fix_subscription_links,
+            "admin_refresh_all_subscriptions": refresh_all_subscription_links,
             "admin_update_configs": update_configs_from_panel,
         }
 
