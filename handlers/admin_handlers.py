@@ -2482,61 +2482,88 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         """بررسی و ترمیم لینک‌های subscription"""
         _clear_admin_state(admin_id)
         
-        # دریافت تمام خریدهای فعال
-        active_purchases = _db_manager.get_all_active_purchases()
-        if not active_purchases:
-            _bot.edit_message_text("❌ هیچ اشتراک فعالی یافت نشد.", admin_id, message.message_id)
-            return
+        # نمایش پیام در حال بررسی
+        _bot.edit_message_text("🔍 در حال بررسی لینک‌های subscription...", admin_id, message.message_id)
         
-        fixed_count = 0
-        error_count = 0
-        
-        for purchase in active_purchases:
-            try:
-                # بررسی اینکه آیا single_configs_json وجود دارد
-                if not purchase.get('single_configs_json'):
+        try:
+            # دریافت تمام خریدهای فعال
+            active_purchases = _db_manager.get_all_active_purchases()
+            if not active_purchases:
+                _bot.edit_message_text("❌ هیچ اشتراک فعالی یافت نشد.", admin_id, message.message_id)
+                return
+            
+            fixed_count = 0
+            error_count = 0
+            healthy_count = 0
+            
+            # بررسی دامنه فعال
+            active_domain_record = _db_manager.get_active_subscription_domain()
+            domain_status = "✅ تنظیم شده" if active_domain_record else "❌ تنظیم نشده"
+            
+            for purchase in active_purchases:
+                try:
+                    # بررسی اینکه آیا single_configs_json وجود دارد
+                    if not purchase.get('single_configs_json'):
+                        error_count += 1
+                        continue
+                    
+                    # بررسی اینکه آیا sub_id وجود دارد
+                    if not purchase.get('sub_id'):
+                        # تولید sub_id جدید
+                        import uuid
+                        new_sub_id = str(uuid.uuid4().hex)
+                        _db_manager.update_purchase_sub_id(purchase['id'], new_sub_id)
+                        fixed_count += 1
+                    else:
+                        healthy_count += 1
+                    
+                except Exception as e:
                     error_count += 1
-                    continue
-                
-                # بررسی اینکه آیا sub_id وجود دارد
-                if not purchase.get('sub_id'):
-                    # تولید sub_id جدید
-                    import uuid
-                    new_sub_id = str(uuid.uuid4())
-                    _db_manager.update_purchase_sub_id(purchase['id'], new_sub_id)
-                    fixed_count += 1
-                
-                # بررسی دامنه فعال
-                active_domain_record = _db_manager.get_active_subscription_domain()
-                if not active_domain_record:
-                    _bot.edit_message_text(
-                        "⚠️ هیچ دامنه فعالی برای subscription تنظیم نشده است.\n"
-                        "لطفاً ابتدا یک دامنه فعال تنظیم کنید.",
-                        admin_id, message.message_id
-                    )
-                    return
-                
-            except Exception as e:
-                error_count += 1
-                logger.error(f"Error fixing subscription {purchase['id']}: {e}")
-        
-        # نمایش نتیجه
-        result_text = (
-            f"🔧 **بررسی و ترمیم لینک‌های Subscription**\n\n"
-            f"✅ تعداد ترمیم شده: **{fixed_count}**\n"
-            f"❌ تعداد خطا: **{error_count}**\n"
-            f"📊 تعداد کل اشتراک‌ها: **{len(active_purchases)}**\n\n"
-        )
-        
-        if fixed_count > 0:
-            result_text += "🎉 برخی از لینک‌ها ترمیم شدند."
-        elif error_count == 0:
-            result_text += "✅ تمام لینک‌ها سالم هستند."
-        else:
-            result_text += "⚠️ برخی مشکلات نیاز به بررسی دستی دارند."
-        
-        _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
-        _show_admin_main_menu(admin_id)
+                    logger.error(f"Error fixing subscription {purchase['id']}: {e}")
+            
+            # نمایش نتیجه
+            result_text = f"🔧 **بررسی و ترمیم لینک‌های Subscription**\n\n"
+            result_text += f"📊 **آمار کلی:**\n"
+            result_text += f"• کل اشتراک‌ها: **{len(active_purchases)}**\n"
+            result_text += f"• سالم: **{healthy_count}**\n"
+            result_text += f"• ترمیم شده: **{fixed_count}**\n"
+            result_text += f"• مشکل‌دار: **{error_count}**\n\n"
+            result_text += f"🌐 **وضعیت دامنه:** {domain_status}\n\n"
+            
+            if fixed_count > 0:
+                result_text += "🎉 برخی از لینک‌ها ترمیم شدند."
+            elif error_count == 0:
+                result_text += "✅ تمام لینک‌ها سالم هستند."
+            else:
+                result_text += "⚠️ برخی مشکلات نیاز به بررسی دستی دارند."
+            
+            # اضافه کردن دکمه بازگشت
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error in check_and_fix_subscription_links: {e}")
+            _bot.edit_message_text(
+                f"❌ خطا در بررسی لینک‌ها:\n{str(e)}",
+                admin_id, message.message_id
+            )
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "admin_check_subscription_links")
+    def handle_check_subscription_links_callback(call):
+        """مدیریت callback بررسی لینک‌های subscription"""
+        try:
+            admin_id = call.from_user.id
+            if admin_id not in ADMIN_IDS:
+                _bot.answer_callback_query(call.id, "❌ دسترسی غیرمجاز", show_alert=True)
+                return
+            
+            check_and_fix_subscription_links(admin_id, call.message)
+            
+        except Exception as e:
+            logger.error(f"Error in check subscription links callback: {e}")
+            _bot.answer_callback_query(call.id, "❌ خطا در بررسی لینک‌ها", show_alert=True)
 
     @_bot.callback_query_handler(func=lambda call: call.data == "admin_refresh_all_subscriptions")
     def handle_refresh_all_subscriptions_callback(call):
