@@ -97,7 +97,10 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             _bot.edit_message_text(f"📞 برای پشتیبانی با ما در ارتباط باشید: {SUPPORT_CHANNEL_LINK}", user_id, call.message.message_id)
         elif data.startswith("user_service_details_"):
             purchase_id = int(data.replace("user_service_details_", ""))
-            show_service_details(user_id, purchase_id, call.message)
+            show_service_details_with_traffic(user_id, purchase_id, call.message)
+        elif data.startswith("user_refresh_traffic_"):
+            purchase_id = int(data.replace("user_refresh_traffic_", ""))
+            refresh_traffic_info(user_id, purchase_id, call.message)
         elif data.startswith("user_get_single_configs_"):
             purchase_id = int(data.replace("user_get_single_configs_", ""))
             send_single_configs(user_id, purchase_id)
@@ -989,3 +992,127 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         else:
             _bot.edit_message_text("❌ در برداشت از کیف پول خطایی رخ داد. لطفاً با پشتیبانی تماس بگیرید.", user_id, message.message_id)
             _clear_user_state(user_id)
+
+    def show_service_details_with_traffic(user_id, purchase_id, message):
+        """
+        نمایش جزئیات سرویس همراه با اطلاعات ترافیک و زمان باقی‌مانده
+        """
+        purchase = _db_manager.get_purchase_by_id(purchase_id)
+        if not purchase:
+            _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
+            return
+        
+        # محاسبه زمان باقی‌مانده
+        days_remaining = helpers.calculate_days_remaining(purchase.get('expire_date'))
+        
+        # دریافت اطلاعات ترافیک
+        traffic_info = None
+        if purchase.get('client_uuid'):
+            traffic_info = _db_manager.get_client_traffic_info(purchase['client_uuid'])
+        
+        # ساخت متن نمایش
+        text = f"📊 **جزئیات سرویس {purchase_id}**\n\n"
+        
+        # اطلاعات پایه
+        server_name = purchase.get('server_name', 'N/A')
+        text += f"🏠 **سرور:** {server_name}\n"
+        
+        # زمان باقی‌مانده
+        if days_remaining > 0:
+            text += f"⏰ **زمان باقی‌مانده:** {days_remaining} روز\n"
+        elif days_remaining == 0:
+            text += f"⚠️ **زمان باقی‌مانده:** امروز منقضی می‌شود\n"
+        else:
+            text += f"❌ **وضعیت:** منقضی شده\n"
+        
+        # اطلاعات ترافیک
+        if traffic_info:
+            # تبدیل بایت به فرمت خوانا
+            up_formatted = helpers.format_traffic_size(traffic_info.get('up', 0))
+            down_formatted = helpers.format_traffic_size(traffic_info.get('down', 0))
+            total_bytes = traffic_info.get('up', 0) + traffic_info.get('down', 0)
+            total_formatted = helpers.format_traffic_size(total_bytes)
+            
+            # حجم کل (اگر در دیتابیس ذخیره شده باشد)
+            total_volume = purchase.get('initial_volume_gb', 0)
+            if total_volume > 0:
+                total_volume_bytes = total_volume * (1024**3)
+                remaining_bytes = total_volume_bytes - total_bytes
+                remaining_formatted = helpers.format_traffic_size(remaining_bytes)
+            
+            text += f"\n📈 **آمار ترافیک:**\n"
+            text += f"⬆️ آپلود: {up_formatted}\n"
+            text += f"⬇️ دانلود: {down_formatted}\n"
+            text += f"📊 کل مصرف: {total_formatted}\n"
+            
+            if total_volume > 0:
+                text += f"💾 حجم باقی‌مانده: {remaining_formatted}\n"
+                if remaining_bytes <= 0:
+                    text += f"⚠️ **هشدار:** حجم تمام شده است!\n"
+        else:
+            text += f"\n⚠️ **اطلاعات ترافیک:** در دسترس نیست\n"
+        
+        # لینک subscription
+        sub_link = ""
+        if purchase['sub_id']:
+            active_domain_record = _db_manager.get_active_subscription_domain()
+            active_domain = active_domain_record['domain_name'] if active_domain_record else None
+            
+            if not active_domain:
+                server = _db_manager.get_server_by_id(purchase['server_id'])
+                if server:
+                    sub_base = server['subscription_base_url'].rstrip('/')
+                    sub_path = server['subscription_path_prefix'].strip('/')
+                    sub_link = f"{sub_base}/{sub_path}/{purchase['sub_id']}"
+            else:
+                sub_link = f"https://{active_domain}/sub/{purchase['sub_id']}"
+        
+        if sub_link:
+            text += f"\n🔗 **لینک اشتراک:**\n`{sub_link}`\n"
+        
+        # دکمه‌های عملیات
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🔄 بروزرسانی", callback_data=f"user_refresh_traffic_{purchase_id}"),
+            types.InlineKeyboardButton("📄 کانفیگ‌های تکی", callback_data=f"user_get_single_configs_{purchase_id}")
+        )
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت به سرویس‌ها", callback_data="user_my_services"))
+        
+        _bot.edit_message_text(text, user_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+        
+        # ارسال QR کد
+        if sub_link:
+            try:
+                import qrcode
+                from io import BytesIO
+                qr_image = qrcode.make(sub_link)
+                bio = BytesIO()
+                bio.name = 'qrcode.jpeg'
+                qr_image.save(bio, 'JPEG')
+                bio.seek(0)
+                _bot.send_photo(user_id, bio, caption=messages.QR_CODE_CAPTION)
+            except Exception as e:
+                logger.error(f"Failed to generate QR code: {e}")
+
+    def refresh_traffic_info(user_id, purchase_id, message):
+        """
+        بروزرسانی اطلاعات ترافیک
+        """
+        purchase = _db_manager.get_purchase_by_id(purchase_id)
+        if not purchase:
+            _bot.answer_callback_query(message.id, "❌ سرویس یافت نشد", show_alert=True)
+            return
+        
+        if not purchase.get('client_uuid'):
+            _bot.answer_callback_query(message.id, "❌ اطلاعات کلاینت در دسترس نیست", show_alert=True)
+            return
+        
+        # دریافت اطلاعات جدید ترافیک
+        traffic_info = _db_manager.get_client_traffic_info(purchase['client_uuid'])
+        
+        if traffic_info:
+            _bot.answer_callback_query(message.id, "✅ اطلاعات ترافیک بروزرسانی شد")
+            # نمایش مجدد با اطلاعات جدید
+            show_service_details_with_traffic(user_id, purchase_id, message)
+        else:
+            _bot.answer_callback_query(message.id, "❌ خطا در دریافت اطلاعات ترافیک", show_alert=True)

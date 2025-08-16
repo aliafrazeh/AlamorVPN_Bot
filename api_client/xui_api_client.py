@@ -330,6 +330,46 @@ class XuiAPIClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error getting online users from {url}: {e}")
             return None
+
+    def get_client_traffic_by_id(self, client_id):
+        """Gets traffic statistics for a specific client by ID."""
+        if not self.check_login():
+            logger.error("Not logged in to X-UI. Cannot get client traffic.")
+            return None
+        
+        endpoint = f"/panel/api/inbounds/getClientTrafficsById/{client_id}"
+        response = self._request("GET", endpoint)
+        
+        if response and response.get('success'):
+            return response.get('obj', {})
+        else:
+            logger.warning(f"Failed to get traffic for client ID {client_id}")
+            return None
+
+    def get_client_info(self, client_id):
+        """Gets detailed information for a specific client by ID."""
+        if not self.check_login():
+            logger.error("Not logged in to X-UI. Cannot get client info.")
+            return None
+        
+        # ابتدا تمام inbounds را دریافت می‌کنیم
+        inbounds = self.list_inbounds()
+        if not inbounds:
+            return None
+        
+        # در تمام inbounds دنبال کلاینت می‌گردیم
+        for inbound in inbounds:
+            if 'settings' in inbound and 'clients' in inbound['settings']:
+                for client in inbound['settings']['clients']:
+                    if client.get('id') == client_id or client.get('email') == client_id:
+                        # اطلاعات ترافیک را هم اضافه می‌کنیم
+                        traffic_info = self.get_client_traffic_by_id(client_id)
+                        if traffic_info:
+                            client.update(traffic_info)
+                        return client
+        
+        logger.warning(f"Client with ID {client_id} not found")
+        return None
         
         
         

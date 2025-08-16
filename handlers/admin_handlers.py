@@ -718,6 +718,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_webhook_setup": start_webhook_setup_flow,
             "admin_create_backup": create_backup,
             "admin_check_subscription_links": check_and_fix_subscription_links,
+            "admin_update_configs": update_configs_from_panel,
         }
 
         if data in actions:
@@ -2536,3 +2537,58 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
         _show_admin_main_menu(admin_id)
+
+    def update_configs_from_panel(admin_id, purchase_id, message):
+        """
+        بروزرسانی کانفیگ‌ها از پنل اصلی
+        """
+        _clear_admin_state(admin_id)
+        
+        # نمایش پیام در حال بروزرسانی
+        _bot.edit_message_text("⏳ در حال بروزرسانی کانفیگ‌ها از پنل اصلی...", admin_id, message.message_id)
+        
+        try:
+            # دریافت اطلاعات خرید
+            purchase = _db_manager.get_purchase_by_id(purchase_id)
+            if not purchase:
+                _bot.edit_message_text("❌ خرید مورد نظر یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # دریافت اطلاعات سرور
+            server = _db_manager.get_server_by_id(purchase['server_id'])
+            if not server:
+                _bot.edit_message_text("❌ اطلاعات سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # درخواست بروزرسانی به webhook server
+            import requests
+            webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs/{purchase_id}"
+            headers = {
+                'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
+            }
+            
+            response = requests.post(webhook_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                _bot.edit_message_text(
+                    f"✅ کانفیگ‌های خرید #{purchase_id} با موفقیت از پنل اصلی بروزرسانی شد.\n\n"
+                    f"📊 **جزئیات:**\n"
+                    f"• سرور: {server['name']}\n"
+                    f"• کاربر: {purchase.get('user_first_name', 'N/A')}\n"
+                    f"• تاریخ بروزرسانی: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+            else:
+                _bot.edit_message_text(
+                    f"❌ خطا در بروزرسانی کانفیگ‌ها.\n"
+                    f"کد خطا: {response.status_code}\n"
+                    f"پیام: {response.text}",
+                    admin_id, message.message_id
+                )
+                
+        except Exception as e:
+            logger.error(f"Error updating configs from panel: {e}")
+            _bot.edit_message_text(
+                f"❌ خطا در بروزرسانی کانفیگ‌ها:\n{str(e)}",
+                admin_id, message.message_id
+            )

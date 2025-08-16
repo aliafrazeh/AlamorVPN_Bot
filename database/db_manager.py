@@ -1777,5 +1777,79 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating purchase sub_id: {e}")
             return False
+
+    def get_client_traffic_info(self, client_uuid):
+        """دریافت اطلاعات ترافیک کلاینت از پنل"""
+        try:
+            # ابتدا سرور مربوط به این کلاینت را پیدا می‌کنیم
+            purchase = self.get_purchase_by_client_uuid(client_uuid)
+            if not purchase:
+                return None
             
+            server = self.get_server_by_id(purchase['server_id'])
+            if not server:
+                return None
+            
+            # انتخاب API Client مناسب
+            from api_client.factory import get_api_client
+            api_client = get_api_client(server)
+            
+            if not api_client:
+                return None
+            
+            # دریافت اطلاعات کلاینت
+            client_info = api_client.get_client_info(client_uuid)
+            return client_info
+            
+        except Exception as e:
+            logger.error(f"Error getting client traffic info for {client_uuid}: {e}")
+            return None
+
+    def get_purchase_by_client_uuid(self, client_uuid):
+        """دریافت خرید بر اساس UUID کلاینت"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT * FROM purchases 
+                        WHERE client_uuid = %s AND is_active = TRUE
+                    """, (client_uuid,))
+                    purchase = cursor.fetchone()
+                    return dict(purchase) if purchase else None
+        except Exception as e:
+            logger.error(f"Error getting purchase by client UUID {client_uuid}: {e}")
+            return None
+
+    def get_all_client_uuids_for_user(self, user_id):
+        """دریافت تمام UUID های کلاینت برای یک کاربر"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT client_uuid, server_id, id as purchase_id 
+                        FROM purchases 
+                        WHERE user_id = %s AND is_active = TRUE AND client_uuid IS NOT NULL
+                    """, (user_id,))
+                    purchases = cursor.fetchall()
+                    return [dict(purchase) for purchase in purchases]
+        except Exception as e:
+            logger.error(f"Error getting client UUIDs for user {user_id}: {e}")
+            return []
+            
+    def update_purchase_configs(self, purchase_id, configs_json):
+        """بروزرسانی کانفیگ‌های ذخیره شده برای یک خرید"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE purchases 
+                        SET single_configs_json = %s, 
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (configs_json, purchase_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating purchase configs for {purchase_id}: {e}")
+            return False
     

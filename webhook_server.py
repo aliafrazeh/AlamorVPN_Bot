@@ -92,6 +92,149 @@ def build_config_link(synced_config, client_uuid, client_remark):
     except Exception as e:
         logger.error(f"Error building config link for inbound {synced_config.get('inbound_id')}: {e}")
         return None
+
+def process_subscription_content(content):
+    """
+    پردازش محتوای subscription و تشخیص نوع آن
+    """
+    try:
+        # تلاش برای decode کردن Base64
+        decoded_content = base64.b64decode(content).decode('utf-8')
+        # اگر موفق شد، محتوا Base64 بوده
+        return {
+            'is_base64': True,
+            'original': content,
+            'decoded': decoded_content,
+            'final': content  # همان Base64 را برمی‌گردانیم
+        }
+    except:
+        # اگر decode نشد، محتوا عادی است
+        return {
+            'is_base64': False,
+            'original': content,
+            'decoded': content,
+            'final': base64.b64encode(content.encode('utf-8')).decode('utf-8')  # encode می‌کنیم
+        }
+
+def detect_content_type(content):
+    """
+    تشخیص نوع محتوای subscription
+    """
+    # بررسی اینکه آیا محتوا Base64 است
+    try:
+        decoded = base64.b64decode(content)
+        # اگر موفق شد، احتمالاً Base64 است
+        return 'base64'
+    except:
+        pass
+    
+    # بررسی اینکه آیا محتوا JSON است
+    try:
+        json.loads(content)
+        return 'json'
+    except:
+        pass
+    
+    # بررسی اینکه آیا محتوا V2Ray config است
+    if 'vmess://' in content or 'vless://' in content or 'trojan://' in content:
+        return 'v2ray_config'
+    
+    # پیش‌فرض: plain text
+    return 'plain_text'
+
+def get_panel_subscription_data(server_info, sub_id):
+    """
+    دریافت دیتای subscription از پنل اصلی
+    """
+    try:
+        # ساخت URL پنل اصلی
+        panel_url = server_info['panel_url'].rstrip('/')
+        subscription_path = server_info.get('subscription_path_prefix', '').strip('/')
+        
+        # URL نهایی برای دریافت subscription
+        subscription_url = f"{panel_url}/{subscription_path}/{sub_id}"
+        
+        logger.info(f"Fetching subscription data from: {subscription_url}")
+        
+        # درخواست GET به پنل اصلی
+        response = requests.get(subscription_url, verify=False, timeout=30)
+        response.raise_for_status()
+        
+        # بررسی نوع محتوا
+        content_type = response.headers.get('content-type', '').lower()
+        
+        if 'application/json' in content_type:
+            # اگر JSON است، احتمالاً encode شده
+            try:
+                json_data = response.json()
+                if isinstance(json_data, dict) and 'data' in json_data:
+                    # احتمالاً Base64 encoded
+                    import base64
+                    decoded_data = base64.b64decode(json_data['data']).decode('utf-8')
+                    return decoded_data
+                else:
+                    # JSON عادی
+                    return response.text
+            except:
+                return response.text
+        else:
+            # محتوای عادی (مثل Base64 یا plain text)
+            return response.text
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching subscription data from panel: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in get_panel_subscription_data: {e}")
+        return None
+
+def update_cached_configs_from_panel(purchase_id):
+    """
+    بروزرسانی کانفیگ‌های ذخیره شده از پنل اصلی
+    """
+    try:
+        purchase = db_manager.get_purchase_by_id(purchase_id)
+        if not purchase:
+            logger.error(f"Purchase {purchase_id} not found")
+            return False
+        
+        server = db_manager.get_server_by_id(purchase['server_id'])
+        if not server:
+            logger.error(f"Server for purchase {purchase_id} not found")
+            return False
+        
+        # دریافت دیتای جدید از پنل اصلی
+        subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
+        if not subscription_data:
+            logger.error(f"Could not fetch new data from panel for purchase {purchase_id}")
+            return False
+        
+        # پردازش محتوا
+        processed_content = process_subscription_content(subscription_data)
+        
+        # اگر محتوا Base64 است، آن را decode کنیم
+        if processed_content['is_base64']:
+            config_content = processed_content['decoded']
+        else:
+            config_content = processed_content['original']
+        
+        # تقسیم کانفیگ‌ها بر اساس خط جدید
+        config_list = config_content.strip().split('\n')
+        
+        # ذخیره در دیتابیس
+        success = db_manager.update_purchase_configs(purchase_id, json.dumps(config_list))
+        
+        if success:
+            logger.info(f"Successfully updated cached configs for purchase {purchase_id}")
+            return True
+        else:
+            logger.error(f"Failed to update cached configs for purchase {purchase_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error updating cached configs for purchase {purchase_id}: {e}")
+        return False
+
 # --- Endpoint جدید برای سرور اشتراک ---
 @app.route('/sub/<sub_id>', methods=['GET'])
 def serve_subscription(sub_id):
@@ -100,30 +243,36 @@ def serve_subscription(sub_id):
     purchase = db_manager.get_purchase_by_sub_id(sub_id)
     if not purchase or not purchase['is_active']:
         return Response("Subscription not found or is inactive.", status=404)
-        
-    # --- منطق جدید و اصلاح شده ---
-    # ما همیشه از کانفیگ‌های تکی که در زمان خرید ساخته و ذخیره شده‌اند، استفاده می‌کنیم.
-    # این روش هم برای خرید عادی و هم برای پروفایل به درستی کار می‌کند.
     
-    single_configs_str = purchase.get('single_configs_json')
-    if not single_configs_str:
-        return Response("No configurations found for this subscription.", status=404)
+    # دریافت اطلاعات سرور
+    server = db_manager.get_server_by_id(purchase['server_id'])
+    if not server:
+        return Response("Server information not found.", status=404)
+    
+    # دریافت دیتای subscription از پنل اصلی
+    subscription_data = get_panel_subscription_data(server, sub_id)
+    
+    if not subscription_data:
+        # اگر نتوانستیم از پنل اصلی دریافت کنیم، از دیتابیس استفاده می‌کنیم
+        logger.warning(f"Could not fetch from panel, using cached data for sub_id: {sub_id}")
+        single_configs_str = purchase.get('single_configs_json')
+        if not single_configs_str:
+            return Response("No configurations found for this subscription.", status=404)
 
-    try:
-        # single_configs_json یک رشته حاوی لیست JSON است، آن را به لیست پایتون تبدیل می‌کنیم
-        config_list = json.loads(single_configs_str)
-        
-        # تمام لینک‌های کانفیگ را با خط جدید از هم جدا می‌کنیم
-        final_subscription_content = "\n".join(config_list)
-        
-        # محتوای نهایی را با Base64 کد می‌کنیم تا برای اپلیکیشن‌ها قابل فهم باشد
-        encoded_content = base64.b64encode(final_subscription_content.encode('utf-8')).decode('utf-8')
-        
-        return Response(encoded_content, mimetype='text/plain')
-        
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.error(f"Error processing subscription for sub_id {sub_id}: {e}")
-        return Response("Error processing subscription data.", status=500)
+        try:
+            config_list = json.loads(single_configs_str)
+            subscription_data = "\n".join(config_list)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"Error processing cached subscription for sub_id {sub_id}: {e}")
+            return Response("Error processing subscription data.", status=500)
+    
+    # پردازش محتوای subscription
+    processed_content = process_subscription_content(subscription_data)
+    content_type = detect_content_type(subscription_data)
+    
+    logger.info(f"Subscription content type: {content_type}, is_base64: {processed_content['is_base64']}")
+    
+    return Response(processed_content['final'], mimetype='text/plain')
 
 # --- Endpoint زرین‌پال ---
 @app.route('/zarinpal/verify', methods=['GET'])
@@ -194,6 +343,35 @@ def handle_zarinpal_callback():
     else:
         bot.send_message(user_telegram_id, "شما فرآیند پرداخت را لغو کردید. سفارش شما ناتمام باقی ماند.")
         return render_template('payment_status.html', status='error', message="تراکنش توسط شما لغو شد.", bot_username=BOT_USERNAME)
+
+# --- Endpoint برای بروزرسانی دستی کانفیگ‌ها ---
+@app.route('/admin/update_configs/<purchase_id>', methods=['POST'])
+def admin_update_configs(purchase_id):
+    """
+    Endpoint برای بروزرسانی دستی کانفیگ‌ها توسط ادمین
+    """
+    try:
+        # بررسی احراز هویت (می‌توانید از API key یا روش دیگری استفاده کنید)
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return Response("Unauthorized", status=401)
+        
+        api_key = auth_header.split(' ')[1]
+        # بررسی API key (می‌توانید از متغیر محیطی استفاده کنید)
+        if api_key != os.getenv('ADMIN_API_KEY', 'your-secret-key'):
+            return Response("Invalid API key", status=401)
+        
+        # بروزرسانی کانفیگ‌ها
+        success = update_cached_configs_from_panel(int(purchase_id))
+        
+        if success:
+            return Response("Configs updated successfully", status=200)
+        else:
+            return Response("Failed to update configs", status=500)
+            
+    except Exception as e:
+        logger.error(f"Error in admin_update_configs: {e}")
+        return Response("Internal server error", status=500)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)

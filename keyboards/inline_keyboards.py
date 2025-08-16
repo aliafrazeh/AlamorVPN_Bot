@@ -653,3 +653,43 @@ def get_gateway_delete_confirmation_menu(gateway_id: int, gateway_name: str):
         types.InlineKeyboardButton("❌ انصراف", callback_data="admin_payment_management")
     )
     return markup
+
+
+def get_user_purchases_menu(purchases):
+    """منوی خریدهای کاربر"""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    for purchase in purchases:
+        # نمایش اطلاعات خرید
+        purchase_info = f"📦 {purchase['id']} - {purchase.get('server_name', 'N/A')}"
+        if purchase.get('expire_date'):
+            from datetime import datetime
+            expire_date = purchase['expire_date']
+            if isinstance(expire_date, str):
+                expire_date = datetime.strptime(expire_date, '%Y-%m-%d %H:%M:%S')
+            days_left = (expire_date - datetime.now()).days
+            status = "✅ فعال" if days_left > 0 else "❌ منقضی"
+            purchase_info += f" ({status})"
+        
+        # دکمه‌های عملیات
+        markup.add(
+            types.InlineKeyboardButton(
+                purchase_info, 
+                callback_data=f"admin_view_purchase_{purchase['id']}"
+            )
+        )
+        
+        # دکمه‌های اضافی
+        markup.add(
+            types.InlineKeyboardButton(
+                "🔄 بروزرسانی کانفیگ", 
+                callback_data=f"admin_update_configs_{purchase['id']}"
+            ),
+            types.InlineKeyboardButton(
+                "📊 جزئیات", 
+                callback_data=f"admin_purchase_details_{purchase['id']}"
+            )
+        )
+    
+    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_user_management"))
+    return markup

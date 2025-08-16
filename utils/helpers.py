@@ -170,3 +170,38 @@ def update_env_file(key_to_update, new_value):
     except Exception as e:
         logger.error(f"Failed to update .env file: {e}")
         return False
+
+def format_traffic_size(bytes_value):
+    """
+    تبدیل حجم از بایت به فرمت خوانا
+    """
+    if bytes_value is None or bytes_value == 0:
+        return "0 B"
+    
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    unit_index = 0
+    
+    while bytes_value >= 1024 and unit_index < len(units) - 1:
+        bytes_value /= 1024
+        unit_index += 1
+    
+    if unit_index == 0:
+        return f"{bytes_value:.0f} {units[unit_index]}"
+    else:
+        return f"{bytes_value:.2f} {units[unit_index]}"
+
+def calculate_days_remaining(expire_date):
+    """
+    محاسبه تعداد روزهای باقی‌مانده
+    """
+    if not expire_date:
+        return None
+    
+    from datetime import datetime
+    now = datetime.now()
+    
+    if isinstance(expire_date, str):
+        expire_date = datetime.strptime(expire_date, '%Y-%m-%d %H:%M:%S')
+    
+    days_remaining = (expire_date - now).days
+    return days_remaining
