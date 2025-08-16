@@ -25,6 +25,7 @@ def get_admin_main_inline_menu():
         types.InlineKeyboardButton("👁️ مشاهده وضعیت DB", callback_data="admin_view_profile_db"),
         types.InlineKeyboardButton("🔧 بررسی لینک‌های Subscription", callback_data="admin_check_subscription_links"),
         types.InlineKeyboardButton("🔄 بروزرسانی همه لینک‌ها", callback_data="admin_refresh_all_subscriptions"),
+        types.InlineKeyboardButton("🔑 تنظیم API Key", callback_data="admin_set_api_key"),
         types.InlineKeyboardButton("🎨 تنظیمات برندینگ", callback_data="admin_branding_settings"),
         types.InlineKeyboardButton("✍️ مدیریت پیام‌ها", callback_data="admin_message_management"),
         types.InlineKeyboardButton("⚙️ تنظیم وبهوک و دامنه", callback_data="admin_webhook_setup"),

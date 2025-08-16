@@ -666,6 +666,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         _clear_admin_state(message.from_user.id)
         _show_admin_main_menu(message.from_user.id)
     
+    @_bot.message_handler(content_types=['text'], func=lambda msg: helpers.is_admin(msg.from_user.id) and _admin_states.get(msg.from_user.id, {}).get('state') == 'waiting_for_api_key')
+    def handle_api_key_input(message):
+        """هندل کردن ورودی API Key"""
+        process_api_key_input(message)
+    
     @_bot.callback_query_handler(func=lambda call: helpers.is_admin(call.from_user.id))
     def handle_admin_callbacks(call):
         """این هندلر تمام کلیک‌های ادمین را به صورت یکپارچه مدیریت می‌کند."""
@@ -719,6 +724,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_create_backup": create_backup,
             "admin_check_subscription_links": check_and_fix_subscription_links,
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
+            "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
 
@@ -2745,3 +2751,112 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
             
             _bot.edit_message_text(error_text, admin_id, message.message_id, reply_markup=markup)
+
+    def start_set_api_key_flow(admin_id, message):
+        """شروع فرآیند تنظیم API Key"""
+        _clear_admin_state(admin_id)
+        
+        # دریافت API Key فعلی
+        current_api_key = os.getenv('ADMIN_API_KEY', 'تنظیم نشده')
+        
+        # نمایش API Key فعلی (مخفی شده)
+        if current_api_key != 'تنظیم نشده':
+            masked_key = current_api_key[:8] + "..." + current_api_key[-4:] if len(current_api_key) > 12 else "***"
+        else:
+            masked_key = "تنظیم نشده"
+        
+        text = f"🔑 **تنظیم API Key ادمین**\n\n"
+        text += f"**API Key فعلی:** `{masked_key}`\n\n"
+        text += f"**توضیحات:**\n"
+        text += f"• این کلید برای احراز هویت درخواست‌های ادمین استفاده می‌شود\n"
+        text += f"• باید حداقل 16 کاراکتر باشد\n"
+        text += f"• فقط شامل حروف، اعداد و کاراکترهای خاص باشد\n\n"
+        text += f"**لطفاً API Key جدید را وارد کنید:**"
+        
+        # تنظیم وضعیت
+        _admin_states[admin_id] = {
+            'state': 'waiting_for_api_key',
+            'data': {}
+        }
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+        
+        _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+
+    def process_api_key_input(message):
+        """پردازش API Key وارد شده"""
+        admin_id = message.from_user.id
+        api_key = message.text.strip()
+        
+        # حذف پیام کاربر
+        try:
+            _bot.delete_message(admin_id, message.message_id)
+        except:
+            pass
+        
+        # اعتبارسنجی API Key
+        if len(api_key) < 16:
+            _bot.send_message(
+                admin_id,
+                "❌ API Key باید حداقل 16 کاراکتر باشد.\nلطفاً دوباره تلاش کنید.",
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
+                )
+            )
+            return
+        
+        # بررسی کاراکترهای مجاز
+        import re
+        if not re.match(r'^[a-zA-Z0-9\-_\.]+$', api_key):
+            _bot.send_message(
+                admin_id,
+                "❌ API Key فقط می‌تواند شامل حروف، اعداد و کاراکترهای -_ باشد.\nلطفاً دوباره تلاش کنید.",
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
+                )
+            )
+            return
+        
+        try:
+            # بروزرسانی فایل .env
+            from utils.helpers import update_env_file
+            
+            success = update_env_file('ADMIN_API_KEY', api_key)
+            
+            if success:
+                # نمایش API Key جدید (مخفی شده)
+                masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+                
+                text = f"✅ **API Key با موفقیت بروزرسانی شد!**\n\n"
+                text += f"**API Key جدید:** `{masked_key}`\n\n"
+                text += f"**نکات مهم:**\n"
+                text += f"• این کلید در فایل .env ذخیره شده است\n"
+                text += f"• برای اعمال تغییرات، ربات را restart کنید\n"
+                text += f"• این کلید را در جای امنی نگهداری کنید\n"
+                text += f"• برای امنیت بیشتر، کلید را به صورت منظم تغییر دهید"
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
+                
+                _bot.send_message(admin_id, text, parse_mode='Markdown', reply_markup=markup)
+            else:
+                _bot.send_message(
+                    admin_id,
+                    "❌ خطا در بروزرسانی API Key.\nلطفاً دوباره تلاش کنید.",
+                    reply_markup=types.InlineKeyboardMarkup().add(
+                        types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
+                    )
+                )
+                
+        except Exception as e:
+            logger.error(f"Error updating API key: {e}")
+            _bot.send_message(
+                admin_id,
+                f"❌ خطا در بروزرسانی API Key:\n{str(e)}",
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
+                )
+            )
+        
+        _clear_admin_state(admin_id)
