@@ -1746,4 +1746,36 @@ class DatabaseManager:
         finally:
             if conn: conn.close()
             
+    def get_all_active_purchases(self):
+        """دریافت تمام خریدهای فعال"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT * FROM purchases 
+                        WHERE is_active = TRUE 
+                        ORDER BY purchase_date DESC
+                    """)
+                    purchases = cursor.fetchall()
+                    return [dict(purchase) for purchase in purchases]
+        except Exception as e:
+            logger.error(f"Error getting active purchases: {e}")
+            return []
+
+    def update_purchase_sub_id(self, purchase_id, new_sub_id):
+        """آپدیت sub_id برای یک خرید"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE purchases 
+                        SET sub_id = %s 
+                        WHERE id = %s
+                    """, (new_sub_id, purchase_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating purchase sub_id: {e}")
+            return False
+            
     

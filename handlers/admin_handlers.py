@@ -717,6 +717,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_health_check": run_system_health_check,
             "admin_webhook_setup": start_webhook_setup_flow,
             "admin_create_backup": create_backup,
+            "admin_check_subscription_links": check_and_fix_subscription_links,
         }
 
         if data in actions:
@@ -2475,3 +2476,63 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             'data': {},  # <-- این خط مشکل را برطرف می‌کند
             'prompt_message_id': prompt.message_id
         }
+
+    def check_and_fix_subscription_links(admin_id, message):
+        """بررسی و ترمیم لینک‌های subscription"""
+        _clear_admin_state(admin_id)
+        
+        # دریافت تمام خریدهای فعال
+        active_purchases = _db_manager.get_all_active_purchases()
+        if not active_purchases:
+            _bot.edit_message_text("❌ هیچ اشتراک فعالی یافت نشد.", admin_id, message.message_id)
+            return
+        
+        fixed_count = 0
+        error_count = 0
+        
+        for purchase in active_purchases:
+            try:
+                # بررسی اینکه آیا single_configs_json وجود دارد
+                if not purchase.get('single_configs_json'):
+                    error_count += 1
+                    continue
+                
+                # بررسی اینکه آیا sub_id وجود دارد
+                if not purchase.get('sub_id'):
+                    # تولید sub_id جدید
+                    import uuid
+                    new_sub_id = str(uuid.uuid4())
+                    _db_manager.update_purchase_sub_id(purchase['id'], new_sub_id)
+                    fixed_count += 1
+                
+                # بررسی دامنه فعال
+                active_domain_record = _db_manager.get_active_subscription_domain()
+                if not active_domain_record:
+                    _bot.edit_message_text(
+                        "⚠️ هیچ دامنه فعالی برای subscription تنظیم نشده است.\n"
+                        "لطفاً ابتدا یک دامنه فعال تنظیم کنید.",
+                        admin_id, message.message_id
+                    )
+                    return
+                
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error fixing subscription {purchase['id']}: {e}")
+        
+        # نمایش نتیجه
+        result_text = (
+            f"🔧 **بررسی و ترمیم لینک‌های Subscription**\n\n"
+            f"✅ تعداد ترمیم شده: **{fixed_count}**\n"
+            f"❌ تعداد خطا: **{error_count}**\n"
+            f"📊 تعداد کل اشتراک‌ها: **{len(active_purchases)}**\n\n"
+        )
+        
+        if fixed_count > 0:
+            result_text += "🎉 برخی از لینک‌ها ترمیم شدند."
+        elif error_count == 0:
+            result_text += "✅ تمام لینک‌ها سالم هستند."
+        else:
+            result_text += "⚠️ برخی مشکلات نیاز به بررسی دستی دارند."
+        
+        _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
+        _show_admin_main_menu(admin_id)
