@@ -2554,114 +2554,114 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             _bot.answer_callback_query(call.id, "❌ خطا در بروزرسانی لینک‌ها", show_alert=True)
 
     def update_configs_from_panel(admin_id, purchase_id, message):
-    """
-    بروزرسانی کانفیگ‌ها از پنل اصلی
-    """
-    _clear_admin_state(admin_id)
-    
-    # نمایش پیام در حال بروزرسانی
-    _bot.edit_message_text("⏳ در حال بروزرسانی کانفیگ‌ها از پنل اصلی...", admin_id, message.message_id)
-    
-    try:
-        # دریافت اطلاعات خرید
-        purchase = _db_manager.get_purchase_by_id(purchase_id)
-        if not purchase:
-            _bot.edit_message_text("❌ خرید مورد نظر یافت نشد.", admin_id, message.message_id)
-            return
+        """
+        بروزرسانی کانفیگ‌ها از پنل اصلی
+        """
+        _clear_admin_state(admin_id)
         
-        # دریافت اطلاعات سرور
-        server = _db_manager.get_server_by_id(purchase['server_id'])
-        if not server:
-            _bot.edit_message_text("❌ اطلاعات سرور یافت نشد.", admin_id, message.message_id)
-            return
+        # نمایش پیام در حال بروزرسانی
+        _bot.edit_message_text("⏳ در حال بروزرسانی کانفیگ‌ها از پنل اصلی...", admin_id, message.message_id)
         
-        # درخواست بروزرسانی به webhook server
-        import requests
-        webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs/{purchase_id}"
-        headers = {
-            'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
-        }
-        
-        response = requests.post(webhook_url, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
+        try:
+            # دریافت اطلاعات خرید
+            purchase = _db_manager.get_purchase_by_id(purchase_id)
+            if not purchase:
+                _bot.edit_message_text("❌ خرید مورد نظر یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # دریافت اطلاعات سرور
+            server = _db_manager.get_server_by_id(purchase['server_id'])
+            if not server:
+                _bot.edit_message_text("❌ اطلاعات سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # درخواست بروزرسانی به webhook server
+            import requests
+            webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs/{purchase_id}"
+            headers = {
+                'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
+            }
+            
+            response = requests.post(webhook_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                _bot.edit_message_text(
+                    f"✅ کانفیگ‌های خرید #{purchase_id} با موفقیت از پنل اصلی بروزرسانی شد.\n\n"
+                    f"📊 **جزئیات:**\n"
+                    f"• سرور: {server['name']}\n"
+                    f"• کاربر: {purchase.get('user_first_name', 'N/A')}\n"
+                    f"• تاریخ بروزرسانی: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+            else:
+                _bot.edit_message_text(
+                    f"❌ خطا در بروزرسانی کانفیگ‌ها.\n"
+                    f"کد خطا: {response.status_code}\n"
+                    f"پیام: {response.text}",
+                    admin_id, message.message_id
+                )
+                
+        except Exception as e:
+            logger.error(f"Error updating configs from panel: {e}")
             _bot.edit_message_text(
-                f"✅ کانفیگ‌های خرید #{purchase_id} با موفقیت از پنل اصلی بروزرسانی شد.\n\n"
-                f"📊 **جزئیات:**\n"
-                f"• سرور: {server['name']}\n"
-                f"• کاربر: {purchase.get('user_first_name', 'N/A')}\n"
-                f"• تاریخ بروزرسانی: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                admin_id, message.message_id, parse_mode='Markdown'
-            )
-        else:
-            _bot.edit_message_text(
-                f"❌ خطا در بروزرسانی کانفیگ‌ها.\n"
-                f"کد خطا: {response.status_code}\n"
-                f"پیام: {response.text}",
+                f"❌ خطا در بروزرسانی کانفیگ‌ها:\n{str(e)}",
                 admin_id, message.message_id
             )
-            
-    except Exception as e:
-        logger.error(f"Error updating configs from panel: {e}")
-        _bot.edit_message_text(
-            f"❌ خطا در بروزرسانی کانفیگ‌ها:\n{str(e)}",
-            admin_id, message.message_id
-        )
 
-def refresh_all_subscription_links(admin_id, message):
-    """
-    بروزرسانی همه لینک‌های subscription از پنل اصلی
-    """
-    _clear_admin_state(admin_id)
-    
-    # نمایش پیام در حال بروزرسانی
-    _bot.edit_message_text("⏳ در حال بروزرسانی همه لینک‌های subscription...", admin_id, message.message_id)
-    
-    try:
-        # دریافت همه خریدهای فعال
-        active_purchases = _db_manager.get_all_active_purchases()
+    def refresh_all_subscription_links(admin_id, message):
+        """
+        بروزرسانی همه لینک‌های subscription از پنل اصلی
+        """
+        _clear_admin_state(admin_id)
         
-        if not active_purchases:
-            _bot.edit_message_text("❌ هیچ خرید فعالی یافت نشد.", admin_id, message.message_id)
-            return
+        # نمایش پیام در حال بروزرسانی
+        _bot.edit_message_text("⏳ در حال بروزرسانی همه لینک‌های subscription...", admin_id, message.message_id)
         
-        success_count = 0
-        error_count = 0
-        
-        # درخواست بروزرسانی به webhook server برای هر خرید
-        import requests
-        webhook_base_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs"
-        headers = {
-            'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
-        }
-        
-        for purchase in active_purchases:
-            try:
-                webhook_url = f"{webhook_base_url}/{purchase['id']}"
-                response = requests.post(webhook_url, headers=headers, timeout=30)
-                
-                if response.status_code == 200:
-                    success_count += 1
-                else:
-                    error_count += 1
+        try:
+            # دریافت همه خریدهای فعال
+            active_purchases = _db_manager.get_all_active_purchases()
+            
+            if not active_purchases:
+                _bot.edit_message_text("❌ هیچ خرید فعالی یافت نشد.", admin_id, message.message_id)
+                return
+            
+            success_count = 0
+            error_count = 0
+            
+            # درخواست بروزرسانی به webhook server برای هر خرید
+            import requests
+            webhook_base_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs"
+            headers = {
+                'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
+            }
+            
+            for purchase in active_purchases:
+                try:
+                    webhook_url = f"{webhook_base_url}/{purchase['id']}"
+                    response = requests.post(webhook_url, headers=headers, timeout=30)
                     
-            except Exception as e:
-                logger.error(f"Error updating purchase {purchase['id']}: {e}")
-                error_count += 1
-        
-        # نمایش نتیجه
-        result_text = f"✅ بروزرسانی لینک‌های subscription کامل شد!\n\n"
-        result_text += f"📊 **نتایج:**\n"
-        result_text += f"• موفق: {success_count} لینک\n"
-        result_text += f"• ناموفق: {error_count} لینک\n"
-        result_text += f"• کل: {len(active_purchases)} لینک\n\n"
-        result_text += f"🔄 همه لینک‌ها حالا آخرین تنظیمات پنل را دارند."
-        
-        _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
-        
-    except Exception as e:
-        logger.error(f"Error refreshing all subscription links: {e}")
-        _bot.edit_message_text(
-            f"❌ خطا در بروزرسانی لینک‌های subscription:\n{str(e)}",
-            admin_id, message.message_id
-        )
+                    if response.status_code == 200:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating purchase {purchase['id']}: {e}")
+                    error_count += 1
+            
+            # نمایش نتیجه
+            result_text = f"✅ بروزرسانی لینک‌های subscription کامل شد!\n\n"
+            result_text += f"📊 **نتایج:**\n"
+            result_text += f"• موفق: {success_count} لینک\n"
+            result_text += f"• ناموفق: {error_count} لینک\n"
+            result_text += f"• کل: {len(active_purchases)} لینک\n\n"
+            result_text += f"🔄 همه لینک‌ها حالا آخرین تنظیمات پنل را دارند."
+            
+            _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error refreshing all subscription links: {e}")
+            _bot.edit_message_text(
+                f"❌ خطا در بروزرسانی لینک‌های subscription:\n{str(e)}",
+                admin_id, message.message_id
+            )
