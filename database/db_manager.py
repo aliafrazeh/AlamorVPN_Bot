@@ -1781,13 +1781,20 @@ class DatabaseManager:
     def get_client_traffic_info(self, client_uuid):
         """دریافت اطلاعات ترافیک کلاینت از پنل"""
         try:
+            # بررسی وجود client_uuid
+            if not client_uuid:
+                logger.error("client_uuid is None or empty")
+                return None
+                
             # ابتدا سرور مربوط به این کلاینت را پیدا می‌کنیم
             purchase = self.get_purchase_by_client_uuid(client_uuid)
             if not purchase:
+                logger.warning(f"No purchase found for client_uuid: {client_uuid}")
                 return None
             
             server = self.get_server_by_id(purchase['server_id'])
             if not server:
+                logger.error(f"No server found for purchase {purchase['id']}")
                 return None
             
             # انتخاب API Client مناسب
@@ -1795,10 +1802,15 @@ class DatabaseManager:
             api_client = get_api_client(server)
             
             if not api_client:
+                logger.error(f"Could not create API client for server {server['id']}")
                 return None
             
             # دریافت اطلاعات کلاینت
             client_info = api_client.get_client_info(client_uuid)
+            if not client_info:
+                logger.warning(f"No client info returned for UUID: {client_uuid}")
+                return None
+                
             return client_info
             
         except Exception as e:
@@ -1831,7 +1843,14 @@ class DatabaseManager:
                         WHERE user_id = %s AND is_active = TRUE AND client_uuid IS NOT NULL
                     """, (user_id,))
                     purchases = cursor.fetchall()
-                    return [dict(purchase) for purchase in purchases]
+                    result = []
+                    for purchase in purchases:
+                        try:
+                            result.append(dict(purchase))
+                        except Exception as dict_error:
+                            logger.error(f"Error converting purchase to dict: {dict_error}")
+                            continue
+                    return result
         except Exception as e:
             logger.error(f"Error getting client UUIDs for user {user_id}: {e}")
             return []

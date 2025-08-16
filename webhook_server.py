@@ -147,12 +147,24 @@ def get_panel_subscription_data(server_info, sub_id):
     دریافت دیتای subscription از پنل اصلی
     """
     try:
+        # بررسی وجود sub_id
+        if not sub_id:
+            logger.error(f"sub_id is None or empty for server {server_info.get('id')}")
+            return None
+            
         # ساخت URL پنل اصلی
-        panel_url = server_info['panel_url'].rstrip('/')
+        panel_url = server_info.get('panel_url', '').rstrip('/')
+        if not panel_url:
+            logger.error(f"panel_url is not set for server {server_info.get('id')}")
+            return None
+            
         subscription_path = server_info.get('subscription_path_prefix', '').strip('/')
         
         # URL نهایی برای دریافت subscription
-        subscription_url = f"{panel_url}/{subscription_path}/{sub_id}"
+        if subscription_path:
+            subscription_url = f"{panel_url}/{subscription_path}/{sub_id}"
+        else:
+            subscription_url = f"{panel_url}/{sub_id}"
         
         logger.info(f"Fetching subscription data from: {subscription_url}")
         
@@ -175,7 +187,8 @@ def get_panel_subscription_data(server_info, sub_id):
                 else:
                     # JSON عادی
                     return response.text
-            except:
+            except Exception as json_error:
+                logger.warning(f"JSON parsing failed, returning raw text: {json_error}")
                 return response.text
         else:
             # محتوای عادی (مثل Base64 یا plain text)
@@ -203,6 +216,11 @@ def update_cached_configs_from_panel(purchase_id):
             logger.error(f"Server for purchase {purchase_id} not found")
             return False
         
+        # بررسی وجود sub_id
+        if not purchase.get('sub_id'):
+            logger.error(f"Purchase {purchase_id} has no sub_id")
+            return False
+        
         # دریافت دیتای جدید از پنل اصلی
         subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
         if not subscription_data:
@@ -220,6 +238,13 @@ def update_cached_configs_from_panel(purchase_id):
         
         # تقسیم کانفیگ‌ها بر اساس خط جدید
         config_list = config_content.strip().split('\n')
+        
+        # فیلتر کردن خطوط خالی
+        config_list = [config for config in config_list if config.strip()]
+        
+        if not config_list:
+            logger.error(f"No valid configs found for purchase {purchase_id}")
+            return False
         
         # ذخیره در دیتابیس
         success = db_manager.update_purchase_configs(purchase_id, json.dumps(config_list))

@@ -1019,12 +1019,15 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         text += f"🏠 **سرور:** {server_name}\n"
         
         # زمان باقی‌مانده
-        if days_remaining > 0:
-            text += f"⏰ **زمان باقی‌مانده:** {days_remaining} روز\n"
-        elif days_remaining == 0:
-            text += f"⚠️ **زمان باقی‌مانده:** امروز منقضی می‌شود\n"
+        if days_remaining is not None:
+            if days_remaining > 0:
+                text += f"⏰ **زمان باقی‌مانده:** {days_remaining} روز\n"
+            elif days_remaining == 0:
+                text += f"⚠️ **زمان باقی‌مانده:** امروز منقضی می‌شود\n"
+            else:
+                text += f"❌ **وضعیت:** منقضی شده\n"
         else:
-            text += f"❌ **وضعیت:** منقضی شده\n"
+            text += f"⚠️ **زمان باقی‌مانده:** نامشخص\n"
         
         # اطلاعات ترافیک
         if traffic_info:
