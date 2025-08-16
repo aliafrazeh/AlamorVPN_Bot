@@ -2652,14 +2652,35 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.edit_message_text("❌ هیچ خرید فعالی یافت نشد.", admin_id, message.message_id)
                 return
             
+            # بررسی تنظیمات
+            webhook_domain = os.getenv('WEBHOOK_DOMAIN')
+            admin_api_key = os.getenv('ADMIN_API_KEY')
+            
+            if not webhook_domain:
+                _bot.edit_message_text(
+                    "❌ متغیر WEBHOOK_DOMAIN در فایل .env تنظیم نشده است.\n"
+                    "لطفاً ابتدا دامنه webhook را تنظیم کنید.",
+                    admin_id, message.message_id
+                )
+                return
+            
+            if not admin_api_key:
+                _bot.edit_message_text(
+                    "❌ متغیر ADMIN_API_KEY در فایل .env تنظیم نشده است.\n"
+                    "لطفاً ابتدا کلید API ادمین را تنظیم کنید.",
+                    admin_id, message.message_id
+                )
+                return
+            
             success_count = 0
             error_count = 0
+            webhook_errors = 0
             
             # درخواست بروزرسانی به webhook server برای هر خرید
             import requests
-            webhook_base_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs"
+            webhook_base_url = f"https://{webhook_domain}/admin/update_configs"
             headers = {
-                'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
+                'Authorization': f'Bearer {admin_api_key}'
             }
             
             for purchase in active_purchases:
@@ -2669,26 +2690,57 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     
                     if response.status_code == 200:
                         success_count += 1
+                    elif response.status_code == 401:
+                        error_count += 1
+                        logger.error(f"Unauthorized for purchase {purchase['id']}: Invalid API key")
+                    elif response.status_code == 404:
+                        error_count += 1
+                        logger.error(f"Purchase {purchase['id']} not found in webhook server")
                     else:
                         error_count += 1
+                        logger.error(f"HTTP {response.status_code} for purchase {purchase['id']}: {response.text}")
                         
-                except Exception as e:
-                    logger.error(f"Error updating purchase {purchase['id']}: {e}")
+                except requests.exceptions.ConnectionError:
+                    webhook_errors += 1
+                    logger.error(f"Connection error for purchase {purchase['id']}: Webhook server not reachable")
+                except requests.exceptions.Timeout:
                     error_count += 1
+                    logger.error(f"Timeout for purchase {purchase['id']}")
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Error updating purchase {purchase['id']}: {e}")
             
             # نمایش نتیجه
-            result_text = f"✅ بروزرسانی لینک‌های subscription کامل شد!\n\n"
+            result_text = f"🔄 **بروزرسانی لینک‌های Subscription**\n\n"
             result_text += f"📊 **نتایج:**\n"
-            result_text += f"• موفق: {success_count} لینک\n"
-            result_text += f"• ناموفق: {error_count} لینک\n"
-            result_text += f"• کل: {len(active_purchases)} لینک\n\n"
-            result_text += f"🔄 همه لینک‌ها حالا آخرین تنظیمات پنل را دارند."
+            result_text += f"• ✅ موفق: **{success_count}** لینک\n"
+            result_text += f"• ❌ ناموفق: **{error_count}** لینک\n"
+            result_text += f"• 📡 خطای اتصال: **{webhook_errors}** لینک\n"
+            result_text += f"• 📈 کل: **{len(active_purchases)}** لینک\n\n"
             
-            _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown')
+            if success_count > 0:
+                result_text += "🎉 برخی لینک‌ها با موفقیت بروزرسانی شدند."
+            elif webhook_errors > 0:
+                result_text += "⚠️ **مشکل:** webhook server در دسترس نیست.\n"
+                result_text += "لطفاً اطمینان حاصل کنید که webhook server در حال اجرا است."
+            elif error_count > 0:
+                result_text += "⚠️ برخی لینک‌ها بروزرسانی نشدند.\n"
+                result_text += "لطفاً لاگ‌ها را بررسی کنید."
+            else:
+                result_text += "✅ تمام لینک‌ها با موفقیت بروزرسانی شدند!"
+            
+            # اضافه کردن دکمه بازگشت
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(result_text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
             
         except Exception as e:
             logger.error(f"Error refreshing all subscription links: {e}")
-            _bot.edit_message_text(
-                f"❌ خطا در بروزرسانی لینک‌های subscription:\n{str(e)}",
-                admin_id, message.message_id
-            )
+            error_text = f"❌ خطا در بروزرسانی لینک‌های subscription:\n{str(e)}"
+            
+            # اضافه کردن دکمه بازگشت
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(error_text, admin_id, message.message_id, reply_markup=markup)
