@@ -630,13 +630,22 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         
         current_name = gateway['name']
         current_type = gateway['type']
-        current_config = gateway['config']
+        
+        # نمایش تنظیمات فعلی بر اساس نوع درگاه
+        current_config_text = ""
+        if current_type == 'zarinpal':
+            merchant_id = gateway.get('merchant_id', 'تنظیم نشده')
+            current_config_text = f"Merchant ID: {merchant_id}"
+        elif current_type == 'card_to_card':
+            card_number = gateway.get('card_number', 'تنظیم نشده')
+            card_holder = gateway.get('card_holder_name', 'تنظیم نشده')
+            current_config_text = f"شماره کارت: {card_number}\nصاحب کارت: {card_holder}"
         
         edit_text = (
             f"✏️ **ویرایش درگاه پرداخت**\n\n"
             f"**درگاه فعلی:** {current_name}\n"
             f"**نوع:** {current_type}\n"
-            f"**تنظیمات فعلی:** {current_config}\n\n"
+            f"**تنظیمات فعلی:**\n{current_config_text}\n\n"
             f"لطفاً نام جدید درگاه را وارد کنید (یا برای حفظ نام فعلی، همان نام را وارد کنید):"
         )
         
@@ -1077,28 +1086,25 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         new_gateway_type = data.get('new_gateway_type')
         new_description = data.get('new_description')
         
-        # ساخت config جدید بر اساس نوع درگاه
-        new_config = {}
-        if new_gateway_type == 'zarinpal':
-            new_config = {
-                'merchant_id': data.get('new_merchant_id')
-            }
-        elif new_gateway_type == 'card_to_card':
-            new_config = {
-                'card_number': data.get('new_card_number'),
-                'card_holder_name': data.get('new_card_holder_name')
-            }
+        # آماده‌سازی پارامترها بر اساس نوع درگاه
+        card_number = None
+        card_holder_name = None
+        merchant_id = None
         
-        # تبدیل config به JSON
-        import json
-        config_json = json.dumps(new_config)
+        if new_gateway_type == 'zarinpal':
+            merchant_id = data.get('new_merchant_id')
+        elif new_gateway_type == 'card_to_card':
+            card_number = data.get('new_card_number')
+            card_holder_name = data.get('new_card_holder_name')
         
         # آپدیت درگاه در دیتابیس
         success = _db_manager.update_payment_gateway(
             gateway_id=gateway_id,
             name=new_name,
             gateway_type=new_gateway_type,
-            config=config_json,
+            card_number=card_number,
+            card_holder_name=card_holder_name,
+            merchant_id=merchant_id,
             description=new_description
         )
         
