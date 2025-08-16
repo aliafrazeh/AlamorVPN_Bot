@@ -192,16 +192,31 @@ def format_traffic_size(bytes_value):
 
 def calculate_days_remaining(expire_date):
     """
-    محاسبه تعداد روزهای باقی‌مانده
+    محاسبه تعداد روزهای باقی‌مانده - نسخه ساده و مطمئن
     """
     if not expire_date:
         return None
     
     from datetime import datetime
-    now = datetime.now()
     
-    if isinstance(expire_date, str):
-        expire_date = datetime.strptime(expire_date, '%Y-%m-%d %H:%M:%S')
-    
-    days_remaining = (expire_date - now).days
-    return days_remaining
+    try:
+        # تبدیل expire_date به datetime
+        if isinstance(expire_date, str):
+            expire_date = datetime.strptime(expire_date, '%Y-%m-%d %H:%M:%S')
+        
+        # حذف timezone اگر وجود دارد
+        if hasattr(expire_date, 'tzinfo') and expire_date.tzinfo is not None:
+            expire_date = expire_date.replace(tzinfo=None)
+        elif hasattr(expire_date, 'replace'):
+            # اگر replace method دارد، timezone را حذف کنیم
+            expire_date = expire_date.replace(tzinfo=None)
+        
+        # محاسبه تفاوت با datetime.now() بدون timezone
+        now = datetime.now()
+        days_remaining = (expire_date - now).days
+        return days_remaining
+        
+    except Exception as e:
+        # در صورت بروز خطا، None برمی‌گردانیم
+        print(f"Error in calculate_days_remaining: {e}")
+        return None

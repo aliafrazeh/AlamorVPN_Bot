@@ -4,6 +4,7 @@ import logging
 import json
 import qrcode
 import datetime
+import os
 from io import BytesIO
 import uuid
 import requests
@@ -1073,7 +1074,10 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         # دکمه‌های عملیات
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("🔄 بروزرسانی", callback_data=f"user_refresh_traffic_{purchase_id}"),
+            types.InlineKeyboardButton("🔄 بروزرسانی ترافیک", callback_data=f"user_refresh_traffic_{purchase_id}"),
+            types.InlineKeyboardButton("🔄 بروزرسانی لینک", callback_data=f"user_refresh_subscription_{purchase_id}")
+        )
+        markup.add(
             types.InlineKeyboardButton("📄 کانفیگ‌های تکی", callback_data=f"user_get_single_configs_{purchase_id}")
         )
         markup.add(types.InlineKeyboardButton("🔙 بازگشت به سرویس‌ها", callback_data="user_my_services"))
@@ -1093,6 +1097,62 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 _bot.send_photo(user_id, bio, caption=messages.QR_CODE_CAPTION)
             except Exception as e:
                 logger.error(f"Failed to generate QR code: {e}")
+
+    def refresh_subscription_link(user_id, purchase_id, message):
+        """
+        بروزرسانی لینک subscription از پنل اصلی
+        """
+        try:
+            # نمایش پیام در حال بروزرسانی
+            _bot.edit_message_text("⏳ در حال بروزرسانی لینک subscription از پنل اصلی...", user_id, message.message_id)
+            
+            # دریافت اطلاعات خرید
+            purchase = _db_manager.get_purchase_by_id(purchase_id)
+            if not purchase:
+                _bot.edit_message_text("❌ خرید مورد نظر یافت نشد.", user_id, message.message_id)
+                return
+            
+            # دریافت اطلاعات سرور
+            server = _db_manager.get_server_by_id(purchase['server_id'])
+            if not server:
+                _bot.edit_message_text("❌ اطلاعات سرور یافت نشد.", user_id, message.message_id)
+                return
+            
+            # درخواست بروزرسانی به webhook server
+            import requests
+            webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN', 'localhost')}/admin/update_configs/{purchase_id}"
+            headers = {
+                'Authorization': f'Bearer {os.getenv("ADMIN_API_KEY", "your-secret-key")}'
+            }
+            
+            response = requests.post(webhook_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                _bot.edit_message_text(
+                    f"✅ لینک subscription با موفقیت بروزرسانی شد!\n\n"
+                    f"📊 **جزئیات:**\n"
+                    f"• سرور: {server['name']}\n"
+                    f"• تاریخ بروزرسانی: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"🔄 لینک شما حالا آخرین تنظیمات پنل را دارد.",
+                    user_id, message.message_id, parse_mode='Markdown'
+                )
+                
+                # نمایش مجدد جزئیات سرویس
+                show_service_details_with_traffic(user_id, purchase_id, message)
+            else:
+                _bot.edit_message_text(
+                    f"❌ خطا در بروزرسانی لینک subscription.\n"
+                    f"کد خطا: {response.status_code}\n"
+                    f"پیام: {response.text}",
+                    user_id, message.message_id
+                )
+                
+        except Exception as e:
+            logger.error(f"Error refreshing subscription link: {e}")
+            _bot.edit_message_text(
+                f"❌ خطا در بروزرسانی لینک subscription:\n{str(e)}",
+                user_id, message.message_id
+            )
 
     def refresh_traffic_info(user_id, purchase_id, message):
         """
@@ -1116,3 +1176,16 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             show_service_details_with_traffic(user_id, purchase_id, message)
         else:
             _bot.answer_callback_query(message.id, "❌ خطا در دریافت اطلاعات ترافیک", show_alert=True)
+
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith('user_refresh_subscription_'))
+    def handle_refresh_subscription_callback(call):
+        """مدیریت callback بروزرسانی لینک subscription"""
+        try:
+            user_id = call.from_user.id
+            purchase_id = int(call.data.split('_')[3])
+            
+            refresh_subscription_link(user_id, purchase_id, call.message)
+            
+        except Exception as e:
+            logger.error(f"Error in refresh subscription callback: {e}")
+            _bot.answer_callback_query(call.id, "❌ خطا در بروزرسانی لینک", show_alert=True)
