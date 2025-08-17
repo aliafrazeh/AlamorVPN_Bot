@@ -396,28 +396,33 @@ def build_config_from_panel(server_info, inbound_id, client_id, brand_name="Alam
         logger.info(f"Retrieved client info: {client_info.get('email', 'N/A')}")
         logger.info(f"Client info keys: {list(client_info.keys())}")
         
-        # تشخیص نوع پروتکل
-        protocol = inbound_info.get('protocol', 'vmess')
-        if not protocol or protocol == 'vmess':
-            # بررسی فیلدهای دیگر که ممکن است پروتکل را نشان دهند
-            protocol = inbound_info.get('type', inbound_info.get('protocol', 'vmess'))
-        
-        logger.info(f"Inbound protocol: {protocol}")
+        # تشخیص نوع پروتکل - همیشه VLESS
+        protocol = 'vless'
+        logger.info(f"Protocol set to: {protocol}")
         logger.info(f"Inbound info keys: {list(inbound_info.keys())}")
         logger.info(f"Full inbound info: {inbound_info}")
         
         # ساخت کانفیگ بر اساس پروتکل
-        protocol_lower = protocol.lower() if protocol else 'vmess'
+        protocol_lower = protocol.lower() if protocol else 'vless'
         logger.info(f"Processing protocol: {protocol_lower}")
         
-        if protocol_lower in ['vmess', 'vmess+ws', 'vmess+tls']:
-            config = build_vmess_config(client_info, inbound_info, server_info, brand_name)
-        elif protocol_lower in ['vless', 'vless+ws', 'vless+tls', 'vless+reality']:
+        config = None
+        
+        # فقط VLESS بساز
+        if protocol_lower in ['vless', 'vless+ws', 'vless+tls', 'vless+reality']:
+            logger.info("Building VLESS config...")
             config = build_vless_config(client_info, inbound_info, server_info, brand_name)
-        elif protocol_lower in ['trojan', 'trojan+ws', 'trojan+tls']:
-            config = build_trojan_config(client_info, inbound_info, server_info, brand_name)
+            if config:
+                logger.info("✅ VLESS config built successfully!")
+                protocol = 'vless'
+            else:
+                logger.error("❌ Failed to build VLESS config")
         else:
-            logger.error(f"Unsupported protocol: {protocol} (lowercase: {protocol_lower})")
+            logger.error(f"Unsupported protocol: {protocol}. Only VLESS is supported.")
+            return None
+        
+        if not config:
+            logger.error(f"Failed to build VLESS config for protocol: {protocol}")
             return None
         
         if config:
