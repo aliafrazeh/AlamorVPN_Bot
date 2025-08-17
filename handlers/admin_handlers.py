@@ -725,6 +725,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_check_subscription_links": check_and_fix_subscription_links,
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
             "admin_subscription_system_status": show_subscription_system_status,
+            "admin_test_config_builder": show_config_builder_test_menu,
+            "admin_test_config_server_": test_config_builder_for_server,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -2770,6 +2772,167 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
             
             _bot.edit_message_text(error_text, admin_id, message.message_id, reply_markup=markup)
+
+    def show_config_builder_test_menu(admin_id, message):
+        """نمایش منوی تست Config Builder"""
+        _clear_admin_state(admin_id)
+        
+        try:
+            # دریافت لیست سرورها
+            servers = _db_manager.get_all_servers()
+            
+            if not servers:
+                _bot.edit_message_text(
+                    "❌ هیچ سروری یافت نشد.\nلطفاً ابتدا سرور اضافه کنید.",
+                    admin_id, message.message_id
+                )
+                return
+            
+            text = "🧪 **تست Config Builder**\n\n"
+            text += "این ابزار کانفیگ‌ها را مستقیماً از پنل می‌سازد:\n"
+            text += "• دریافت اطلاعات کلاینت از پنل\n"
+            text += "• ساخت کانفیگ بر اساس پروتکل\n"
+            text += "• تست عملکرد API\n\n"
+            text += "**سرورهای موجود:**\n"
+            
+            markup = types.InlineKeyboardMarkup()
+            
+            for server in servers:
+                server_name = helpers.escape_markdown_v1(server['name'])
+                text += f"• {server_name}\n"
+                markup.add(
+                    types.InlineKeyboardButton(
+                        f"🧪 تست {server['name']}", 
+                        callback_data=f"admin_test_config_server_{server['id']}"
+                    )
+                )
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing config builder test menu: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش منوی تست: {str(e)}", admin_id, message.message_id)
+
+    def test_config_builder_for_server(admin_id, message, server_id):
+        """تست Config Builder برای سرور خاص"""
+        try:
+            # دریافت اطلاعات سرور
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # نمایش پیام در حال تست
+            _bot.edit_message_text(
+                f"🧪 **تست Config Builder**\n\n"
+                f"سرور: **{server_info['name']}**\n"
+                f"⏳ در حال تست اتصال به پنل...",
+                admin_id, message.message_id, parse_mode='Markdown'
+            )
+            
+            # import config builder
+            from utils.config_builder import test_config_builder
+            
+            # تست اتصال به پنل
+            try:
+                # دریافت لیست inbounds
+                from api_client.xui_api_client import XuiAPIClient
+                api_client = XuiAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+                
+                if not api_client.check_login():
+                    _bot.edit_message_text(
+                        f"❌ **خطا در اتصال به پنل**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"نمی‌توان به پنل متصل شد.\n"
+                        f"لطفاً اطلاعات ورود را بررسی کنید.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                    return
+                
+                # دریافت لیست inbounds
+                inbounds = api_client.list_inbounds()
+                if not inbounds:
+                    _bot.edit_message_text(
+                        f"❌ **هیچ inbound یافت نشد**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"هیچ inbound فعالی در پنل وجود ندارد.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                    return
+                
+                # انتخاب اولین inbound و کلاینت
+                test_inbound = inbounds[0]
+                inbound_id = test_inbound['id']
+                
+                # بررسی وجود کلاینت
+                inbound_settings = json.loads(test_inbound.get('settings', '{}'))
+                clients = inbound_settings.get('clients', [])
+                
+                if not clients:
+                    _bot.edit_message_text(
+                        f"❌ **هیچ کلاینت یافت نشد**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"Inbound: **{test_inbound.get('remark', 'Unknown')}**\n"
+                        f"هیچ کلاینت فعالی در این inbound وجود ندارد.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                    return
+                
+                # انتخاب اولین کلاینت
+                test_client = clients[0]
+                client_id = test_client.get('id')
+                
+                # تست ساخت کانفیگ
+                result = test_config_builder(server_info, inbound_id, client_id)
+                
+                if result:
+                    # نمایش نتیجه موفق
+                    config_preview = result['config'][:100] + "..." if len(result['config']) > 100 else result['config']
+                    
+                    text = f"✅ **تست موفق!**\n\n"
+                    text += f"**سرور:** {server_info['name']}\n"
+                    text += f"**پروتکل:** {result['protocol']}\n"
+                    text += f"**کلاینت:** {result['client_email']}\n"
+                    text += f"**Inbound:** {result['inbound_id']}\n\n"
+                    text += f"**کانفیگ ساخته شده:**\n"
+                    text += f"`{config_preview}`\n\n"
+                    text += f"🎉 **Config Builder کار می‌کند!**"
+                    
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(
+                        types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_test_config_builder"),
+                        types.InlineKeyboardButton("🏠 منوی اصلی", callback_data="admin_main_menu")
+                    )
+                    
+                    _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                    
+                else:
+                    _bot.edit_message_text(
+                        f"❌ **خطا در ساخت کانفیگ**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"کلاینت: **{test_client.get('email', 'Unknown')}**\n"
+                        f"خطا در ساخت کانفیگ رخ داد.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                
+            except Exception as e:
+                logger.error(f"Error testing config builder: {e}")
+                _bot.edit_message_text(
+                    f"❌ **خطا در تست**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"خطا: **{str(e)}**",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in test_config_builder_for_server: {e}")
+            _bot.edit_message_text(f"❌ خطا در تست: {str(e)}", admin_id, message.message_id)
 
     def show_subscription_system_status(admin_id, message):
         """نمایش وضعیت سیستم subscription"""
