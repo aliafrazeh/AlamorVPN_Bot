@@ -209,6 +209,40 @@ def get_panel_subscription_data(server_info, sub_id):
         logger.error(f"Unexpected error in get_panel_subscription_data: {e}")
         return None
 
+def get_webhook_subscription_data(purchase):
+    """
+    دریافت دیتای subscription از webhook server فعلی (بهترین روش)
+    """
+    try:
+        sub_id = purchase.get('sub_id')
+        if not sub_id:
+            logger.error(f"Purchase {purchase['id']} has no sub_id")
+            return None
+        
+        # دریافت دامنه فعال از دیتابیس
+        active_domain = db_manager.get_setting('active_domain')
+        if not active_domain:
+            logger.error("No active domain set in database")
+            return None
+        
+        # ساخت URL webhook
+        webhook_url = f"https://{active_domain}/sub/{sub_id}"
+        logger.info(f"Fetching subscription data from webhook: {webhook_url}")
+        
+        # درخواست GET به webhook server
+        response = requests.get(webhook_url, timeout=30)
+        response.raise_for_status()
+        
+        # محتوای webhook server همیشه plain text است
+        return response.text
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching subscription data from webhook: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in get_webhook_subscription_data: {e}")
+        return None
+
 def update_cached_configs_from_panel(purchase_id):
     """
     بروزرسانی کانفیگ‌های ذخیره شده از پنل اصلی
@@ -255,9 +289,21 @@ def update_cached_configs_from_panel(purchase_id):
                 return False
             subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
         
+        # اگر نتوانستیم از پنل دیتا بگیریم، از دیتای cached استفاده می‌کنیم
         if not subscription_data:
-            logger.error(f"Could not fetch subscription data from panel for purchase {purchase_id}")
-            return False
+            logger.warning(f"Could not fetch subscription data from panel for purchase {purchase_id}, using cached data")
+            cached_configs = purchase.get('single_configs_json')
+            if cached_configs:
+                try:
+                    config_list = json.loads(cached_configs)
+                    subscription_data = "\n".join(config_list)
+                    logger.info(f"Using cached configs for purchase {purchase_id}: {len(config_list)} configs")
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.error(f"Error parsing cached configs for purchase {purchase_id}: {e}")
+                    return False
+            else:
+                logger.error(f"No cached configs available for purchase {purchase_id}")
+                return False
         
         logger.info(f"Successfully fetched subscription data for purchase {purchase_id}, length: {len(subscription_data)}")
         
@@ -407,8 +453,21 @@ def get_profile_subscription_data(purchase):
                 continue
         
         if not all_configs:
-            logger.error(f"No configs collected from any server for profile {profile_id}")
-            return None
+            logger.warning(f"No configs collected from any server for profile {profile_id}, trying fallback")
+            # Fallback: سعی می‌کنیم از دیتای cached استفاده کنیم
+            cached_configs = purchase.get('single_configs_json')
+            if cached_configs:
+                try:
+                    config_list = json.loads(cached_configs)
+                    final_subscription_data = "\n".join(config_list)
+                    logger.info(f"Using cached configs for profile {profile_id}: {len(config_list)} configs")
+                    return final_subscription_data
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.error(f"Error parsing cached configs for profile {profile_id}: {e}")
+                    return None
+            else:
+                logger.error(f"No cached configs available for profile {profile_id}")
+                return None
         
         # ترکیب تمام کانفیگ‌ها
         final_subscription_data = "\n".join(all_configs)
