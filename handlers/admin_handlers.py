@@ -2904,7 +2904,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 logger.info(f"Client data: {test_client}")
                 
                 # تست ساخت کانفیگ
-                result = test_config_builder(server_info, inbound_id, client_id)
+                try:
+                    result = test_config_builder(server_info, inbound_id, client_id)
+                except Exception as e:
+                    logger.error(f"Error in test_config_builder: {e}")
+                    result = None
                 
                 if result:
                     # نمایش نتیجه موفق

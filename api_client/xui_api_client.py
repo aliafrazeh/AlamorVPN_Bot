@@ -341,7 +341,16 @@ class XuiAPIClient:
         response = self._request("GET", endpoint)
         
         if response and response.get('success'):
-            return response.get('obj', {})
+            traffic_data = response.get('obj', {})
+            
+            # اگر traffic_data یک list هست، اولین عنصر رو برگردون
+            if isinstance(traffic_data, list) and len(traffic_data) > 0:
+                return traffic_data[0]
+            elif isinstance(traffic_data, dict):
+                return traffic_data
+            else:
+                logger.warning(f"Unexpected traffic data format for client {client_id}: {type(traffic_data)}")
+                return {}
         else:
             logger.warning(f"Failed to get traffic for client ID {client_id}")
             return None
@@ -371,9 +380,15 @@ class XuiAPIClient:
                 for client in clients:
                     if client.get('id') == client_id or client.get('email') == client_id:
                         # اطلاعات ترافیک را هم اضافه می‌کنیم
-                        traffic_info = self.get_client_traffic_by_id(client_id)
-                        if traffic_info:
-                            client.update(traffic_info)
+                        try:
+                            traffic_info = self.get_client_traffic_by_id(client_id)
+                            if traffic_info and isinstance(traffic_info, dict):
+                                client.update(traffic_info)
+                            elif traffic_info:
+                                logger.warning(f"Traffic info is not a dict for client {client_id}: {type(traffic_info)}")
+                        except Exception as e:
+                            logger.warning(f"Error updating traffic info for client {client_id}: {e}")
+                        
                         return client
                         
             except (json.JSONDecodeError, TypeError) as e:
