@@ -2918,6 +2918,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     def test_config_builder_for_inbound(admin_id, message, server_id, inbound_id):
         """تست Config Builder برای inbound خاص - ساخت کلاینت جدید و تست کانفیگ"""
         import time  # Import time at the beginning of the function
+        from utils.config_builder import build_vless_config  # Import config builder functions
         try:
             logger.info(f"Testing config builder for server {server_id}, inbound {inbound_id}")
             
@@ -3242,8 +3243,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         return
                     
                     # ساخت کانفیگ مستقیماً با استفاده از دیتای کلاینت
-                    from utils.config_builder import build_vless_config
-                    
                     # دریافت اطلاعات inbound
                     inbound_info = api_client.get_inbound(inbound_id)
                     if inbound_info:
@@ -3774,6 +3773,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def create_configs_for_inbound(admin_id, message, server_id, inbound_id):
         """ساخت کانفیگ‌ها برای یک اینباند خاص"""
+        from utils.config_builder import build_vmess_config, build_vless_config, build_trojan_config
         try:
             server_info = _db_manager.get_server_by_id(server_id)
             if not server_info:
