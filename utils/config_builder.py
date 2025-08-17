@@ -35,7 +35,7 @@ def get_api_client(server_info):
 
 def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamor"):
     """
-    ساخت کانفیگ VMess
+    ساخت کانفیگ VMess با پشتیبانی کامل از تمام تنظیمات
     """
     try:
         # استخراج اطلاعات کلاینت
@@ -44,19 +44,28 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
         client_name = client_info.get('name', f"{brand_name}-{client_email}")
         
         # استخراج اطلاعات inbound
-        inbound_settings = json.loads(inbound_info.get('settings', '{}'))
-        stream_settings = json.loads(inbound_info.get('streamSettings', '{}'))
+        stream_settings_str = inbound_info.get('streamSettings', '{}')
+        try:
+            stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+        except:
+            stream_settings = {}
+        
+        # آدرس سرور - استفاده از IP سرور
+        server_ip = server_info.get('ip', '')
+        if not server_ip:
+            # Fallback به subscription_base_url
+            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
         
         # ساخت VMess config
         vmess_config = {
             "v": "2",
             "ps": client_name,  # نام کانفیگ
-            "add": server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0],  # آدرس سرور
+            "add": server_ip,  # آدرس سرور
             "port": inbound_info.get('port', 443),
             "id": client_id,  # UUID کلاینت
             "aid": "0",
             "net": stream_settings.get('network', 'tcp'),
-            "type": stream_settings.get('headerType', 'none'),
+            "type": "none",
             "host": "",
             "path": "",
             "tls": stream_settings.get('security', 'none')
@@ -67,16 +76,45 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
             ws_settings = stream_settings.get('wsSettings', {})
             vmess_config['host'] = ws_settings.get('host', '')
             vmess_config['path'] = ws_settings.get('path', '')
+            
+            # تنظیمات headers
+            headers = ws_settings.get('headers', {})
+            if headers:
+                vmess_config['host'] = headers.get('Host', vmess_config['host'])
+        
+        # تنظیمات HTTP/2
+        elif vmess_config['net'] == 'h2':
+            h2_settings = stream_settings.get('httpSettings', {})
+            vmess_config['host'] = h2_settings.get('host', '')
+            vmess_config['path'] = h2_settings.get('path', '')
+        
+        # تنظیمات gRPC
+        elif vmess_config['net'] == 'grpc':
+            grpc_settings = stream_settings.get('grpcSettings', {})
+            vmess_config['path'] = grpc_settings.get('serviceName', '')
         
         # تنظیمات TLS
         if vmess_config['tls'] == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
-            vmess_config['sni'] = tls_settings.get('serverName', vmess_config['add'])
+            vmess_config['sni'] = tls_settings.get('serverName', server_ip)
+            vmess_config['fp'] = tls_settings.get('fingerprint', '')
+        
+        # تنظیمات Reality
+        elif vmess_config['tls'] == 'reality':
+            reality_settings = stream_settings.get('realitySettings', {})
+            vmess_config['sni'] = reality_settings.get('dest', '').split(':')[0] if ':' in reality_settings.get('dest', '') else reality_settings.get('dest', '')
+            vmess_config['fp'] = reality_settings.get('settings', {}).get('fingerprint', '')
+            vmess_config['pbk'] = reality_settings.get('settings', {}).get('publicKey', '')
+            vmess_config['sid'] = reality_settings.get('shortIds', [''])[0] if reality_settings.get('shortIds') else ''
+        
+        # حذف فیلدهای خالی
+        vmess_config = {k: v for k, v in vmess_config.items() if v != "" and v is not None}
         
         # تبدیل به Base64
         config_json = json.dumps(vmess_config, separators=(',', ':'))
         encoded_config = base64.b64encode(config_json.encode()).decode()
         
+        logger.info(f"Built VMess config for {client_email}: vmess://{encoded_config[:50]}...")
         return f"vmess://{encoded_config}"
         
     except Exception as e:
@@ -85,7 +123,7 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
 
 def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamor"):
     """
-    ساخت کانفیگ VLESS
+    ساخت کانفیگ VLESS با پشتیبانی کامل از Reality و سایر تنظیمات
     """
     try:
         # استخراج اطلاعات کلاینت
@@ -94,38 +132,99 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         client_name = client_info.get('name', f"{brand_name}-{client_email}")
         
         # استخراج اطلاعات inbound
-        inbound_settings = json.loads(inbound_info.get('settings', '{}'))
-        stream_settings = json.loads(inbound_info.get('streamSettings', '{}'))
+        stream_settings_str = inbound_info.get('streamSettings', '{}')
+        try:
+            stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+        except:
+            stream_settings = {}
         
-        # آدرس سرور
-        server_address = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+        # آدرس سرور - استفاده از IP سرور
+        server_ip = server_info.get('ip', '')
+        if not server_ip:
+            # Fallback به subscription_base_url
+            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+        
         port = inbound_info.get('port', 443)
         
-        # پارامترهای query
-        params = {
-            'encryption': 'none',
-            'security': stream_settings.get('security', 'none'),
-            'type': stream_settings.get('network', 'tcp')
-        }
+        # ساخت VLESS URL با پارامترهای صحیح
+        base_url = f"vless://{client_id}@{server_ip}:{port}"
         
-        # تنظیمات WebSocket
-        if params['type'] == 'ws':
-            ws_settings = stream_settings.get('wsSettings', {})
-            params['path'] = ws_settings.get('path', '')
-            params['host'] = ws_settings.get('host', '')
+        # پارامترهای query
+        params = []
+        params.append("encryption=none")
+        
+        # اضافه کردن security
+        security = stream_settings.get('security', 'none')
+        params.append(f"security={security}")
+        
+        # اضافه کردن network type
+        network = stream_settings.get('network', 'tcp')
+        params.append(f"type={network}")
         
         # تنظیمات TLS
-        if params['security'] == 'tls':
+        if security == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
-            params['sni'] = tls_settings.get('serverName', server_address)
+            sni = tls_settings.get('serverName', '')
+            if sni:
+                params.append(f"sni={sni}")
+            fp = tls_settings.get('fingerprint', '')
+            if fp:
+                params.append(f"fp={fp}")
         
-        # ساخت query string
-        query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
+        # تنظیمات Reality
+        if security == 'reality':
+            reality_settings = stream_settings.get('realitySettings', {})
+            dest = reality_settings.get('dest', '')
+            if dest and ':' in dest:
+                sni = dest.split(':')[0]
+                params.append(f"sni={sni}")
+            
+            settings = reality_settings.get('settings', {})
+            fp = settings.get('fingerprint', '')
+            if fp:
+                params.append(f"fp={fp}")
+            
+            pbk = settings.get('publicKey', '')
+            if pbk:
+                params.append(f"pbk={pbk}")
+            
+            short_ids = reality_settings.get('shortIds', [])
+            if short_ids:
+                params.append(f"sid={short_ids[0]}")
         
-        # ساخت VLESS config
-        vless_config = f"vless://{client_id}@{server_address}:{port}?{query_string}#{quote(client_name)}"
+        # تنظیمات WebSocket
+        if network == 'ws':
+            ws_settings = stream_settings.get('wsSettings', {})
+            path = ws_settings.get('path', '')
+            if path:
+                params.append(f"path={path}")
+            
+            headers = ws_settings.get('headers', {})
+            host = headers.get('Host', '')
+            if host:
+                params.append(f"host={host}")
         
-        return vless_config
+        # تنظیمات gRPC
+        elif network == 'grpc':
+            grpc_settings = stream_settings.get('grpcSettings', {})
+            service_name = grpc_settings.get('serviceName', '')
+            if service_name:
+                params.append(f"serviceName={service_name}")
+        
+        # اضافه کردن flow برای XTLS
+        flow = client_info.get('flow', '')
+        if flow:
+            params.append(f"flow={flow}")
+        
+        # ساخت URL نهایی
+        if params:
+            base_url += "?" + "&".join(params)
+        
+        # اضافه کردن fragment (نام کلاینت)
+        final_url = f"{base_url}#{quote(client_name)}"
+        
+        logger.info(f"Built VLESS config for {client_email}: {final_url[:100]}...")
+        return final_url
         
     except Exception as e:
         logger.error(f"Error building VLESS config: {e}")
@@ -133,7 +232,7 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
 
 def build_trojan_config(client_info, inbound_info, server_info, brand_name="Alamor"):
     """
-    ساخت کانفیگ Trojan
+    ساخت کانفیگ Trojan با پشتیبانی کامل از تمام تنظیمات
     """
     try:
         # استخراج اطلاعات کلاینت
@@ -142,30 +241,98 @@ def build_trojan_config(client_info, inbound_info, server_info, brand_name="Alam
         client_name = client_info.get('name', f"{brand_name}-{client_email}")
         
         # استخراج اطلاعات inbound
-        stream_settings = json.loads(inbound_info.get('streamSettings', '{}'))
+        stream_settings_str = inbound_info.get('streamSettings', '{}')
+        try:
+            stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+        except:
+            stream_settings = {}
         
-        # آدرس سرور
-        server_address = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+        # آدرس سرور - استفاده از IP سرور
+        server_ip = server_info.get('ip', '')
+        if not server_ip:
+            # Fallback به subscription_base_url
+            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+        
         port = inbound_info.get('port', 443)
         
+        # ساخت Trojan URL با پارامترهای صحیح
+        base_url = f"trojan://{client_password}@{server_ip}:{port}"
+        
         # پارامترهای query
-        params = {
-            'security': stream_settings.get('security', 'tls'),
-            'type': stream_settings.get('network', 'tcp')
-        }
+        params = []
+        
+        # اضافه کردن security
+        security = stream_settings.get('security', 'tls')
+        params.append(f"security={security}")
+        
+        # اضافه کردن network type
+        network = stream_settings.get('network', 'tcp')
+        params.append(f"type={network}")
         
         # تنظیمات TLS
-        if params['security'] == 'tls':
+        if security == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
-            params['sni'] = tls_settings.get('serverName', server_address)
+            sni = tls_settings.get('serverName', '')
+            if sni:
+                params.append(f"sni={sni}")
+            fp = tls_settings.get('fingerprint', '')
+            if fp:
+                params.append(f"fp={fp}")
         
-        # ساخت query string
-        query_string = '&'.join([f"{k}={quote(str(v))}" for k, v in params.items() if v])
+        # تنظیمات Reality
+        if security == 'reality':
+            reality_settings = stream_settings.get('realitySettings', {})
+            dest = reality_settings.get('dest', '')
+            if dest and ':' in dest:
+                sni = dest.split(':')[0]
+                params.append(f"sni={sni}")
+            
+            settings = reality_settings.get('settings', {})
+            fp = settings.get('fingerprint', '')
+            if fp:
+                params.append(f"fp={fp}")
+            
+            pbk = settings.get('publicKey', '')
+            if pbk:
+                params.append(f"pbk={pbk}")
+            
+            short_ids = reality_settings.get('shortIds', [])
+            if short_ids:
+                params.append(f"sid={short_ids[0]}")
         
-        # ساخت Trojan config
-        trojan_config = f"trojan://{client_password}@{server_address}:{port}?{query_string}#{quote(client_name)}"
+        # تنظیمات WebSocket
+        if network == 'ws':
+            ws_settings = stream_settings.get('wsSettings', {})
+            path = ws_settings.get('path', '')
+            if path:
+                params.append(f"path={path}")
+            
+            headers = ws_settings.get('headers', {})
+            host = headers.get('Host', '')
+            if host:
+                params.append(f"host={host}")
         
-        return trojan_config
+        # تنظیمات gRPC
+        elif network == 'grpc':
+            grpc_settings = stream_settings.get('grpcSettings', {})
+            service_name = grpc_settings.get('serviceName', '')
+            if service_name:
+                params.append(f"serviceName={service_name}")
+        
+        # اضافه کردن flow برای XTLS
+        flow = client_info.get('flow', '')
+        if flow:
+            params.append(f"flow={flow}")
+        
+        # ساخت URL نهایی
+        if params:
+            base_url += "?" + "&".join(params)
+        
+        # اضافه کردن fragment (نام کلاینت)
+        final_url = f"{base_url}#{quote(client_name)}"
+        
+        logger.info(f"Built Trojan config for {client_email}: {final_url[:100]}...")
+        return final_url
         
     except Exception as e:
         logger.error(f"Error building Trojan config: {e}")
