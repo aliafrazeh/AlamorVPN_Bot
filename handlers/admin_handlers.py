@@ -2905,6 +2905,30 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
                 # تست ساخت کانفیگ
                 try:
+                    # ابتدا JSON کامل رو لاگ کنیم
+                    logger.info("=== DEBUG: Full JSON Response ===")
+                    logger.info(f"Inbound ID: {inbound_id}")
+                    logger.info(f"Client ID: {client_id}")
+                    
+                    # دریافت اطلاعات کامل inbound
+                    inbound_details = api_client.get_inbound(inbound_id)
+                    if inbound_details:
+                        logger.info("=== INBOUND DETAILS ===")
+                        logger.info(json.dumps(inbound_details, indent=2, ensure_ascii=False))
+                    
+                    # دریافت raw data برای debug
+                    raw_data = api_client.get_raw_inbound_data(inbound_id)
+                    if raw_data:
+                        logger.info("=== RAW API RESPONSE ===")
+                        logger.info(json.dumps(raw_data, indent=2, ensure_ascii=False))
+                    
+                    # دریافت اطلاعات کامل کلاینت
+                    client_details = api_client.get_client_info(client_id)
+                    if client_details:
+                        logger.info("=== CLIENT DETAILS ===")
+                        logger.info(json.dumps(client_details, indent=2, ensure_ascii=False))
+                    
+                    # تست ساخت کانفیگ
                     result = test_config_builder(server_info, inbound_id, client_id)
                 except Exception as e:
                     logger.error(f"Error in test_config_builder: {e}")

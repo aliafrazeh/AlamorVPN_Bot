@@ -397,6 +397,23 @@ class XuiAPIClient:
         
         logger.warning(f"Client with ID {client_id} not found")
         return None
+
+    def get_raw_inbound_data(self, inbound_id):
+        """Gets raw inbound data for debugging purposes."""
+        if not self.check_login():
+            logger.error("Not logged in to X-UI. Cannot get raw inbound data.")
+            return None
+        
+        endpoint = f"/panel/api/inbounds/get/{inbound_id}"
+        response = self._request("GET", endpoint)
+        
+        if response:
+            logger.info(f"=== RAW INBOUND DATA FOR ID {inbound_id} ===")
+            logger.info(json.dumps(response, indent=2, ensure_ascii=False))
+            return response
+        else:
+            logger.error(f"Failed to get raw inbound data for ID {inbound_id}")
+            return None
         
         
         
