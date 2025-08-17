@@ -3213,9 +3213,47 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
                 # تست ساخت کانفیگ
                 try:
-                    result = test_config_builder(server_info, inbound_id, client_id)
+                    # استفاده مستقیم از دیتای کلاینت به جای دریافت مجدد از پنل
+                    logger.info(f"Using direct client data for config building")
+                    logger.info(f"Client data to use: {test_client}")
+                    logger.info(f"Client ID from test_client: {test_client.get('id', 'N/A')}")
+                    logger.info(f"Client ID type: {type(test_client.get('id', 'N/A'))}")
+                    
+                    # اطمینان از اینکه UUID صحیح است
+                    if not test_client.get('id') or len(str(test_client.get('id', ''))) < 20:
+                        logger.error(f"Invalid UUID in test_client: {test_client.get('id', 'N/A')}")
+                        _bot.edit_message_text(
+                            f"❌ **خطا در UUID کلاینت**\n\n"
+                            f"UUID نامعتبر: **{test_client.get('id', 'N/A')}**\n"
+                            f"UUID باید حداقل 20 کاراکتر باشد.",
+                            admin_id, message.message_id, parse_mode='Markdown'
+                        )
+                        return
+                    
+                    # ساخت کانفیگ مستقیماً با استفاده از دیتای کلاینت
+                    from utils.config_builder import build_vless_config
+                    
+                    # دریافت اطلاعات inbound
+                    inbound_info = api_client.get_inbound(inbound_id)
+                    if inbound_info:
+                        # ساخت کانفیگ VLESS مستقیماً
+                        config = build_vless_config(test_client, inbound_info, server_info, "Alamor")
+                        if config:
+                            result = {
+                                'protocol': 'vless',
+                                'config': config,
+                                'client_email': test_client.get('email', ''),
+                                'client_name': test_client.get('name', ''),
+                                'inbound_id': inbound_id,
+                                'server_name': server_info.get('name', 'Unknown')
+                            }
+                        else:
+                            result = None
+                    else:
+                        result = None
+                        
                 except Exception as e:
-                    logger.error(f"Error in test_config_builder: {e}")
+                    logger.error(f"Error in direct config building: {e}")
                     result = None
                 
                 if result:

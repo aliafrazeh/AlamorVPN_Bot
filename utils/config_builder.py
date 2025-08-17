@@ -143,6 +143,7 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         
         logger.info(f"=== VLESS Config Debug ===")
         logger.info(f"Client ID: {client_id}")
+        logger.info(f"Client ID type: {type(client_id)}")
         logger.info(f"Client Email: {client_email}")
         logger.info(f"Stream Settings: {json.dumps(stream_settings, indent=2)}")
         
@@ -159,6 +160,13 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         
         # ساخت VLESS URL با پارامترهای صحیح
         base_url = f"vless://{client_id}@{server_ip}:{port}"
+        
+        logger.info(f"=== URL Construction Debug ===")
+        logger.info(f"Client ID for URL: {client_id}")
+        logger.info(f"Client ID type for URL: {type(client_id)}")
+        logger.info(f"Server IP: {server_ip}")
+        logger.info(f"Port: {port}")
+        logger.info(f"Base URL: {base_url}")
         
         # پارامترهای query
         params = []
@@ -395,6 +403,9 @@ def build_config_from_panel(server_info, inbound_id, client_id, brand_name="Alam
         
         logger.info(f"Retrieved client info: {client_info.get('email', 'N/A')}")
         logger.info(f"Client info keys: {list(client_info.keys())}")
+        logger.info(f"Client ID from panel: {client_info.get('id', 'N/A')}")
+        logger.info(f"Client ID type from panel: {type(client_info.get('id', 'N/A'))}")
+        logger.info(f"Full client info: {json.dumps(client_info, indent=2)}")
         
         # تشخیص نوع پروتکل - همیشه VLESS
         protocol = 'vless'
