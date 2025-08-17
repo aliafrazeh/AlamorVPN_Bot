@@ -2906,6 +2906,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def test_config_builder_for_inbound(admin_id, message, server_id, inbound_id):
         """تست Config Builder برای inbound خاص - ساخت کلاینت جدید و تست کانفیگ"""
+        import time  # Import time at the beginning of the function
         try:
             logger.info(f"Testing config builder for server {server_id}, inbound {inbound_id}")
             
@@ -3007,7 +3008,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                             logger.info(f"Test client created successfully: {test_client_data['email']}")
                             
                             # کمی صبر کنیم تا پنل کلاینت را ذخیره کند
-                            import time
                             time.sleep(2)
                             
                             # دریافت دیتای کلاینت از پنل
