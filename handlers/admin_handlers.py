@@ -2976,31 +2976,64 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     # ساخت کلاینت جدید برای تست
                     logger.info(f"No clients found in inbound {inbound_id}, creating test client...")
                     
-                    # ساخت کلاینت تست
+                    # ساخت کلاینت تست جدید با ساختار کامل
                     test_uuid = str(uuid.uuid4())
                     test_client_data = {
                         "id": test_uuid,
                         "email": f"test-{int(time.time())}@alamor.com",
                         "name": f"Test-{int(time.time())}",
-                        "flow": ""
+                        "flow": "",
+                        "totalGB": 0,
+                        "expiryTime": 0,
+                        "enable": True,
+                        "tgId": "",
+                        "subId": "",
+                        "limitIp": 0,
+                        "reset": 0,
+                        "comment": ""
                     }
+                    logger.info(f"Created test client data: {test_client_data}")
+                    logger.info(f"Test UUID: {test_uuid}")
+                    logger.info(f"Test UUID type: {type(test_uuid)}")
                     
-                    # اضافه کردن کلاینت به inbound
+                    # اضافه کردن کلاینت جدید به inbound
                     try:
                         # دریافت تنظیمات فعلی inbound
                         current_settings = json.loads(inbound_info.get('settings', '{}'))
                         current_clients = current_settings.get('clients', [])
                         
+                        logger.info(f"Current settings: {current_settings}")
+                        logger.info(f"Current clients count: {len(current_clients)}")
+                        
                         # اضافه کردن کلاینت جدید
                         current_clients.append(test_client_data)
                         current_settings['clients'] = current_clients
                         
-                        # به‌روزرسانی inbound
+                        logger.info(f"Updated settings: {current_settings}")
+                        logger.info(f"Updated clients count: {len(current_clients)}")
+                        
+                        # به‌روزرسانی inbound - حفظ تمام فیلدهای موجود
                         update_data = {
-                            'settings': json.dumps(current_settings)
+                            'settings': json.dumps(current_settings),
+                            'port': inbound_info.get('port'),
+                            'protocol': inbound_info.get('protocol'),
+                            'streamSettings': inbound_info.get('streamSettings'),
+                            'sniffing': inbound_info.get('sniffing'),
+                            'tag': inbound_info.get('tag'),
+                            'up': inbound_info.get('up'),
+                            'down': inbound_info.get('down'),
+                            'total': inbound_info.get('total'),
+                            'remark': inbound_info.get('remark'),
+                            'enable': inbound_info.get('enable', True)
                         }
                         
-                        logger.info(f"Updating inbound {inbound_id} with data: {update_data}")
+                        # حذف فیلدهای None
+                        update_data = {k: v for k, v in update_data.items() if v is not None}
+                        
+                        logger.info(f"Adding new test client to inbound {inbound_id}")
+                        logger.info(f"Current clients count: {len(current_clients)}")
+                        logger.info(f"Update data: {update_data}")
+                        logger.info(f"Update data JSON: {json.dumps(update_data, indent=2)}")
                         success = api_client.update_inbound(inbound_id, update_data)
                         logger.info(f"Update result: {success}")
                         
@@ -3064,13 +3097,21 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     # کلاینت موجود است، اما برای تست کلاینت جدید می‌سازیم
                     logger.info(f"Found existing clients, but creating new test client for testing...")
                     
-                    # ساخت کلاینت تست جدید
+                    # ساخت کلاینت تست جدید با ساختار کامل
                     test_uuid = str(uuid.uuid4())
                     test_client_data = {
                         "id": test_uuid,
                         "email": f"test-{int(time.time())}@alamor.com",
                         "name": f"Test-{int(time.time())}",
-                        "flow": ""
+                        "flow": "",
+                        "totalGB": 0,
+                        "expiryTime": 0,
+                        "enable": True,
+                        "tgId": "",
+                        "subId": "",
+                        "limitIp": 0,
+                        "reset": 0,
+                        "comment": ""
                     }
                     logger.info(f"Created test client data: {test_client_data}")
                     logger.info(f"Test UUID: {test_uuid}")
@@ -3082,18 +3123,38 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         current_settings = json.loads(inbound_info.get('settings', '{}'))
                         current_clients = current_settings.get('clients', [])
                         
+                        logger.info(f"Current settings: {current_settings}")
+                        logger.info(f"Current clients count: {len(current_clients)}")
+                        
                         # اضافه کردن کلاینت جدید
                         current_clients.append(test_client_data)
                         current_settings['clients'] = current_clients
                         
-                        # به‌روزرسانی inbound
+                        logger.info(f"Updated settings: {current_settings}")
+                        logger.info(f"Updated clients count: {len(current_clients)}")
+                        
+                        # به‌روزرسانی inbound - حفظ تمام فیلدهای موجود
                         update_data = {
-                            'settings': json.dumps(current_settings)
+                            'settings': json.dumps(current_settings),
+                            'port': inbound_info.get('port'),
+                            'protocol': inbound_info.get('protocol'),
+                            'streamSettings': inbound_info.get('streamSettings'),
+                            'sniffing': inbound_info.get('sniffing'),
+                            'tag': inbound_info.get('tag'),
+                            'up': inbound_info.get('up'),
+                            'down': inbound_info.get('down'),
+                            'total': inbound_info.get('total'),
+                            'remark': inbound_info.get('remark'),
+                            'enable': inbound_info.get('enable', True)
                         }
+                        
+                        # حذف فیلدهای None
+                        update_data = {k: v for k, v in update_data.items() if v is not None}
                         
                         logger.info(f"Adding new test client to inbound {inbound_id}")
                         logger.info(f"Current clients count: {len(current_clients)}")
                         logger.info(f"Update data: {update_data}")
+                        logger.info(f"Update data JSON: {json.dumps(update_data, indent=2)}")
                         success = api_client.update_inbound(inbound_id, update_data)
                         logger.info(f"Update result: {success}")
                         
