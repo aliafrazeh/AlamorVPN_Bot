@@ -157,7 +157,7 @@ class XuiAPIClient:
             return False
         
         endpoint = f"/panel/api/inbounds/update/{inbound_id}"
-        response = self._request("POST", endpoint, data=data) 
+        response = self._request("POST", endpoint, json=data) 
         
         if response and response.get('success'):
             logger.info(f"Inbound {inbound_id} updated successfully.")
