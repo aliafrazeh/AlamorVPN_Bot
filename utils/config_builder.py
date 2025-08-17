@@ -114,7 +114,7 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
         config_json = json.dumps(vmess_config, separators=(',', ':'))
         encoded_config = base64.b64encode(config_json.encode()).decode()
         
-        logger.info(f"Built VMess config for {client_email}: vmess://{encoded_config[:50]}...")
+        logger.info(f"Built VMess config for {client_email}: vmess://{encoded_config}")
         return f"vmess://{encoded_config}"
         
     except Exception as e:
@@ -244,7 +244,7 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         final_url = f"{base_url}#{quote(client_name)}"
         
         logger.info(f"Final VLESS URL: {final_url}")
-        logger.info(f"Built VLESS config for {client_email}: {final_url[:100]}...")
+        logger.info(f"Built VLESS config for {client_email}: {final_url}")
         return final_url
         
     except Exception as e:
@@ -352,7 +352,7 @@ def build_trojan_config(client_info, inbound_info, server_info, brand_name="Alam
         # اضافه کردن fragment (نام کلاینت)
         final_url = f"{base_url}#{quote(client_name)}"
         
-        logger.info(f"Built Trojan config for {client_email}: {final_url[:100]}...")
+        logger.info(f"Built Trojan config for {client_email}: {final_url}")
         return final_url
         
     except Exception as e:
