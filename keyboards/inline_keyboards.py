@@ -28,6 +28,7 @@ def get_admin_main_inline_menu():
                     types.InlineKeyboardButton("📊 وضعیت سیستم Subscription", callback_data="admin_subscription_system_status"),
         types.InlineKeyboardButton("🧪 تست Config Builder", callback_data="admin_test_config_builder"),
         types.InlineKeyboardButton("🔧 ساخت کانفیگ", callback_data="admin_create_config_menu"),
+        types.InlineKeyboardButton("📋 لاگ JSON کامل", callback_data="admin_log_full_json"),
         types.InlineKeyboardButton("🔑 تنظیم API Key", callback_data="admin_set_api_key"),
         types.InlineKeyboardButton("🎨 تنظیمات برندینگ", callback_data="admin_branding_settings"),
         types.InlineKeyboardButton("✍️ مدیریت پیام‌ها", callback_data="admin_message_management"),

@@ -729,6 +729,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_subscription_system_status": show_subscription_system_status,
             "admin_test_config_builder": show_config_builder_test_menu,
             "admin_create_config_menu": show_config_creator_menu,
+            "admin_log_full_json": show_json_logger_menu,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -811,6 +812,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_id = int(parts[4])
             inbound_id = int(parts[5])
             create_configs_for_inbound(admin_id, message, server_id, inbound_id)
+            return
+        elif data.startswith("admin_log_json_server_"):
+            server_id = int(data.split('_')[-1])
+            show_inbound_selection_for_json_log(admin_id, message, server_id)
+            return
+        elif data.startswith("admin_log_json_inbound_"):
+            parts = data.split('_')
+            server_id = int(parts[4])
+            inbound_id = int(parts[5])
+            log_full_json_for_inbound(admin_id, message, server_id, inbound_id)
             return
         elif data.startswith("admin_edit_template_"):
             parts = data.split('_')
@@ -3318,6 +3329,170 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         except Exception as e:
             logger.error(f"Error in test_config_builder_for_server: {e}")
             _bot.edit_message_text(f"❌ خطا در تست: {str(e)}", admin_id, message.message_id)
+
+    def show_json_logger_menu(admin_id, message):
+        """نمایش منوی لاگ کردن JSON کامل"""
+        _clear_admin_state(admin_id)
+        
+        try:
+            # دریافت لیست سرورهای فعال
+            servers = _db_manager.get_all_servers(only_active=True)
+            
+            if not servers:
+                _bot.edit_message_text(
+                    "❌ **هیچ سرور فعالی یافت نشد**\n\n"
+                    "لطفاً ابتدا سرورها را اضافه کنید.",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            text = "📋 **لاگ کردن JSON کامل پنل**\n\n"
+            text += "انتخاب کنید کدام سرور را بررسی کنیم:\n\n"
+            
+            markup = types.InlineKeyboardMarkup()
+            
+            for server in servers:
+                button_text = f"🖥️ {server['name']}"
+                callback_data = f"admin_log_json_server_{server['id']}"
+                markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error in show_json_logger_menu: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش منو: {str(e)}", admin_id, message.message_id)
+
+    def show_inbound_selection_for_json_log(admin_id, message, server_id):
+        """نمایش انتخاب inbound برای لاگ JSON"""
+        try:
+            # دریافت اطلاعات سرور
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # اتصال به پنل و دریافت inbounds
+            from api_client.xui_api_client import XuiAPIClient
+            api_client = XuiAPIClient(
+                panel_url=server_info['panel_url'],
+                username=server_info['username'],
+                password=server_info['password']
+            )
+            
+            if not api_client.check_login():
+                _bot.edit_message_text(
+                    f"❌ **خطا در اتصال به پنل**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"نمی‌توان به پنل متصل شد.",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            # دریافت لیست inbounds
+            inbounds = api_client.list_inbounds()
+            if not inbounds:
+                _bot.edit_message_text(
+                    f"❌ **هیچ inbound یافت نشد**\n\n"
+                    f"سرور: **{server_info['name']}**",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            text = f"📋 **انتخاب Inbound برای لاگ JSON**\n\n"
+            text += f"سرور: **{server_info['name']}**\n"
+            text += f"تعداد Inbounds: **{len(inbounds)}**\n\n"
+            text += "انتخاب کنید کدام inbound را بررسی کنیم:\n\n"
+            
+            markup = types.InlineKeyboardMarkup()
+            
+            for inbound in inbounds:
+                inbound_id = inbound.get('id', 'Unknown')
+                remark = inbound.get('remark', f'Inbound {inbound_id}')
+                button_text = f"🔗 {remark} (ID: {inbound_id})"
+                callback_data = f"admin_log_json_inbound_{server_id}_{inbound_id}"
+                markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_log_full_json"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error in show_inbound_selection_for_json_log: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش inbounds: {str(e)}", admin_id, message.message_id)
+
+    def log_full_json_for_inbound(admin_id, message, server_id, inbound_id):
+        """لاگ کردن JSON کامل برای inbound خاص"""
+        try:
+            # دریافت اطلاعات سرور
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # نمایش پیام در حال پردازش
+            _bot.edit_message_text(
+                f"📋 **در حال دریافت JSON کامل**\n\n"
+                f"سرور: **{server_info['name']}**\n"
+                f"Inbound ID: **{inbound_id}**\n"
+                f"⏳ در حال اتصال به پنل...",
+                admin_id, message.message_id, parse_mode='Markdown'
+            )
+            
+            # اتصال به پنل
+            from api_client.xui_api_client import XuiAPIClient
+            api_client = XuiAPIClient(
+                panel_url=server_info['panel_url'],
+                username=server_info['username'],
+                password=server_info['password']
+            )
+            
+            if not api_client.check_login():
+                _bot.edit_message_text(
+                    f"❌ **خطا در اتصال به پنل**\n\n"
+                    f"سرور: **{server_info['name']}**",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            # دریافت JSON کامل inbound
+            inbound_json = api_client.get_raw_inbound_data(inbound_id)
+            if not inbound_json:
+                _bot.edit_message_text(
+                    f"❌ **خطا در دریافت JSON**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"Inbound ID: **{inbound_id}**",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            # لاگ کردن JSON کامل
+            logger.info(f"=== COMPLETE JSON FOR INBOUND {inbound_id} ===")
+            logger.info(f"Server: {server_info['name']}")
+            logger.info(f"Inbound ID: {inbound_id}")
+            logger.info("=== FULL JSON DATA ===")
+            logger.info(json.dumps(inbound_json, indent=2, ensure_ascii=False))
+            logger.info("=== END JSON DATA ===")
+            
+            # نمایش نتیجه موفق
+            text = f"✅ **JSON کامل لاگ شد**\n\n"
+            text += f"سرور: **{server_info['name']}**\n"
+            text += f"Inbound ID: **{inbound_id}**\n\n"
+            text += "📋 JSON کامل در لاگ‌های سیستم ذخیره شد.\n"
+            text += "لطفاً لاگ‌ها را بررسی کنید."
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_log_full_json"),
+                types.InlineKeyboardButton("🏠 منوی اصلی", callback_data="admin_main_menu")
+            )
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error in log_full_json_for_inbound: {e}")
+            _bot.edit_message_text(f"❌ خطا در لاگ JSON: {str(e)}", admin_id, message.message_id)
 
     def show_subscription_system_status(admin_id, message):
         """نمایش وضعیت سیستم subscription"""

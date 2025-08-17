@@ -97,7 +97,22 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
         if vmess_config['tls'] == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
             vmess_config['sni'] = tls_settings.get('serverName', server_ip)
-            vmess_config['fp'] = tls_settings.get('fingerprint', '')
+            
+            # ALPN
+            alpn = tls_settings.get('alpn', [])
+            if alpn:
+                vmess_config['alpn'] = ','.join(alpn)
+            
+            # Fingerprint - از settings داخل tlsSettings
+            tls_settings_inner = tls_settings.get('settings', {})
+            fp = tls_settings_inner.get('fingerprint', '')
+            if fp:
+                vmess_config['fp'] = fp
+            
+            # ECH (Encrypted Client Hello) - اگر موجود باشه
+            ech_config_list = tls_settings_inner.get('echConfigList', '')
+            if ech_config_list:
+                vmess_config['ech'] = ech_config_list
         
         # تنظیمات Reality
         elif vmess_config['tls'] == 'reality':
@@ -186,13 +201,39 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         # تنظیمات TLS
         if security == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
+            logger.info(f"TLS Settings: {json.dumps(tls_settings, indent=2)}")
+            
+            # SNI
             sni = tls_settings.get('serverName', '')
             if sni:
                 params.append(f"sni={sni}")
-            fp = tls_settings.get('fingerprint', '')
+                logger.info(f"Added SNI: {sni}")
+            
+            # ALPN
+            alpn = tls_settings.get('alpn', [])
+            if alpn:
+                alpn_str = ','.join(alpn)
+                params.append(f"alpn={alpn_str}")
+                logger.info(f"Added ALPN: {alpn_str}")
+            
+            # Fingerprint - از settings داخل tlsSettings
+            tls_settings_inner = tls_settings.get('settings', {})
+            fp = tls_settings_inner.get('fingerprint', '')
             if fp:
                 params.append(f"fp={fp}")
-            logger.info(f"TLS Settings: {json.dumps(tls_settings, indent=2)}")
+                logger.info(f"Added fingerprint: {fp}")
+            
+            # ECH (Encrypted Client Hello) - اگر موجود باشه
+            ech_config_list = tls_settings_inner.get('echConfigList', '')
+            if ech_config_list:
+                params.append(f"ech={ech_config_list}")
+                logger.info(f"Added ECH config list")
+            
+            # Allow Insecure - اگر موجود باشه
+            allow_insecure = tls_settings_inner.get('allowInsecure', False)
+            if allow_insecure:
+                params.append("allowInsecure=true")
+                logger.info(f"Added allowInsecure: true")
         
         # تنظیمات Reality
         if security == 'reality':
@@ -306,12 +347,33 @@ def build_trojan_config(client_info, inbound_info, server_info, brand_name="Alam
         # تنظیمات TLS
         if security == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
+            
+            # SNI
             sni = tls_settings.get('serverName', '')
             if sni:
                 params.append(f"sni={sni}")
-            fp = tls_settings.get('fingerprint', '')
+            
+            # ALPN
+            alpn = tls_settings.get('alpn', [])
+            if alpn:
+                alpn_str = ','.join(alpn)
+                params.append(f"alpn={alpn_str}")
+            
+            # Fingerprint - از settings داخل tlsSettings
+            tls_settings_inner = tls_settings.get('settings', {})
+            fp = tls_settings_inner.get('fingerprint', '')
             if fp:
                 params.append(f"fp={fp}")
+            
+            # ECH (Encrypted Client Hello) - اگر موجود باشه
+            ech_config_list = tls_settings_inner.get('echConfigList', '')
+            if ech_config_list:
+                params.append(f"ech={ech_config_list}")
+            
+            # Allow Insecure - اگر موجود باشه
+            allow_insecure = tls_settings_inner.get('allowInsecure', False)
+            if allow_insecure:
+                params.append("allowInsecure=true")
         
         # تنظیمات Reality
         if security == 'reality':
