@@ -7,6 +7,7 @@ import datetime
 import json
 import os
 import zipfile
+import time
 from config import ADMIN_IDS, SUPPORT_CHANNEL_LINK
 from database.db_manager import DatabaseManager
 from api_client.xui_api_client import XuiAPIClient
@@ -726,7 +727,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
             "admin_subscription_system_status": show_subscription_system_status,
             "admin_test_config_builder": show_config_builder_test_menu,
-            "admin_main_menu": show_config_creator_menu,
+            "admin_create_config_menu": show_config_creator_menu,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -792,6 +793,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_id = int(data.split('_')[-1])
             logger.info(f"Testing config builder for server {server_id}")
             test_config_builder_for_server(admin_id, message, server_id)
+            return
+        elif data.startswith("admin_test_config_inbound_"):
+            parts = data.split('_')
+            server_id = int(parts[4])
+            inbound_id = int(parts[5])
+            logger.info(f"Testing config builder for server {server_id}, inbound {inbound_id}")
+            test_config_builder_for_inbound(admin_id, message, server_id, inbound_id)
             return
         elif data.startswith("admin_create_config_server_"):
             server_id = int(data.split('_')[-1])
@@ -2805,7 +2813,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             text = "🧪 **تست Config Builder**\n\n"
             text += "این ابزار کانفیگ‌ها را مستقیماً از پنل می‌سازد:\n"
-            text += "• دریافت اطلاعات کلاینت از پنل\n"
+            text += "• انتخاب سرور و inbound\n"
+            text += "• ساخت کلاینت جدید (در صورت نیاز)\n"
             text += "• ساخت کانفیگ بر اساس پروتکل\n"
             text += "• تست عملکرد API\n\n"
             text += "**سرورهای موجود:**\n"
@@ -2830,8 +2839,249 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             logger.error(f"Error showing config builder test menu: {e}")
             _bot.edit_message_text(f"❌ خطا در نمایش منوی تست: {str(e)}", admin_id, message.message_id)
 
+    def show_inbound_selection_for_test(admin_id, server_id, message=None):
+        """نمایش لیست inbounds برای انتخاب"""
+        _clear_admin_state(admin_id)
+        
+        try:
+            # دریافت اطلاعات سرور
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد", admin_id, message.message_id)
+                return
+            
+            # اتصال به پنل
+            from api_client.xui_api_client import XuiAPIClient
+            api_client = XuiAPIClient(
+                panel_url=server_info['panel_url'],
+                username=server_info['username'],
+                password=server_info['password']
+            )
+            
+            if not api_client.check_login():
+                _bot.edit_message_text(
+                    f"❌ **خطا در اتصال به پنل**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"نمی‌توان به پنل متصل شد.",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            # دریافت لیست inbounds
+            inbounds = api_client.list_inbounds()
+            if not inbounds:
+                _bot.edit_message_text(
+                    f"❌ **هیچ inbound یافت نشد**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"هیچ inbound فعالی در پنل وجود ندارد.",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                return
+            
+            text = f"📡 **انتخاب Inbound**\n\n"
+            text += f"**سرور:** {server_info['name']}\n"
+            text += "لطفاً inbound مورد نظر را انتخاب کنید:"
+            
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            
+            for inbound in inbounds:
+                inbound_name = inbound.get('remark', f'Inbound {inbound["id"]}')
+                inbound_id = inbound['id']
+                protocol = inbound.get('protocol', 'unknown')
+                port = inbound.get('port', 'unknown')
+                
+                markup.add(types.InlineKeyboardButton(
+                    f"🔗 {inbound_name} ({protocol}:{port})",
+                    callback_data=f"admin_test_config_inbound_{server_id}_{inbound_id}"
+                ))
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_test_config_builder"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                
+        except Exception as e:
+            logger.error(f"Error showing inbound selection: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش inbounds: {str(e)}", admin_id, message.message_id)
+
+    def test_config_builder_for_inbound(admin_id, message, server_id, inbound_id):
+        """تست Config Builder برای inbound خاص - ساخت کلاینت جدید و تست کانفیگ"""
+        try:
+            logger.info(f"Testing config builder for server {server_id}, inbound {inbound_id}")
+            
+            # دریافت اطلاعات سرور
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
+                return
+            
+            # نمایش پیام در حال پردازش
+            _bot.edit_message_text(
+                f"🧪 **تست Config Builder**\n\n"
+                f"سرور: **{server_info['name']}**\n"
+                f"Inbound: **{inbound_id}**\n"
+                f"⏳ در حال اتصال به پنل و ساخت کلاینت تست...",
+                admin_id, message.message_id, parse_mode='Markdown'
+            )
+            
+            # import config builder
+            from utils.config_builder import test_config_builder, build_vmess_config, build_vless_config, build_trojan_config
+            
+            # تست اتصال به پنل
+            try:
+                # دریافت لیست inbounds
+                from api_client.xui_api_client import XuiAPIClient
+                api_client = XuiAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+                
+                if not api_client.check_login():
+                    _bot.edit_message_text(
+                        f"❌ **خطا در اتصال به پنل**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"نمی‌توان به پنل متصل شد.\n"
+                        f"لطفاً اطلاعات ورود را بررسی کنید.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                    return
+                
+                # دریافت اطلاعات inbound
+                inbound_info = api_client.get_inbound(inbound_id)
+                if not inbound_info:
+                    _bot.edit_message_text(
+                        f"❌ **Inbound یافت نشد**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"Inbound ID: **{inbound_id}**\n"
+                        f"این inbound در پنل وجود ندارد.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                    return
+                
+                # بررسی وجود کلاینت
+                try:
+                    inbound_settings = json.loads(inbound_info.get('settings', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    inbound_settings = {}
+                
+                clients = inbound_settings.get('clients', [])
+                
+                if not clients:
+                    # ساخت کلاینت جدید برای تست
+                    logger.info(f"No clients found in inbound {inbound_id}, creating test client...")
+                    
+                    # ساخت کلاینت تست
+                    test_client_data = {
+                        "id": f"test-{int(time.time())}",
+                        "email": f"test-{int(time.time())}@alamor.com",
+                        "name": f"Test-{int(time.time())}",
+                        "flow": ""
+                    }
+                    
+                    # اضافه کردن کلاینت به inbound
+                    try:
+                        # دریافت تنظیمات فعلی inbound
+                        current_settings = json.loads(inbound_info.get('settings', '{}'))
+                        current_clients = current_settings.get('clients', [])
+                        
+                        # اضافه کردن کلاینت جدید
+                        current_clients.append(test_client_data)
+                        current_settings['clients'] = current_clients
+                        
+                        # به‌روزرسانی inbound
+                        update_data = {
+                            'settings': json.dumps(current_settings)
+                        }
+                        
+                        success = api_client.update_inbound(inbound_id, update_data)
+                        
+                        if success:
+                            logger.info(f"Test client created successfully: {test_client_data['email']}")
+                            test_client = test_client_data
+                            client_id = test_client['id']
+                        else:
+                            logger.error("Failed to create test client")
+                            _bot.edit_message_text(
+                                f"❌ **خطا در ساخت کلاینت تست**\n\n"
+                                f"سرور: **{server_info['name']}**\n"
+                                f"Inbound: **{inbound_id}**\n"
+                                f"نمی‌توان کلاینت تست ساخت.",
+                                admin_id, message.message_id, parse_mode='Markdown'
+                            )
+                            return
+                            
+                    except Exception as e:
+                        logger.error(f"Error creating test client: {e}")
+                        _bot.edit_message_text(
+                            f"❌ **خطا در ساخت کلاینت تست**\n\n"
+                            f"سرور: **{server_info['name']}**\n"
+                            f"خطا: **{str(e)}**",
+                            admin_id, message.message_id, parse_mode='Markdown'
+                        )
+                        return
+                else:
+                    # انتخاب اولین کلاینت موجود
+                    test_client = clients[0]
+                    client_id = test_client.get('id')
+                
+                # نمایش اطلاعات کلاینت
+                logger.info(f"Selected client: {test_client.get('email', 'Unknown')} with ID: {client_id}")
+                logger.info(f"Client data: {test_client}")
+                
+                # تست ساخت کانفیگ
+                try:
+                    result = test_config_builder(server_info, inbound_id, client_id)
+                except Exception as e:
+                    logger.error(f"Error in test_config_builder: {e}")
+                    result = None
+                
+                if result:
+                    # نمایش نتیجه موفق
+                    text = f"✅ **تست موفق!**\n\n"
+                    text += f"**سرور:** {server_info['name']}\n"
+                    text += f"**پروتکل:** {result['protocol']}\n"
+                    text += f"**کلاینت:** {result['client_email']}\n"
+                    text += f"**Inbound:** {result['inbound_id']}\n\n"
+                    text += f"**کانفیگ ساخته شده:**\n"
+                    text += f"🎉 **Config Builder کار می‌کند!**"
+                    
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(
+                        types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_test_config_builder"),
+                        types.InlineKeyboardButton("🏠 منوی اصلی", callback_data="admin_main_menu")
+                    )
+                    
+                    _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                    
+                    # ارسال کانفیگ در پیام جداگانه بدون Markdown
+                    config_text = result['config']
+                    logger.info(f"Sending config (length: {len(config_text)}): {config_text}")
+                    _bot.send_message(admin_id, config_text)
+                    
+                else:
+                    _bot.edit_message_text(
+                        f"❌ **خطا در ساخت کانفیگ**\n\n"
+                        f"سرور: **{server_info['name']}**\n"
+                        f"کلاینت: **{test_client.get('email', 'Unknown')}**\n"
+                        f"خطا در ساخت کانفیگ رخ داد.",
+                        admin_id, message.message_id, parse_mode='Markdown'
+                    )
+                
+            except Exception as e:
+                logger.error(f"Error testing config builder: {e}")
+                _bot.edit_message_text(
+                    f"❌ **خطا در تست**\n\n"
+                    f"سرور: **{server_info['name']}**\n"
+                    f"خطا: **{str(e)}**",
+                    admin_id, message.message_id, parse_mode='Markdown'
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in test_config_builder_for_inbound: {e}")
+            _bot.edit_message_text(f"❌ خطا در تست: {str(e)}", admin_id, message.message_id)
+
     def test_config_builder_for_server(admin_id, message, server_id):
-        """تست Config Builder برای سرور خاص"""
+        """تست Config Builder برای سرور خاص - هدایت به انتخاب inbound"""
         try:
             logger.info(f"Starting config builder test for server {server_id}")
             
@@ -2841,14 +3091,8 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
                 return
             
-            # نمایش پیام ساده برای تست
-            _bot.edit_message_text(
-                f"🧪 **تست Config Builder**\n\n"
-                f"سرور: **{server_info['name']}**\n"
-                f"✅ Callback handler کار می‌کند!\n"
-                f"⏳ در حال تست اتصال به پنل...",
-                admin_id, message.message_id, parse_mode='Markdown'
-            )
+            # هدایت به انتخاب inbound
+            show_inbound_selection_for_test(admin_id, server_id, message)
             
             # import config builder
             from utils.config_builder import test_config_builder, build_vmess_config, build_vless_config, build_trojan_config
@@ -2897,14 +3141,62 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 clients = inbound_settings.get('clients', [])
                 
                 if not clients:
-                    _bot.edit_message_text(
-                        f"❌ **هیچ کلاینت یافت نشد**\n\n"
-                        f"سرور: **{server_info['name']}**\n"
-                        f"Inbound: **{test_inbound.get('remark', 'Unknown')}**\n"
-                        f"هیچ کلاینت فعالی در این inbound وجود ندارد.",
-                        admin_id, message.message_id, parse_mode='Markdown'
-                    )
-                    return
+                    # ساخت کلاینت جدید برای تست
+                    logger.info(f"No clients found in inbound {inbound_id}, creating test client...")
+                    
+                    # ساخت کلاینت تست
+                    test_client_data = {
+                        "id": f"test-{int(time.time())}",
+                        "email": f"test-{int(time.time())}@alamor.com",
+                        "name": f"Test-{int(time.time())}",
+                        "flow": ""
+                    }
+                    
+                    # اضافه کردن کلاینت به inbound
+                    try:
+                        # دریافت تنظیمات فعلی inbound
+                        current_settings = json.loads(test_inbound.get('settings', '{}'))
+                        current_clients = current_settings.get('clients', [])
+                        
+                        # اضافه کردن کلاینت جدید
+                        current_clients.append(test_client_data)
+                        current_settings['clients'] = current_clients
+                        
+                        # به‌روزرسانی inbound
+                        update_data = {
+                            'settings': json.dumps(current_settings)
+                        }
+                        
+                        success = api_client.update_inbound(inbound_id, update_data)
+                        
+                        if success:
+                            logger.info(f"Test client created successfully: {test_client_data['email']}")
+                            test_client = test_client_data
+                            client_id = test_client['id']
+                        else:
+                            logger.error("Failed to create test client")
+                            _bot.edit_message_text(
+                                f"❌ **خطا در ساخت کلاینت تست**\n\n"
+                                f"سرور: **{server_info['name']}**\n"
+                                f"Inbound: **{test_inbound.get('remark', 'Unknown')}**\n"
+                                f"نمی‌توان کلاینت تست ساخت.",
+                                admin_id, message.message_id, parse_mode='Markdown'
+                            )
+                            return
+                            
+                    except Exception as e:
+                        logger.error(f"Error creating test client: {e}")
+                        _bot.edit_message_text(
+                            f"❌ **خطا در ساخت کلاینت تست**\n\n"
+                            f"سرور: **{server_info['name']}**\n"
+                            f"خطا: **{str(e)}**",
+                            admin_id, message.message_id, parse_mode='Markdown'
+                        )
+                        return
+                else:
+                    # انتخاب اولین کلاینت موجود
+                    test_client = clients[0]
+                    client_id = test_client.get('id')
                 
                 # انتخاب اولین کلاینت
                 test_client = clients[0]
