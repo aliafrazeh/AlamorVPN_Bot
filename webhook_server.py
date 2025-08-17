@@ -174,7 +174,13 @@ def get_panel_subscription_data(server_info, sub_id):
         else:
             subscription_url = f"{panel_url}/{sub_id}"
         
-        logger.info(f"Fetching subscription data from: {subscription_url}")
+        logger.info(f"📡 Panel Request Details:")
+        logger.info(f"   Server ID: {server_info.get('id')}")
+        logger.info(f"   Server Name: {server_info.get('name')}")
+        logger.info(f"   Panel URL: {panel_url}")
+        logger.info(f"   Subscription Path: {subscription_path}")
+        logger.info(f"   Sub ID: {sub_id}")
+        logger.info(f"   Final URL: {subscription_url}")
         
         # درخواست GET به پنل اصلی
         response = requests.get(subscription_url, verify=False, timeout=30)
@@ -250,6 +256,12 @@ def update_cached_configs_from_panel(purchase_id):
     try:
         logger.info(f"Starting update_cached_configs_from_panel for purchase {purchase_id}")
         
+        # نمایش اطلاعات دامنه‌ها
+        webhook_domain = os.getenv('WEBHOOK_DOMAIN')
+        active_domain = db_manager.get_setting('active_domain')
+        logger.info(f"🌐 Webhook Domain: {webhook_domain}")
+        logger.info(f"🔗 Active Domain (User Subscriptions): {active_domain}")
+        
         purchase = db_manager.get_purchase_by_id(purchase_id)
         if not purchase:
             logger.error(f"Purchase {purchase_id} not found in database")
@@ -291,36 +303,41 @@ def update_cached_configs_from_panel(purchase_id):
         
         # اگر نتوانستیم از پنل دیتا بگیریم، از دیتای cached استفاده می‌کنیم
         if not subscription_data:
-            logger.warning(f"Could not fetch subscription data from panel for purchase {purchase_id}, using cached data")
+            logger.warning(f"⚠️ Could not fetch subscription data from panel for purchase {purchase_id}, using cached data")
             cached_configs = purchase.get('single_configs_json')
             if cached_configs:
                 try:
                     config_list = json.loads(cached_configs)
                     subscription_data = "\n".join(config_list)
-                    logger.info(f"Using cached configs for purchase {purchase_id}: {len(config_list)} configs")
+                    logger.info(f"✅ Using cached configs for purchase {purchase_id}: {len(config_list)} configs")
+                    logger.info(f"   📄 Cached data length: {len(subscription_data)} characters")
                 except (json.JSONDecodeError, TypeError) as e:
-                    logger.error(f"Error parsing cached configs for purchase {purchase_id}: {e}")
+                    logger.error(f"❌ Error parsing cached configs for purchase {purchase_id}: {e}")
                     return False
             else:
-                logger.error(f"No cached configs available for purchase {purchase_id}")
+                logger.error(f"❌ No cached configs available for purchase {purchase_id}")
                 return False
         
-        logger.info(f"Successfully fetched subscription data for purchase {purchase_id}, length: {len(subscription_data)}")
+        logger.info(f"✅ Successfully fetched subscription data for purchase {purchase_id}")
+        logger.info(f"   📄 Data length: {len(subscription_data)} characters")
+        logger.info(f"   📊 Data source: {'Panel' if 'panel' in str(subscription_data) else 'Cached'}")
         
         # پردازش محتوا
         processed_content = process_subscription_content(subscription_data)
         if not processed_content:
-            logger.error(f"Failed to process subscription content for purchase {purchase_id}")
+            logger.error(f"❌ Failed to process subscription content for purchase {purchase_id}")
             return False
         
         # اگر محتوا Base64 است، آن را decode کنیم
         if processed_content.get('is_base64'):
             config_content = processed_content.get('decoded', '')
+            logger.info(f"   🔓 Content type: Base64 (decoded)")
         else:
             config_content = processed_content.get('original', '')
+            logger.info(f"   📝 Content type: Plain text")
         
         if not config_content:
-            logger.error(f"No config content available for purchase {purchase_id}")
+            logger.error(f"❌ No config content available for purchase {purchase_id}")
             return False
         
         # تقسیم کانفیگ‌ها بر اساس خط جدید
@@ -330,19 +347,22 @@ def update_cached_configs_from_panel(purchase_id):
         config_list = [config for config in config_list if config.strip()]
         
         if not config_list:
-            logger.error(f"No valid configs found for purchase {purchase_id}")
+            logger.error(f"❌ No valid configs found for purchase {purchase_id}")
             return False
         
-        logger.info(f"Found {len(config_list)} valid configs for purchase {purchase_id}")
+        logger.info(f"✅ Found {len(config_list)} valid configs for purchase {purchase_id}")
+        logger.info(f"   📋 Config types: {', '.join(set([config.split('://')[0] for config in config_list if '://' in config]))}")
         
         # ذخیره در دیتابیس
+        logger.info(f"💾 Saving configs to database for purchase {purchase_id}")
         success = db_manager.update_purchase_configs(purchase_id, json.dumps(config_list))
         
         if success:
-            logger.info(f"Successfully updated cached configs for purchase {purchase_id}")
+            logger.info(f"✅ Successfully updated cached configs for purchase {purchase_id}")
+            logger.info(f"   📊 Summary: {len(config_list)} configs saved to database")
             return True
         else:
-            logger.error(f"Failed to update cached configs in database for purchase {purchase_id}")
+            logger.error(f"❌ Failed to update cached configs in database for purchase {purchase_id}")
             return False
             
     except Exception as e:
@@ -408,7 +428,26 @@ def get_profile_subscription_data(purchase):
             logger.error(f"No inbounds found for profile {profile_id}")
             return None
         
-        logger.info(f"Found {len(profile_inbounds)} inbounds for profile {profile_id}")
+        logger.info(f"📋 Profile Details:")
+        logger.info(f"   Profile ID: {profile_id}")
+        logger.info(f"   Total Inbounds: {len(profile_inbounds)}")
+        logger.info(f"   Sub ID: {sub_id}")
+        
+        # نمایش جزئیات سرورها
+        servers_info = {}
+        for inbound in profile_inbounds:
+            server_id = inbound['server']['id']
+            server_name = inbound['server']['name']
+            if server_id not in servers_info:
+                servers_info[server_id] = {
+                    'name': server_name,
+                    'inbounds': 0
+                }
+            servers_info[server_id]['inbounds'] += 1
+        
+        logger.info(f"   Servers involved:")
+        for server_id, info in servers_info.items():
+            logger.info(f"     - Server {server_id}: {info['name']} ({info['inbounds']} inbounds)")
         
         all_configs = []
         sub_id = purchase.get('sub_id')
@@ -437,7 +476,8 @@ def get_profile_subscription_data(purchase):
         for server_id, server_inbounds in inbounds_by_server.items():
             try:
                 server_info = server_inbounds[0]['server']
-                logger.info(f"Fetching data from server {server_info['name']} (ID: {server_id})")
+                logger.info(f"🔄 Processing Server {server_info['name']} (ID: {server_id})")
+                logger.info(f"   Inbounds on this server: {len(server_inbounds)}")
                 
                 # دریافت دیتای subscription از این سرور
                 server_subscription_data = get_panel_subscription_data(server_info, sub_id)
@@ -445,11 +485,11 @@ def get_profile_subscription_data(purchase):
                     # پردازش و فیلتر کردن کانفیگ‌های مربوط به این سرور
                     processed_configs = process_server_configs(server_subscription_data, server_inbounds)
                     all_configs.extend(processed_configs)
-                    logger.info(f"Added {len(processed_configs)} configs from server {server_info['name']}")
+                    logger.info(f"   ✅ Success: Added {len(processed_configs)} configs from server {server_info['name']}")
                 else:
-                    logger.warning(f"Could not fetch data from server {server_info['name']}")
+                    logger.warning(f"   ⚠️ Warning: Could not fetch data from server {server_info['name']}")
             except Exception as e:
-                logger.error(f"Error processing server {server_id}: {e}")
+                logger.error(f"   ❌ Error processing server {server_id}: {e}")
                 continue
         
         if not all_configs:
