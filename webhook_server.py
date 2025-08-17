@@ -450,8 +450,8 @@ def get_profile_subscription_data(purchase):
             logger.info(f"     - Server {server_id}: {info['name']} ({info['inbounds']} inbounds)")
         
         all_configs = []
-        sub_id = purchase.get('sub_id')
         
+        # sub_id قبلاً تعریف شده، نیازی به تعریف مجدد نیست
         if not sub_id:
             logger.error(f"Purchase {purchase['id']} has no sub_id")
             return None
@@ -516,9 +516,9 @@ def get_profile_subscription_data(purchase):
         return final_subscription_data
         
     except Exception as e:
-        logger.error(f"Error in get_profile_subscription_data: {e}")
+        logger.error(f"❌ Error in get_profile_subscription_data: {e}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return None
 
 def get_normal_subscription_data(purchase):
@@ -785,8 +785,10 @@ def admin_test_purchase(purchase_id):
     Endpoint تست برای بررسی وضعیت یک purchase
     """
     try:
+        logger.info(f"🔍 Testing purchase {purchase_id}")
         purchase = db_manager.get_purchase_by_id(int(purchase_id))
         if not purchase:
+            logger.error(f"❌ Purchase {purchase_id} not found")
             return Response("Purchase not found", status=404)
         
         result = {
@@ -799,10 +801,31 @@ def admin_test_purchase(purchase_id):
             'has_configs': bool(purchase.get('single_configs_json'))
         }
         
+        logger.info(f"✅ Purchase {purchase_id} test successful: {result}")
         return Response(json.dumps(result, indent=2), status=200, mimetype='application/json')
         
     except Exception as e:
-        logger.error(f"Error in admin_test_purchase: {e}")
+        logger.error(f"❌ Error in admin_test_purchase: {e}")
+        return Response("Internal server error", status=500)
+
+# --- Endpoint تست ساده ---
+@app.route('/test', methods=['GET'])
+def simple_test():
+    """
+    Endpoint تست ساده برای بررسی کارکرد webhook server
+    """
+    try:
+        logger.info("🔍 Simple test endpoint called")
+        result = {
+            'status': 'ok',
+            'message': 'Webhook server is working',
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        logger.info("✅ Simple test successful")
+        return Response(json.dumps(result, indent=2), status=200, mimetype='application/json')
+        
+    except Exception as e:
+        logger.error(f"❌ Error in simple_test: {e}")
         return Response("Internal server error", status=500)
 
 if __name__ == '__main__':
