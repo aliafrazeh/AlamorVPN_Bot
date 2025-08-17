@@ -726,6 +726,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
             "admin_subscription_system_status": show_subscription_system_status,
             "admin_test_config_builder": show_config_builder_test_menu,
+            "admin_main_menu": show_config_creator_menu,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -791,6 +792,16 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             server_id = int(data.split('_')[-1])
             logger.info(f"Testing config builder for server {server_id}")
             test_config_builder_for_server(admin_id, message, server_id)
+            return
+        elif data.startswith("admin_create_config_server_"):
+            server_id = int(data.split('_')[-1])
+            show_inbound_selection_for_config(admin_id, message, server_id)
+            return
+        elif data.startswith("admin_create_config_inbound_"):
+            parts = data.split('_')
+            server_id = int(parts[4])
+            inbound_id = int(parts[5])
+            create_configs_for_inbound(admin_id, message, server_id, inbound_id)
             return
         elif data.startswith("admin_edit_template_"):
             parts = data.split('_')
@@ -2840,7 +2851,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             )
             
             # import config builder
-            from utils.config_builder import test_config_builder
+            from utils.config_builder import test_config_builder, build_vmess_config, build_vless_config, build_trojan_config
             
             # تست اتصال به پنل
             try:
@@ -2918,7 +2929,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     text += f"**کلاینت:** {result['client_email']}\n"
                     text += f"**Inbound:** {result['inbound_id']}\n\n"
                     text += f"**کانفیگ ساخته شده:**\n"
-                    text += f"`{result['config']}`\n\n"
                     text += f"🎉 **Config Builder کار می‌کند!**"
                     
                     markup = types.InlineKeyboardMarkup()
@@ -2928,6 +2938,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     )
                     
                     _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                    
+                    # ارسال کانفیگ در پیام جداگانه بدون Markdown
+                    _bot.send_message(admin_id, result['config'])
                     
                 else:
                     _bot.edit_message_text(
@@ -3116,3 +3129,255 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             )
         
         _clear_admin_state(admin_id)
+
+    def show_config_creator_menu(admin_id, message):
+        """نمایش منوی ساخت کانفیگ برای سرورهای مختلف"""
+        _clear_admin_state(admin_id)
+        
+        try:
+            # دریافت تمام سرورهای فعال
+            servers = _db_manager.get_all_servers(only_active=True)
+            
+            if not servers:
+                text = "❌ **هیچ سرور فعالی یافت نشد!**\n\n"
+                text += "لطفاً ابتدا سرورها را در منوی مدیریت سرورها اضافه کنید."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                return
+            
+            text = "🔧 **ساخت کانفیگ از پنل**\n\n"
+            text += "سرور مورد نظر خود را انتخاب کنید:\n\n"
+            
+            markup = types.InlineKeyboardMarkup()
+            
+            for server in servers:
+                status = "🟢" if server.get('is_online') else "🔴"
+                button_text = f"{status} {server['name']}"
+                callback_data = f"admin_create_config_server_{server['id']}"
+                markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing config creator menu: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش منو: {str(e)}", admin_id, message.message_id)
+
+    def show_inbound_selection_for_config(admin_id, message, server_id):
+        """نمایش انتخاب اینباند برای ساخت کانفیگ"""
+        try:
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد!", admin_id, message.message_id)
+                return
+            
+            # ساخت API client
+            api_client = None
+            if server_info['panel_type'] == 'alireza':
+                from api_client.alireza_api_client import AlirezaAPIClient
+                api_client = AlirezaAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+            else:
+                from api_client.xui_api_client import XuiAPIClient
+                api_client = XuiAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+            
+            # تلاش برای لاگین
+            if not api_client.check_login():
+                text = f"❌ **خطا در اتصال به پنل**\n\n"
+                text += f"سرور: **{server_info['name']}**\n"
+                text += f"نوع پنل: **{server_info['panel_type']}**\n"
+                text += "امکان اتصال به پنل وجود ندارد."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                return
+            
+            # دریافت لیست اینباندها
+            inbounds = api_client.get_inbounds()
+            if not inbounds:
+                text = f"❌ **هیچ اینباندی یافت نشد**\n\n"
+                text += f"سرور: **{server_info['name']}**\n"
+                text += "هیچ اینباند فعالی در این سرور وجود ندارد."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                return
+            
+            text = f"📡 **انتخاب اینباند**\n\n"
+            text += f"سرور: **{server_info['name']}**\n"
+            text += f"تعداد اینباندها: **{len(inbounds)}**\n\n"
+            text += "اینباند مورد نظر را انتخاب کنید:\n\n"
+            
+            markup = types.InlineKeyboardMarkup()
+            
+            for inbound in inbounds:
+                protocol = inbound.get('protocol', 'unknown')
+                port = inbound.get('port', 'N/A')
+                remark = inbound.get('remark', f'Inbound {inbound.get("id", "N/A")}')
+                
+                button_text = f"🔗 {protocol.upper()} - {port} - {remark[:20]}"
+                callback_data = f"admin_create_config_inbound_{server_id}_{inbound['id']}"
+                markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+            
+            markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu"))
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing inbound selection: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش اینباندها: {str(e)}", admin_id, message.message_id)
+
+    def create_configs_for_inbound(admin_id, message, server_id, inbound_id):
+        """ساخت کانفیگ‌ها برای یک اینباند خاص"""
+        try:
+            server_info = _db_manager.get_server_by_id(server_id)
+            if not server_info:
+                _bot.edit_message_text("❌ سرور یافت نشد!", admin_id, message.message_id)
+                return
+            
+            # ساخت API client
+            api_client = None
+            if server_info['panel_type'] == 'alireza':
+                from api_client.alireza_api_client import AlirezaAPIClient
+                api_client = AlirezaAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+            else:
+                from api_client.xui_api_client import XuiAPIClient
+                api_client = XuiAPIClient(
+                    panel_url=server_info['panel_url'],
+                    username=server_info['username'],
+                    password=server_info['password']
+                )
+            
+            # تلاش برای لاگین
+            if not api_client.check_login():
+                _bot.edit_message_text("❌ خطا در اتصال به پنل", admin_id, message.message_id)
+                return
+            
+            # دریافت اطلاعات اینباند
+            inbound_info = api_client.get_inbound(inbound_id)
+            if not inbound_info:
+                _bot.edit_message_text("❌ اینباند یافت نشد!", admin_id, message.message_id)
+                return
+            
+            # دریافت کلاینت‌های اینباند
+            clients = []
+            try:
+                settings_str = inbound_info.get('settings', '{}')
+                settings = json.loads(settings_str) if isinstance(settings_str, str) else settings_str
+                clients = settings.get('clients', [])
+            except:
+                clients = []
+            
+            if not clients:
+                text = f"❌ **هیچ کلاینتی یافت نشد**\n\n"
+                text += f"سرور: **{server_info['name']}**\n"
+                text += f"اینباند: **{inbound_info.get('remark', f'ID: {inbound_id}')}**\n"
+                text += "هیچ کلاینت فعالی در این اینباند وجود ندارد."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_create_config_server_{server_id}"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                return
+            
+            # ساخت کانفیگ‌ها
+            configs = []
+            protocol = inbound_info.get('protocol', 'vmess')
+            
+            for client in clients:
+                try:
+                    if protocol == 'vmess':
+                        config = build_vmess_config(client, inbound_info, server_info)
+                    elif protocol == 'vless':
+                        config = build_vless_config(client, inbound_info, server_info)
+                    elif protocol == 'trojan':
+                        config = build_trojan_config(client, inbound_info, server_info)
+                    else:
+                        continue
+                    
+                    if config:
+                        configs.append({
+                            'protocol': protocol,
+                            'config': config,
+                            'client_email': client.get('email', 'Unknown'),
+                            'client_name': client.get('name', 'Unknown')
+                        })
+                except Exception as e:
+                    logger.error(f"Error building config for client {client.get('email', 'Unknown')}: {e}")
+                    continue
+            
+            if not configs:
+                text = f"❌ **خطا در ساخت کانفیگ‌ها**\n\n"
+                text += f"سرور: **{server_info['name']}**\n"
+                text += f"اینباند: **{inbound_info.get('remark', f'ID: {inbound_id}')}**\n"
+                text += "هیچ کانفیگی ساخته نشد."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_create_config_server_{server_id}"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                return
+            
+            # نمایش کانفیگ‌ها
+            text = f"✅ **کانفیگ‌های ساخته شده**\n\n"
+            text += f"**سرور:** {server_info['name']}\n"
+            text += f"**اینباند:** {inbound_info.get('remark', f'ID: {inbound_id}')}\n"
+            text += f"**پروتکل:** {protocol.upper()}\n"
+            text += f"**تعداد کلاینت‌ها:** {len(configs)}\n\n"
+            text += "**کانفیگ‌ها:**\n\n"
+            
+            for i, config_info in enumerate(configs, 1):
+                text += f"**{i}. {config_info['client_email']}**\n"
+                text += f"{config_info['config']}\n\n"
+            
+            # اگر کانفیگ‌ها خیلی طولانی باشند، آنها را در پیام‌های جداگانه ارسال کن
+            if len(text) > 4000:
+                # ارسال خلاصه
+                summary_text = f"✅ **کانفیگ‌های ساخته شده**\n\n"
+                summary_text += f"**سرور:** {server_info['name']}\n"
+                summary_text += f"**اینباند:** {inbound_info.get('remark', f'ID: {inbound_id}')}\n"
+                summary_text += f"**پروتکل:** {protocol.upper()}\n"
+                summary_text += f"**تعداد کلاینت‌ها:** {len(configs)}\n\n"
+                summary_text += "کانفیگ‌ها در پیام‌های جداگانه ارسال می‌شوند..."
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_create_config_server_{server_id}"))
+                
+                _bot.edit_message_text(summary_text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+                
+                # ارسال کانفیگ‌ها در پیام‌های جداگانه
+                for i, config_info in enumerate(configs, 1):
+                    # ارسال عنوان با Markdown
+                    title_text = f"**{i}. {config_info['client_email']}**"
+                    _bot.send_message(admin_id, title_text, parse_mode='Markdown')
+                    
+                    # ارسال کانفیگ بدون Markdown برای جلوگیری از کوتاه شدن
+                    _bot.send_message(admin_id, config_info['config'])
+            else:
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_create_config_server_{server_id}"))
+                
+                _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error creating configs for inbound: {e}")
+            _bot.edit_message_text(f"❌ خطا در ساخت کانفیگ‌ها: {str(e)}", admin_id, message.message_id)
