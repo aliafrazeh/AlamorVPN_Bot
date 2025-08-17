@@ -2966,6 +2966,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     inbound_settings = {}
                 
                 clients = inbound_settings.get('clients', [])
+                logger.info(f"Found {len(clients)} clients in inbound {inbound_id}")
+                if clients:
+                    for i, client in enumerate(clients):
+                        logger.info(f"Client {i+1}: {client.get('email', 'Unknown')} (ID: {client.get('id', 'Unknown')})")
                 
                 if not clients:
                     # ساخت کلاینت جدید برای تست
@@ -3057,13 +3061,94 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         )
                         return
                 else:
-                    # انتخاب اولین کلاینت موجود
-                    test_client = clients[0]
-                    client_id = test_client.get('id')
+                    # کلاینت موجود است، اما برای تست کلاینت جدید می‌سازیم
+                    logger.info(f"Found existing clients, but creating new test client for testing...")
+                    
+                    # ساخت کلاینت تست جدید
+                    test_uuid = str(uuid.uuid4())
+                    test_client_data = {
+                        "id": test_uuid,
+                        "email": f"test-{int(time.time())}@alamor.com",
+                        "name": f"Test-{int(time.time())}",
+                        "flow": ""
+                    }
+                    logger.info(f"Created test client data: {test_client_data}")
+                    logger.info(f"Test UUID: {test_uuid}")
+                    logger.info(f"Test UUID type: {type(test_uuid)}")
+                    
+                    # اضافه کردن کلاینت جدید به inbound
+                    try:
+                        # دریافت تنظیمات فعلی inbound
+                        current_settings = json.loads(inbound_info.get('settings', '{}'))
+                        current_clients = current_settings.get('clients', [])
+                        
+                        # اضافه کردن کلاینت جدید
+                        current_clients.append(test_client_data)
+                        current_settings['clients'] = current_clients
+                        
+                        # به‌روزرسانی inbound
+                        update_data = {
+                            'settings': json.dumps(current_settings)
+                        }
+                        
+                        logger.info(f"Adding new test client to inbound {inbound_id}")
+                        logger.info(f"Current clients count: {len(current_clients)}")
+                        logger.info(f"Update data: {update_data}")
+                        success = api_client.update_inbound(inbound_id, update_data)
+                        logger.info(f"Update result: {success}")
+                        
+                        if success:
+                            logger.info(f"New test client created successfully: {test_client_data['email']}")
+                            
+                            # کمی صبر کنیم تا پنل کلاینت را ذخیره کند
+                            time.sleep(2)
+                            
+                            # بررسی اینکه آیا کلاینت واقعاً در پنل ذخیره شده
+                            try:
+                                updated_inbound_info = api_client.get_inbound(inbound_id)
+                                if updated_inbound_info:
+                                    updated_settings = json.loads(updated_inbound_info.get('settings', '{}'))
+                                    updated_clients = updated_settings.get('clients', [])
+                                    logger.info(f"Updated clients count: {len(updated_clients)}")
+                                    
+                                    # پیدا کردن کلاینت جدید
+                                    for client in updated_clients:
+                                        if client.get('email') == test_client_data['email']:
+                                            logger.info(f"Found new client in panel: {client}")
+                                            test_client = client
+                                            client_id = client.get('id')
+                                            break
+                                    else:
+                                        logger.warning("New client not found in panel, using local data")
+                                        test_client = test_client_data
+                                        client_id = test_client['id']
+                                else:
+                                    logger.warning("Could not retrieve updated inbound, using local data")
+                                    test_client = test_client_data
+                                    client_id = test_client['id']
+                            except Exception as e:
+                                logger.error(f"Error checking updated inbound: {e}")
+                                test_client = test_client_data
+                                client_id = test_client['id']
+                        else:
+                            logger.error("Failed to create new test client")
+                            # در صورت خطا، از کلاینت موجود استفاده کن
+                            test_client = clients[0]
+                            client_id = test_client.get('id')
+                            logger.info(f"Using existing client: {test_client.get('email', 'Unknown')}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error creating new test client: {e}")
+                        # در صورت خطا، از کلاینت موجود استفاده کن
+                        test_client = clients[0]
+                        client_id = test_client.get('id')
+                        logger.info(f"Using existing client: {test_client.get('email', 'Unknown')}")
                 
                 # نمایش اطلاعات کلاینت
                 logger.info(f"Selected client: {test_client.get('email', 'Unknown')} with ID: {client_id}")
+                logger.info(f"Client ID type: {type(client_id)}")
                 logger.info(f"Client data: {test_client}")
+                logger.info(f"Client data keys: {list(test_client.keys())}")
                 
                 # تست ساخت کانفیگ
                 try:
