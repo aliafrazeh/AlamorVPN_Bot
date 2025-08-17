@@ -194,9 +194,12 @@ def build_config_from_panel(server_info, inbound_id, client_id, brand_name="Alam
         client_info = api_client.get_client_info(client_id)
         if not client_info:
             logger.error(f"Failed to get client {client_id}")
+            logger.error(f"Client ID type: {type(client_id)}")
+            logger.error(f"Client ID value: {client_id}")
             return None
         
         logger.info(f"Retrieved client info: {client_info.get('email', 'N/A')}")
+        logger.info(f"Client info keys: {list(client_info.keys())}")
         
         # تشخیص نوع پروتکل
         protocol = inbound_info.get('protocol', 'vmess')

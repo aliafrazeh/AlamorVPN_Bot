@@ -359,14 +359,26 @@ class XuiAPIClient:
         
         # در تمام inbounds دنبال کلاینت می‌گردیم
         for inbound in inbounds:
-            if 'settings' in inbound and 'clients' in inbound['settings']:
-                for client in inbound['settings']['clients']:
+            try:
+                # تبدیل settings از string به dictionary
+                if isinstance(inbound.get('settings'), str):
+                    settings = json.loads(inbound['settings'])
+                else:
+                    settings = inbound.get('settings', {})
+                
+                clients = settings.get('clients', [])
+                
+                for client in clients:
                     if client.get('id') == client_id or client.get('email') == client_id:
                         # اطلاعات ترافیک را هم اضافه می‌کنیم
                         traffic_info = self.get_client_traffic_by_id(client_id)
                         if traffic_info:
                             client.update(traffic_info)
                         return client
+                        
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Error parsing settings for inbound {inbound.get('id', 'Unknown')}: {e}")
+                continue
         
         logger.warning(f"Client with ID {client_id} not found")
         return None

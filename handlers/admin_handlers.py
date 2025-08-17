@@ -2878,7 +2878,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 inbound_id = test_inbound['id']
                 
                 # بررسی وجود کلاینت
-                inbound_settings = json.loads(test_inbound.get('settings', '{}'))
+                try:
+                    inbound_settings = json.loads(test_inbound.get('settings', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    inbound_settings = {}
+                
                 clients = inbound_settings.get('clients', [])
                 
                 if not clients:
@@ -2894,6 +2898,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 # انتخاب اولین کلاینت
                 test_client = clients[0]
                 client_id = test_client.get('id')
+                
+                # نمایش اطلاعات کلاینت
+                logger.info(f"Selected client: {test_client.get('email', 'Unknown')} with ID: {client_id}")
+                logger.info(f"Client data: {test_client}")
                 
                 # تست ساخت کانفیگ
                 result = test_config_builder(server_info, inbound_id, client_id)
