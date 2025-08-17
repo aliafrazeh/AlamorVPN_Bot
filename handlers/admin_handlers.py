@@ -2940,7 +2940,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
                     
                     # ارسال کانفیگ در پیام جداگانه بدون Markdown
-                    _bot.send_message(admin_id, result['config'])
+                    config_text = result['config']
+                    logger.info(f"Sending config (length: {len(config_text)}): {config_text}")
+                    _bot.send_message(admin_id, config_text)
                     
                 else:
                     _bot.edit_message_text(
@@ -3347,9 +3349,12 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             for i, config_info in enumerate(configs, 1):
                 text += f"**{i}. {config_info['client_email']}**\n"
-                text += f"{config_info['config']}\n\n"
+                config_text = config_info['config']
+                logger.info(f"Adding config {i} to single message (length: {len(config_text)}): {config_text}")
+                text += f"{config_text}\n\n"
             
             # اگر کانفیگ‌ها خیلی طولانی باشند، آنها را در پیام‌های جداگانه ارسال کن
+            logger.info(f"Total message length: {len(text)} characters")
             if len(text) > 4000:
                 # ارسال خلاصه
                 summary_text = f"✅ **کانفیگ‌های ساخته شده**\n\n"
@@ -3371,7 +3376,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     _bot.send_message(admin_id, title_text, parse_mode='Markdown')
                     
                     # ارسال کانفیگ بدون Markdown برای جلوگیری از کوتاه شدن
-                    _bot.send_message(admin_id, config_info['config'])
+                    config_text = config_info['config']
+                    logger.info(f"Sending config {i} (length: {len(config_text)}): {config_text}")
+                    _bot.send_message(admin_id, config_text)
             else:
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data=f"admin_create_config_server_{server_id}"))
