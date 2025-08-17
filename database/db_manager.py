@@ -1827,7 +1827,945 @@ class DatabaseManager:
                         WHERE client_uuid = %s AND is_active = TRUE
                     """, (client_uuid,))
                     purchase = cursor.fetchone()
-                    return dict(purchase) if purchase else None
+                    if purchase:
+                        try:
+                            return dict(purchase)
+                        except Exception as dict_error:
+                            logger.error(f"Error converting purchase to dict: {dict_error}")
+                            return None
+                    return None
+        except Exception as e:
+            logger.error(f"Error getting purchase by client UUID {client_uuid}: {e}")
+            return None
+
+    def get_all_client_uuids_for_user(self, user_id):
+        """دریافت تمام UUID های کلاینت برای یک کاربر"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT client_uuid, server_id, id as purchase_id 
+                        FROM purchases 
+                        WHERE user_id = %s AND is_active = TRUE AND client_uuid IS NOT NULL
+                    """, (user_id,))
+                    purchases = cursor.fetchall()
+                    result = []
+                    for purchase in purchases:
+                        try:
+                            result.append(dict(purchase))
+                        except Exception as dict_error:
+                            logger.error(f"Error converting purchase to dict: {dict_error}")
+                            continue
+                    return result
+        except Exception as e:
+            logger.error(f"Error getting client UUIDs for user {user_id}: {e}")
+            return []
+            
+    def update_purchase_configs(self, purchase_id, configs_json):
+        """بروزرسانی کانفیگ‌های ذخیره شده برای یک خرید"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE purchases 
+                        SET single_configs_json = %s, 
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (configs_json, purchase_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating purchase configs for {purchase_id}: {e}")
+            return False
+
+    def get_all_purchases_by_type(self, purchase_type):
+        """
+        دریافت تمام خریدها بر اساس نوع (profile یا normal)
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    if purchase_type == 'profile':
+                        # خریدهای پروفایل
+                        cursor.execute("""
+                            SELECT * FROM purchases 
+                            WHERE profile_id IS NOT NULL AND is_active = TRUE
+                            ORDER BY purchase_date DESC
+                        """)
+                    elif purchase_type == 'normal':
+                        # خریدهای عادی (بدون profile_id)
+                        cursor.execute("""
+                            SELECT * FROM purchases 
+                            WHERE profile_id IS NULL AND is_active = TRUE
+                            ORDER BY purchase_date DESC
+                        """)
+                    else:
+                        return []
+                    
+                    purchases = cursor.fetchall()
+                    return [dict(purchase) for purchase in purchases]
+        except Exception as e:
+            logger.error(f"Error getting purchases by type {purchase_type}: {e}")
+            return []
+
+    def get_all_profiles(self, only_active=False):
+        """تمام پروفایل‌های ثبت شده در دیتابیس را برمی‌گرداند."""
+        query = "SELECT * FROM profiles ORDER BY id"
+        if only_active:
+            query = "SELECT * FROM profiles WHERE is_active = TRUE ORDER BY id"
+        
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query)
+                profiles = cur.fetchall()
+                # fetchall در psycopg2 با DictCursor لیستی از ردیف‌های دیکشنری مانند برمی‌گرداند
+                return profiles
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profiles: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+                
+                
+                
+    def get_inbounds_for_profile(self, profile_id: int, server_id: int = None, with_server_info: bool = False):
+        """
+        اینباندهای متصل به یک پروفایل را برمی‌گرداند. (نسخه نهایی و کامل)
+        server_id: نتایج را برای یک سرور خاص فیلتر می‌کند.
+        with_server_info: اطلاعات کامل سرور و الگوها را نیز برمی‌گرداند.
+        """
+        # --- اصلاح اصلی اینجاست: ساختار کوئری به طور کامل بازنویسی شده ---
+        if with_server_info:
+            sql = """
+                SELECT 
+                    pi.inbound_id, 
+                    pi.config_params, 
+                    pi.raw_template, 
+                    s.* FROM profile_inbounds pi
+                JOIN servers s ON pi.server_id = s.id
+                WHERE pi.profile_id = %s;
+            """
+            params = (profile_id,)
+        else:
+            sql = "SELECT inbound_id FROM profile_inbounds WHERE profile_id = %s"
+            params = [profile_id]
+            if server_id:
+                sql += " AND server_id = %s"
+                params.append(server_id)
+        
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(sql, tuple(params))
+                    results = []
+                    rows = cur.fetchall()
+
+                    if with_server_info:
+                        for row in rows:
+                            server_info = self._decrypt_server_row(row)
+                            if server_info:
+                                results.append({
+                                    'inbound_id': row['inbound_id'],
+                                    'config_params': row['config_params'],
+                                    'raw_template': row['raw_template'], # <-- این فیلد کلیدی حالا به درستی خوانده می‌شود
+                                    'server': server_info
+                                })
+                    else:
+                        results = [row['inbound_id'] for row in rows]
+                        
+                    return results
+        except psycopg2.Error as e:
+            logger.error(f"Error getting inbounds for profile {profile_id}: {e}")
+            return []
+            
+    def update_inbounds_for_profile(self, profile_id: int, server_id: int, inbound_ids: list):
+        """
+        اینباندهای یک پروفایل برای یک سرور خاص را به صورت اتمیک آپدیت می‌کند.
+        ابتدا تمام رکوردهای قدیمی برای آن سرور را حذف و سپس جدیدها را اضافه می‌کند.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # قدم ۱: حذف تمام رکوردهای قدیمی فقط برای این پروفایل و این سرور
+                logger.info(f"Deleting old inbounds for profile {profile_id} on server {server_id}...")
+                cur.execute(
+                    "DELETE FROM profile_inbounds WHERE profile_id = %s AND server_id = %s;",
+                    (profile_id, server_id)
+                )
+                logger.info(f"Deletion complete. {cur.rowcount} rows affected.")
+
+                # قدم ۲: اضافه کردن رکوردهای جدید
+                if inbound_ids:
+                    logger.info(f"Inserting {len(inbound_ids)} new inbounds...")
+                    data_to_insert = [(profile_id, server_id, inbound_id) for inbound_id in inbound_ids]
+                    # از psycopg2.extras.execute_values برای درج بهینه استفاده می‌کنیم
+                    from psycopg2.extras import execute_values
+                    execute_values(
+                        cur,
+                        "INSERT INTO profile_inbounds (profile_id, server_id, inbound_id) VALUES %s",
+                        data_to_insert
+                    )
+                    logger.info("Insertion complete.")
+                
+                # اگر همه چیز موفق بود، تراکنش را نهایی کن
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"DATABASE TRANSACTION FAILED for profile {profile_id} on server {server_id}: {e}")
+            # در صورت بروز هرگونه خطا، تمام تغییرات را به حالت قبل برگردان
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
+    def get_profile_by_id(self, profile_id):
+        """اطلاعات یک پروفایل خاص را بر اساس ID آن برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM profiles WHERE id = %s", (profile_id,))
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting profile by ID {profile_id}: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+                
+                
+    def add_subscription_domain(self, domain_name):
+        sql = "INSERT INTO subscription_domains (domain_name) VALUES (%s) RETURNING id;"
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (domain_name,))
+                domain_id = cur.fetchone()[0]
+                conn.commit()
+                return domain_id
+        except psycopg2.IntegrityError:
+            return None # دامنه تکراری
+        except psycopg2.Error as e:
+            logger.error(f"Error adding subscription domain {domain_name}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_all_subscription_domains(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM subscription_domains ORDER BY id")
+                return cur.fetchall()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all subscription domains: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+
+    def set_active_subscription_domain(self, domain_id):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # ابتدا همه را غیرفعال کن
+                cur.execute("UPDATE subscription_domains SET is_active = FALSE")
+                # سپس دامنه مورد نظر را فعال کن
+                cur.execute("UPDATE subscription_domains SET is_active = TRUE WHERE id = %s", (domain_id,))
+                conn.commit()
+                return True
+        except psycopg2.Error as e:
+            logger.error(f"Error setting active domain for ID {domain_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_active_subscription_domain(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM subscription_domains WHERE is_active = TRUE LIMIT 1")
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting active subscription domain: {e}")
+            return None
+        finally:
+            if conn: conn.close()
+            
+            
+    def sync_configs_for_server(self, server_id, configs_data):
+        """کانفیگ‌های یک سرور را در دیتابیس محلی همگام‌سازی می‌کند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # 1. حذف تمام رکوردهای قدیمی برای این سرور
+                cur.execute("DELETE FROM synced_configs WHERE server_id = %s", (server_id,))
+                
+                # 2. آماده‌سازی و درج رکوردهای جدید
+                if not configs_data:
+                    conn.commit()
+                    return 0 # هیچ کانفیگی برای افزودن وجود نداشت
+
+                data_to_insert = []
+                for config in configs_data:
+                    data_to_insert.append((
+                        server_id,
+                        config.get('id'),
+                        config.get('remark'),
+                        config.get('port'),
+                        config.get('protocol'),
+                        config.get('settings', '{}'),
+                        config.get('streamSettings', '{}')
+                    ))
+                
+                cur.executemany(
+                    """
+                    INSERT INTO synced_configs (server_id, inbound_id, remark, port, protocol, settings, stream_settings)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    data_to_insert
+                )
+                conn.commit()
+                return len(data_to_insert)
+        except psycopg2.Error as e:
+            logger.error(f"Error syncing configs for server {server_id}: {e}")
+            if conn: conn.rollback()
+            return -1 # نشان‌دهنده خطا
+        finally:
+            if conn: conn.close()
+            
+            
+    def get_purchase_by_sub_id(self, sub_id):
+        """یک خرید را بر اساس شناسه اشتراک یکتای آن پیدا می‌کند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM purchases WHERE sub_id = %s", (sub_id,))
+                return cur.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting purchase by sub_id {sub_id}: {e}")
+            return None
+        finally:
+            if conn: conn.close()
+            
+    def get_synced_configs_for_profile(self, profile_id):
+        """
+        تمام کانفیگ‌های همگام‌سازی شده برای یک پروفایل خاص را به همراه آدرس سرورشان برمی‌گرداند.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # با JOIN کردن جداول، اطلاعات سرور را نیز استخراج می‌کنیم
+                sql = """
+                    SELECT sc.*, s.subscription_base_url 
+                    FROM synced_configs sc
+                    JOIN profile_inbounds pi ON sc.server_id = pi.server_id AND sc.inbound_id = pi.inbound_id
+                    JOIN servers s ON sc.server_id = s.id
+                    WHERE pi.profile_id = %s;
+                """
+                cur.execute(sql, (profile_id,))
+                
+                # قبل از بازگرداندن، اطلاعات حساس سرور را رمزگشایی می‌کنیم
+                configs = []
+                for row in cur.fetchall():
+                    config_dict = dict(row)
+                    config_dict['subscription_base_url'] = self._decrypt(config_dict['subscription_base_url'])
+                    configs.append(config_dict)
+                return configs
+        except psycopg2.Error as e:
+            logger.error(f"Error getting synced configs for profile {profile_id}: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+            
+    def delete_subscription_domain(self, domain_id):
+        sql = "DELETE FROM subscription_domains WHERE id = %s;"
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (domain_id,))
+                conn.commit()
+                return cur.rowcount > 0 # اگر سطری حذف شده باشد True برمی‌گرداند
+        except psycopg2.Error as e:
+            logger.error(f"Error deleting subscription domain {domain_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+            
+            
+    def set_user_admin_status(self, telegram_id, is_admin):
+        """وضعیت ادمین بودن یک کاربر را تغییر می‌دهد."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET is_admin = %s WHERE telegram_id = %s", (is_admin, telegram_id))
+                conn.commit()
+                return cur.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error setting admin status for {telegram_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+
+    def get_all_admins(self):
+        """لیست تمام کاربرانی که نقش ادمین دارند را برمی‌گرداند."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # شرط را از is_admin = TRUE به role = 'admin' تغییر می‌دهیم
+                cur.execute("SELECT * FROM users WHERE role = 'admin'")
+                return cur.fetchall()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all admins: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+            
+            
+    def check_connection(self):
+        """اتصال به دیتابیس را بررسی می‌کند."""
+        conn = None
+        try:
+            conn = self._get_connection()
+            # اگر کانکشن موفق باشد، یک کوئری ساده اجرا می‌کنیم
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"Database connection check failed: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+                
+                
+    def update_server_inbound_params(self, server_id: int, inbound_id: int, params_json: str):
+        """پارامترهای کانفیگ تجزیه شده را برای یک اینباند سرور خاص آپدیت می‌کند."""
+        sql = "UPDATE server_inbounds SET config_params = %s WHERE server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating server inbound params for s:{server_id}-i:{inbound_id}: {e}")
+            return False
+
+    def update_profile_inbound_params(self, profile_id: int, server_id: int, inbound_id: int, params_json: str):
+        """پارامترهای کانفیگ تجزیه شده را برای یک اینباند پروفایل خاص آپدیت می‌کند."""
+        sql = "UPDATE profile_inbounds SET config_params = %s WHERE profile_id = %s AND server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, profile_id, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating profile inbound params for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
+            return False
+        
+        
+        
+    def get_all_active_inbounds_with_server_info(self):
+        """
+        لیست تمام اینباندهای فعال از تمام سرورها را به همراه نام سرور برمی‌گرداند.
+        """
+        sql = """
+            SELECT si.server_id, si.inbound_id, si.remark, si.config_params, s.name as server_name
+            FROM server_inbounds si
+            JOIN servers s ON si.server_id = s.id
+            WHERE si.is_active = TRUE
+            ORDER BY s.name, si.remark;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all active inbounds with server info: {e}")
+            return []
+        
+        
+    
+    def get_active_inbounds_for_server_with_template(self, server_id: int):
+        """اینباندهای فعال یک سرور را به همراه الگوی کانفیگ آنها برمی‌گرداند."""
+        sql = """
+            SELECT si.inbound_id, si.config_params, si.remark, s.*
+            FROM server_inbounds si
+            JOIN servers s ON si.server_id = s.id
+            WHERE si.server_id = %s AND si.is_active = TRUE;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(sql, (server_id,))
+                    results = []
+                    server_info = None
+                    for row in cur.fetchall():
+                        if not server_info: # فقط یک بار اطلاعات سرور را رمزگشایی کن
+                            server_info = self._decrypt_server_row(row)
+                        
+                        if server_info:
+                            results.append({
+                                'inbound_id': row['inbound_id'],
+                                'remark': row['remark'],
+                                'config_params': row['config_params'],
+                                'server': server_info
+                            })
+                    return results
+        except psycopg2.Error as e:
+            logger.error(f"Error getting active inbounds with template for server {server_id}: {e}")
+            return []
+        
+        
+        
+    def get_all_profile_inbounds_with_status(self):
+        """
+        لیست تمام اینباندهای متصل به پروفایل‌ها را به همراه وضعیت الگو برمی‌گرداند.
+        """
+        sql = """
+            SELECT 
+                pi.profile_id, p.name as profile_name,
+                pi.server_id, s.name as server_name,
+                pi.inbound_id, si.remark,
+                pi.config_params
+            FROM profile_inbounds pi
+            JOIN profiles p ON pi.profile_id = p.id
+            JOIN servers s ON pi.server_id = s.id
+            LEFT JOIN server_inbounds si ON pi.server_id = si.server_id AND pi.inbound_id = si.inbound_id
+            ORDER BY p.name, s.name, si.remark;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profile inbounds with status: {e}")
+            return []
+
+    def get_server_inbound_details(self, server_id: int, inbound_id: int):
+        """جزئیات یک اینباند خاص (مانند remark) را از جدول server_inbounds می‌خواند."""
+        sql = "SELECT remark FROM server_inbounds WHERE server_id = %s AND inbound_id = %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql, (server_id, inbound_id))
+                    return cursor.fetchone()
+        except psycopg2.Error as e:
+            logger.error(f"Error getting server inbound details for s:{server_id}-i:{inbound_id}: {e}")
+            return None
+        
+        
+        
+    def run_migrations(self):
+        """
+        تغییرات لازم در ساختار دیتابیس را به صورت خودکار و امن اعمال می‌کند. (نسخه نهایی و کامل)
+        """
+        logging.info("Checking for necessary database migrations...")
+
+        # لیست کامل و صحیح دستورات SQL برای ساخت تمام جداول
+        migrations = [
+            # --- بخش ۱: جداول پایه ---
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT UNIQUE NOT NULL,
+                first_name TEXT,
+                last_name TEXT,
+                username TEXT,
+                is_admin BOOLEAN DEFAULT FALSE,
+                join_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);",
+            """
+            CREATE TABLE IF NOT EXISTS servers (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, panel_type TEXT NOT NULL DEFAULT 'x-ui',
+                panel_url TEXT NOT NULL, username TEXT NOT NULL, password TEXT NOT NULL,
+                subscription_base_url TEXT NOT NULL, subscription_path_prefix TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE, last_checked TIMESTAMPTZ, is_online BOOLEAN DEFAULT FALSE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS plans (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, plan_type TEXT NOT NULL,
+                volume_gb REAL, duration_days INTEGER, price REAL, per_gb_price REAL,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS tutorials (
+                id SERIAL PRIMARY KEY, platform TEXT NOT NULL, app_name TEXT NOT NULL,
+                forward_chat_id BIGINT NOT NULL, forward_message_id BIGINT NOT NULL,
+                UNIQUE (platform, app_name)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profiles (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, per_gb_price REAL NOT NULL,
+                duration_days INTEGER NOT NULL, description TEXT, is_active BOOLEAN DEFAULT TRUE
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS subscription_domains (
+                id SERIAL PRIMARY KEY, domain_name TEXT UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS payment_gateways (
+                id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, type TEXT NOT NULL,
+                card_number TEXT, card_holder_name TEXT, merchant_id TEXT,
+                description TEXT, is_active BOOLEAN DEFAULT TRUE, priority INTEGER DEFAULT 0
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS bot_messages (
+                message_key TEXT PRIMARY KEY, message_text TEXT
+            );
+            """,
+            # --- بخش ۲: جداول وابسته (با Foreign Key) ---
+            """
+            CREATE TABLE IF NOT EXISTS server_inbounds (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL, remark TEXT, is_active BOOLEAN DEFAULT TRUE,
+                UNIQUE (server_id, inbound_id)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS profile_inbounds (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                UNIQUE (profile_id, server_id, inbound_id)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchases (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                server_id INTEGER REFERENCES servers(id) ON DELETE SET NULL,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+                profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+                purchase_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expire_date TIMESTAMPTZ,
+                initial_volume_gb REAL NOT NULL,
+                client_uuid TEXT, client_email TEXT, sub_id TEXT, is_active BOOLEAN DEFAULT TRUE,
+                single_configs_json TEXT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS free_test_usage (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                usage_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS payments (
+                id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                amount REAL NOT NULL, payment_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                receipt_message_id BIGINT, is_confirmed BOOLEAN DEFAULT FALSE,
+                admin_confirmed_by BIGINT, confirmation_date TIMESTAMPTZ,
+                order_details_json TEXT, admin_notification_message_id BIGINT,
+                authority TEXT, ref_id TEXT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS synced_configs (
+                id SERIAL PRIMARY KEY,
+                server_id INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                inbound_id INTEGER NOT NULL,
+                remark TEXT,
+                port INTEGER,
+                protocol TEXT,
+                settings TEXT,
+                stream_settings TEXT,
+                UNIQUE (server_id, inbound_id)
+            );
+            """,
+            # --- بخش ۳: دستورات ALTER برای آپدیت از نسخه‌های قدیمی ---
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance REAL DEFAULT 0.0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            "ALTER TABLE server_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS config_params JSONB;",
+            "ALTER TABLE profile_inbounds ADD COLUMN IF NOT EXISTS raw_template TEXT;"
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';",
+            "UPDATE users SET role = 'admin' WHERE is_admin = TRUE;"
+        ]
+
+        conn = None
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cur:
+                for sql in migrations:
+                    # لاگ کردن هر دستور قبل از اجرا برای دیباگ بهتر
+                    # logging.debug(f"Executing migration: {sql.strip()}")
+                    cur.execute(sql)
+            conn.commit()
+            logging.info("Database schema is up to date.")
+
+            # فقط پس از موفقیت کامل مایگریشن، پیام‌ها را اضافه می‌کنیم
+            self._seed_messages_table()
+
+        except Exception as e:
+            logging.critical(f"A critical error occurred during database migration: {e}")
+            if conn:
+                conn.rollback()
+            # این خطا باید باعث توقف برنامه شود تا از اجرای ناقص جلوگیری شود
+            raise e
+        finally:
+            if conn:
+                conn.close()
+
+        self._seed_messages_table()
+    def add_to_user_balance(self, user_id: int, amount: float):
+        """مبلغ مشخص شده را به موجودی کیف پول کاربر اضافه می‌کند."""
+        sql = "UPDATE users SET balance = balance + %s WHERE id = %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (amount, user_id))
+                    conn.commit()
+                    return True
+        except psycopg2.Error as e:
+            logger.error(f"Error adding balance for user {user_id}: {e}")
+            return False
+        
+        
+        
+    def deduct_from_user_balance(self, user_id: int, amount: float):
+        """
+        مبلغ مشخص شده را از موجودی کیف پول کاربر کسر می‌کند.
+        برای جلوگیری از منفی شدن موجودی، یک شرط در کوئری قرار داده شده است.
+        """
+        sql = "UPDATE users SET balance = balance - %s WHERE id = %s AND balance >= %s;"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (amount, user_id, amount))
+                    conn.commit()
+                    # اگر سطری آپدیت شده باشد، یعنی موجودی کافی بوده است
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error deducting balance for user {user_id}: {e}")
+            return False
+        
+        
+    # این دو تابع را در db_manager.py پیدا و جایگزین کنید
+
+    def update_server_inbound_template(self, server_id: int, inbound_id: int, params_json: str, raw_template: str):
+        """پارامترها و متن خام الگو را برای یک اینباند سرور خاص آپدیت می‌کند."""
+        sql = "UPDATE server_inbounds SET config_params = %s, raw_template = %s WHERE server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, raw_template, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating server inbound template for s:{server_id}-i:{inbound_id}: {e}")
+            return False
+
+    def update_profile_inbound_template(self, profile_id: int, server_id: int, inbound_id: int, params_json: str, raw_template: str):
+        """پارامترها و متن خام الگو را برای یک اینباند پروفایل خاص آپدیت می‌کند."""
+        sql = "UPDATE profile_inbounds SET config_params = %s, raw_template = %s WHERE profile_id = %s AND server_id = %s AND inbound_id = %s"
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, (params_json, raw_template, profile_id, server_id, inbound_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error updating profile inbound template for p:{profile_id}-s:{server_id}-i:{inbound_id}: {e}")
+            return False
+        
+        
+    def get_all_profile_inbounds_for_debug(self):
+        """تمام رکوردهای جدول profile_inbounds را با نام‌های خوانا برمی‌گرداند."""
+        sql = """
+            SELECT 
+                pi.profile_id, p.name as profile_name,
+                pi.server_id, s.name as server_name,
+                pi.inbound_id
+            FROM profile_inbounds pi
+            JOIN profiles p ON pi.profile_id = p.id
+            JOIN servers s ON pi.server_id = s.id
+            ORDER BY pi.profile_id, pi.server_id, pi.inbound_id;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute(sql)
+                    return [dict(row) for row in cursor.fetchall()]
+        except psycopg2.Error as e:
+            logger.error(f"Error getting all profile inbounds for debug: {e}")
+            return []
+        
+        
+    def _seed_messages_table(self):
+        """جدول bot_messages را با مقادیر پیش‌فرض از فایل messages.py پر می‌کند."""
+        import utils.messages as messages_module
+        from psycopg2.extras import execute_batch
+        
+        all_messages = {
+            key: getattr(messages_module, key)
+            for key in dir(messages_module)
+            if not key.startswith('__') and isinstance(getattr(messages_module, key), str)
+        }
+        if not all_messages: return
+
+        sql = "INSERT INTO bot_messages (message_key, message_text) VALUES (%s, %s) ON CONFLICT (message_key) DO NOTHING;"
+        data_to_insert = list(all_messages.items())
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                execute_batch(cur, sql, data_to_insert)
+                conn.commit()
+                logger.info(f"Successfully seeded {len(data_to_insert)} message keys into the database.")
+
+    def get_all_bot_messages(self):
+        """تمام کلیدها و متن‌های پیام را از دیتابیس می‌خواند."""
+        sql = "SELECT message_key, message_text FROM bot_messages ORDER BY message_key;"
+        with self._get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(sql)
+                return [dict(row) for row in cur.fetchall()]
+
+    def get_message_by_key(self, key: str):
+        """متن یک پیام را بر اساس کلید آن از دیتابیس می‌خواند."""
+        sql = "SELECT message_text FROM bot_messages WHERE message_key = %s;"
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (key,))
+                result = cur.fetchone()
+                return result[0] if result else None
+
+    def update_bot_message(self, message_key: str, new_text: str):
+        """متن یک پیام خاص را در دیتابیس آپدیت می‌کند."""
+        sql = "UPDATE bot_messages SET message_text = %s WHERE message_key = %s;"
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (new_text, message_key))
+                conn.commit()
+                return cur.rowcount > 0
+            
+            
+    def set_user_role(self, telegram_id, role):
+        """نقش یک کاربر را تغییر می‌دهد (مثلا به 'user', 'admin', 'reseller')."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # به جای مقدار boolean، یک متن (role) را در دیتابیس آپدیت می‌کنیم
+                cur.execute("UPDATE users SET role = %s WHERE telegram_id = %s", (role, telegram_id))
+                conn.commit()
+                return cur.rowcount > 0
+        except psycopg2.Error as e:
+            logger.error(f"Error setting role for {telegram_id}: {e}")
+            if conn: conn.rollback()
+            return False
+        finally:
+            if conn: conn.close()
+            
+    def get_all_active_purchases(self):
+        """دریافت تمام خریدهای فعال"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT * FROM purchases 
+                        WHERE is_active = TRUE 
+                        ORDER BY purchase_date DESC
+                    """)
+                    purchases = cursor.fetchall()
+                    return [dict(purchase) for purchase in purchases]
+        except Exception as e:
+            logger.error(f"Error getting active purchases: {e}")
+            return []
+
+    def update_purchase_sub_id(self, purchase_id, new_sub_id):
+        """آپدیت sub_id برای یک خرید"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE purchases 
+                        SET sub_id = %s 
+                        WHERE id = %s
+                    """, (new_sub_id, purchase_id))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating purchase sub_id: {e}")
+            return False
+
+    def get_client_traffic_info(self, client_uuid):
+        """دریافت اطلاعات ترافیک کلاینت از پنل"""
+        try:
+            # بررسی وجود client_uuid
+            if not client_uuid:
+                logger.error("client_uuid is None or empty")
+                return None
+                
+            # ابتدا سرور مربوط به این کلاینت را پیدا می‌کنیم
+            purchase = self.get_purchase_by_client_uuid(client_uuid)
+            if not purchase:
+                logger.warning(f"No purchase found for client_uuid: {client_uuid}")
+                return None
+            
+            server = self.get_server_by_id(purchase['server_id'])
+            if not server:
+                logger.error(f"No server found for purchase {purchase['id']}")
+                return None
+            
+            # انتخاب API Client مناسب
+            from api_client.factory import get_api_client
+            api_client = get_api_client(server)
+            
+            if not api_client:
+                logger.error(f"Could not create API client for server {server['id']}")
+                return None
+            
+            # دریافت اطلاعات کلاینت
+            client_info = api_client.get_client_info(client_uuid)
+            if not client_info:
+                logger.warning(f"No client info returned for UUID: {client_uuid}")
+                return None
+                
+            return client_info
+            
+        except Exception as e:
+            logger.error(f"Error getting client traffic info for {client_uuid}: {e}")
+            return None
+
+    def get_purchase_by_client_uuid(self, client_uuid):
+        """دریافت خرید بر اساس UUID کلاینت"""
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT * FROM purchases 
+                        WHERE client_uuid = %s AND is_active = TRUE
+                    """, (client_uuid,))
+                    purchase = cursor.fetchone()
+                    if purchase:
+                        try:
+                            return dict(purchase)
+                        except Exception as dict_error:
+                            logger.error(f"Error converting purchase to dict: {dict_error}")
+                            return None
+                    return None
         except Exception as e:
             logger.error(f"Error getting purchase by client UUID {client_uuid}: {e}")
             return None

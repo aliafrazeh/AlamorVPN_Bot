@@ -101,7 +101,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             show_service_details_with_traffic(user_id, purchase_id, call.message)
         elif data.startswith("user_refresh_traffic_"):
             purchase_id = int(data.replace("user_refresh_traffic_", ""))
-            refresh_traffic_info(user_id, purchase_id, call.message)
+            refresh_traffic_info(user_id, purchase_id, call.message, call.id)
         elif data.startswith("user_get_single_configs_"):
             purchase_id = int(data.replace("user_get_single_configs_", ""))
             send_single_configs(user_id, purchase_id)
@@ -1019,7 +1019,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         text += f"🏠 **سرور:** {server_name}\n"
         
         # زمان باقی‌مانده
-        if days_remaining is not None:
+        if days_remaining is not None and isinstance(days_remaining, (int, float)):
             if days_remaining > 0:
                 text += f"⏰ **زمان باقی‌مانده:** {days_remaining} روز\n"
             elif days_remaining == 0:
@@ -1157,28 +1157,32 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 user_id, message.message_id
             )
 
-    def refresh_traffic_info(user_id, purchase_id, message):
+    def refresh_traffic_info(user_id, purchase_id, message, call_id=None):
         """
         بروزرسانی اطلاعات ترافیک
         """
         purchase = _db_manager.get_purchase_by_id(purchase_id)
         if not purchase:
-            _bot.answer_callback_query(message.id, "❌ سرویس یافت نشد", show_alert=True)
+            if call_id:
+                _bot.answer_callback_query(call_id, "❌ سرویس یافت نشد", show_alert=True)
             return
         
         if not purchase.get('client_uuid'):
-            _bot.answer_callback_query(message.id, "❌ اطلاعات کلاینت در دسترس نیست", show_alert=True)
+            if call_id:
+                _bot.answer_callback_query(call_id, "❌ اطلاعات کلاینت در دسترس نیست", show_alert=True)
             return
         
         # دریافت اطلاعات جدید ترافیک
         traffic_info = _db_manager.get_client_traffic_info(purchase['client_uuid'])
         
         if traffic_info:
-            _bot.answer_callback_query(message.id, "✅ اطلاعات ترافیک بروزرسانی شد")
+            if call_id:
+                _bot.answer_callback_query(call_id, "✅ اطلاعات ترافیک بروزرسانی شد")
             # نمایش مجدد با اطلاعات جدید
             show_service_details_with_traffic(user_id, purchase_id, message)
         else:
-            _bot.answer_callback_query(message.id, "❌ خطا در دریافت اطلاعات ترافیک", show_alert=True)
+            if call_id:
+                _bot.answer_callback_query(call_id, "❌ خطا در دریافت اطلاعات ترافیک", show_alert=True)
 
     @_bot.callback_query_handler(func=lambda call: call.data.startswith('user_refresh_subscription_'))
     def handle_refresh_subscription_callback(call):

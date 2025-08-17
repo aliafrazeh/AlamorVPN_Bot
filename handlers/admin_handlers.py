@@ -724,6 +724,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_create_backup": create_backup,
             "admin_check_subscription_links": check_and_fix_subscription_links,
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
+            "admin_subscription_system_status": show_subscription_system_status,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -2644,7 +2645,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
 
     def refresh_all_subscription_links(admin_id, message):
         """
-        بروزرسانی همه لینک‌های subscription از پنل اصلی
+        بروزرسانی همه لینک‌های subscription از پنل اصلی با استفاده از سیستم جدید
         """
         _clear_admin_state(admin_id)
         
@@ -2681,9 +2682,10 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             success_count = 0
             error_count = 0
-            webhook_errors = 0
+            profile_count = 0
+            normal_count = 0
             
-            # درخواست بروزرسانی به webhook server برای هر خرید
+            # بروزرسانی مستقیم از طریق webhook server
             import requests
             webhook_base_url = f"https://{webhook_domain}/admin/update_configs"
             headers = {
@@ -2692,11 +2694,20 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             
             for purchase in active_purchases:
                 try:
+                    # تشخیص نوع خرید
+                    if purchase.get('profile_id'):
+                        profile_count += 1
+                        purchase_type = "پروفایل"
+                    else:
+                        normal_count += 1
+                        purchase_type = "عادی"
+                    
                     webhook_url = f"{webhook_base_url}/{purchase['id']}"
                     response = requests.post(webhook_url, headers=headers, timeout=30)
                     
                     if response.status_code == 200:
                         success_count += 1
+                        logger.info(f"Successfully updated purchase {purchase['id']} ({purchase_type})")
                     elif response.status_code == 401:
                         error_count += 1
                         logger.error(f"Unauthorized for purchase {purchase['id']}: Invalid API key")
@@ -2708,7 +2719,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         logger.error(f"HTTP {response.status_code} for purchase {purchase['id']}: {response.text}")
                         
                 except requests.exceptions.ConnectionError:
-                    webhook_errors += 1
+                    error_count += 1
                     logger.error(f"Connection error for purchase {purchase['id']}: Webhook server not reachable")
                 except requests.exceptions.Timeout:
                     error_count += 1
@@ -2717,19 +2728,27 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     error_count += 1
                     logger.error(f"Error updating purchase {purchase['id']}: {e}")
             
-            # نمایش نتیجه
+            # نمایش نتیجه با جزئیات بیشتر
             result_text = f"🔄 **بروزرسانی لینک‌های Subscription**\n\n"
-            result_text += f"📊 **نتایج:**\n"
+            result_text += f"📊 **نتایج کلی:**\n"
             result_text += f"• ✅ موفق: **{success_count}** لینک\n"
             result_text += f"• ❌ ناموفق: **{error_count}** لینک\n"
-            result_text += f"• 📡 خطای اتصال: **{webhook_errors}** لینک\n"
             result_text += f"• 📈 کل: **{len(active_purchases)}** لینک\n\n"
             
+            result_text += f"📋 **جزئیات خریدها:**\n"
+            result_text += f"• 🎯 خریدهای پروفایل: **{profile_count}**\n"
+            result_text += f"• 🔧 خریدهای عادی: **{normal_count}**\n\n"
+            
             if success_count > 0:
-                result_text += "🎉 برخی لینک‌ها با موفقیت بروزرسانی شدند."
-            elif webhook_errors > 0:
-                result_text += "⚠️ **مشکل:** webhook server در دسترس نیست.\n"
-                result_text += "لطفاً اطمینان حاصل کنید که webhook server در حال اجرا است."
+                result_text += "🎉 **سیستم جدید فعال شد!**\n"
+                result_text += "✅ لینک‌های پروفایل از تمام سرورهای مرتبط بروزرسانی شدند.\n"
+                result_text += "✅ لینک‌های عادی از سرورهای مربوطه بروزرسانی شدند.\n\n"
+                
+                if profile_count > 0:
+                    result_text += "🔗 **ویژگی جدید:**\n"
+                    result_text += "• خریدهای پروفایل حالا از تمام سرورهای پروفایل دیتا جمع‌آوری می‌کنند\n"
+                    result_text += "• تغییرات ادمین در پورت‌ها و تنظیمات بلافاصله اعمال می‌شوند\n"
+                    result_text += "• سیستم فیلتر هوشمند کانفیگ‌ها فعال است\n"
             elif error_count > 0:
                 result_text += "⚠️ برخی لینک‌ها بروزرسانی نشدند.\n"
                 result_text += "لطفاً لاگ‌ها را بررسی کنید."
@@ -2751,6 +2770,63 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             markup.add(types.InlineKeyboardButton("🔙 بازگشت به منوی ادمین", callback_data="admin_main_menu"))
             
             _bot.edit_message_text(error_text, admin_id, message.message_id, reply_markup=markup)
+
+    def show_subscription_system_status(admin_id, message):
+        """نمایش وضعیت سیستم subscription"""
+        _clear_admin_state(admin_id)
+        
+        try:
+            # دریافت آمار خریدها
+            active_purchases = _db_manager.get_all_active_purchases()
+            profile_purchases = _db_manager.get_all_purchases_by_type('profile')
+            normal_purchases = _db_manager.get_all_purchases_by_type('normal')
+            
+            # دریافت آمار پروفایل‌ها
+            profiles = _db_manager.get_all_profiles(only_active=True)
+            
+            # بررسی تنظیمات
+            webhook_domain = os.getenv('WEBHOOK_DOMAIN')
+            admin_api_key = os.getenv('ADMIN_API_KEY')
+            
+            text = f"📊 **وضعیت سیستم Subscription**\n\n"
+            
+            text += f"🔗 **تنظیمات:**\n"
+            text += f"• Webhook Domain: `{webhook_domain or 'تنظیم نشده'}`\n"
+            text += f"• Admin API Key: `{'تنظیم شده' if admin_api_key else 'تنظیم نشده'}`\n\n"
+            
+            text += f"📈 **آمار خریدها:**\n"
+            text += f"• کل خریدهای فعال: **{len(active_purchases)}**\n"
+            text += f"• خریدهای پروفایل: **{len(profile_purchases)}**\n"
+            text += f"• خریدهای عادی: **{len(normal_purchases)}**\n\n"
+            
+            text += f"🎯 **پروفایل‌ها:**\n"
+            text += f"• پروفایل‌های فعال: **{len(profiles)}**\n"
+            
+            if profiles:
+                for profile in profiles[:3]:  # نمایش 3 پروفایل اول
+                    profile_inbounds = _db_manager.get_inbounds_for_profile(profile['id'])
+                    text += f"  - {profile['name']}: {len(profile_inbounds)} اینباند\n"
+                if len(profiles) > 3:
+                    text += f"  - و {len(profiles) - 3} پروفایل دیگر...\n"
+            
+            text += f"\n🚀 **ویژگی‌های جدید:**\n"
+            text += f"✅ جمع‌آوری دیتا از تمام سرورهای پروفایل\n"
+            text += f"✅ بروزرسانی خودکار تغییرات ادمین\n"
+            text += f"✅ فیلتر هوشمند کانفیگ‌ها\n"
+            text += f"✅ سیستم داینامیک subscription\n"
+            
+            # اضافه کردن دکمه‌ها
+            markup = types.InlineKeyboardMarkup()
+            markup.row(
+                types.InlineKeyboardButton("🔄 بروزرسانی همه", callback_data="admin_refresh_all_subscriptions"),
+                types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_main_menu")
+            )
+            
+            _bot.edit_message_text(text, admin_id, message.message_id, parse_mode='Markdown', reply_markup=markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing subscription system status: {e}")
+            _bot.edit_message_text(f"❌ خطا در نمایش وضعیت سیستم: {str(e)}", admin_id, message.message_id)
 
     def start_set_api_key_flow(admin_id, message):
         """شروع فرآیند تنظیم API Key"""

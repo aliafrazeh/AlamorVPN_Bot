@@ -98,6 +98,10 @@ def process_subscription_content(content):
     پردازش محتوای subscription و تشخیص نوع آن
     """
     try:
+        if not content:
+            logger.error("Content is empty or None")
+            return None
+            
         # تلاش برای decode کردن Base64
         decoded_content = base64.b64decode(content).decode('utf-8')
         # اگر موفق شد، محتوا Base64 بوده
@@ -107,14 +111,18 @@ def process_subscription_content(content):
             'decoded': decoded_content,
             'final': content  # همان Base64 را برمی‌گردانیم
         }
-    except:
+    except Exception as e:
         # اگر decode نشد، محتوا عادی است
-        return {
-            'is_base64': False,
-            'original': content,
-            'decoded': content,
-            'final': base64.b64encode(content.encode('utf-8')).decode('utf-8')  # encode می‌کنیم
-        }
+        try:
+            return {
+                'is_base64': False,
+                'original': content,
+                'decoded': content,
+                'final': base64.b64encode(content.encode('utf-8')).decode('utf-8')  # encode می‌کنیم
+            }
+        except Exception as encode_error:
+            logger.error(f"Error processing subscription content: {e}, encode error: {encode_error}")
+            return None
 
 def detect_content_type(content):
     """
@@ -211,30 +219,41 @@ def update_cached_configs_from_panel(purchase_id):
             logger.error(f"Purchase {purchase_id} not found")
             return False
         
-        server = db_manager.get_server_by_id(purchase['server_id'])
-        if not server:
-            logger.error(f"Server for purchase {purchase_id} not found")
-            return False
-        
         # بررسی وجود sub_id
         if not purchase.get('sub_id'):
             logger.error(f"Purchase {purchase_id} has no sub_id")
             return False
         
-        # دریافت دیتای جدید از پنل اصلی
-        subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
+        # --- منطق جدید: تفکیک خرید پروفایل و عادی ---
+        if purchase.get('profile_id'):
+            # خرید پروفایل: از تمام سرورهای پروفایل دیتا جمع‌آوری کن
+            subscription_data = get_profile_subscription_data(purchase)
+        else:
+            # خرید عادی: فقط از سرور انتخاب شده
+            server = db_manager.get_server_by_id(purchase['server_id'])
+            if not server:
+                logger.error(f"Server for purchase {purchase_id} not found")
+                return False
+            subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
         if not subscription_data:
             logger.error(f"Could not fetch new data from panel for purchase {purchase_id}")
             return False
         
         # پردازش محتوا
         processed_content = process_subscription_content(subscription_data)
+        if not processed_content:
+            logger.error(f"Failed to process subscription content for purchase {purchase_id}")
+            return False
         
         # اگر محتوا Base64 است، آن را decode کنیم
-        if processed_content['is_base64']:
-            config_content = processed_content['decoded']
+        if processed_content.get('is_base64'):
+            config_content = processed_content.get('decoded', '')
         else:
-            config_content = processed_content['original']
+            config_content = processed_content.get('original', '')
+        
+        if not config_content:
+            logger.error(f"No config content available for purchase {purchase_id}")
+            return False
         
         # تقسیم کانفیگ‌ها بر اساس خط جدید
         config_list = config_content.strip().split('\n')
@@ -269,13 +288,13 @@ def serve_subscription(sub_id):
     if not purchase or not purchase['is_active']:
         return Response("Subscription not found or is inactive.", status=404)
     
-    # دریافت اطلاعات سرور
-    server = db_manager.get_server_by_id(purchase['server_id'])
-    if not server:
-        return Response("Server information not found.", status=404)
-    
-    # دریافت دیتای subscription از پنل اصلی
-    subscription_data = get_panel_subscription_data(server, sub_id)
+    # --- منطق جدید: تفکیک خرید پروفایل و عادی ---
+    if purchase.get('profile_id'):
+        # خرید پروفایل: از تمام سرورهای پروفایل دیتا جمع‌آوری کن
+        subscription_data = get_profile_subscription_data(purchase)
+    else:
+        # خرید عادی: فقط از سرور انتخاب شده
+        subscription_data = get_normal_subscription_data(purchase)
     
     if not subscription_data:
         # اگر نتوانستیم از پنل اصلی دریافت کنیم، از دیتابیس استفاده می‌کنیم
@@ -298,6 +317,194 @@ def serve_subscription(sub_id):
     logger.info(f"Subscription content type: {content_type}, is_base64: {processed_content['is_base64']}")
     
     return Response(processed_content['final'], mimetype='text/plain')
+
+def get_profile_subscription_data(purchase):
+    """
+    دریافت دیتای subscription برای خرید پروفایل از تمام سرورهای مرتبط
+    """
+    try:
+        profile_id = purchase.get('profile_id')
+        if not profile_id:
+            logger.error(f"Purchase {purchase['id']} has no profile_id")
+            return None
+        
+        # دریافت تمام اینباندهای پروفایل از تمام سرورها
+        profile_inbounds = db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
+        if not profile_inbounds:
+            logger.error(f"No inbounds found for profile {profile_id}")
+            return None
+        
+        logger.info(f"Found {len(profile_inbounds)} inbounds for profile {profile_id}")
+        
+        all_configs = []
+        sub_id = purchase.get('sub_id')
+        
+        # گروه‌بندی اینباندها بر اساس سرور
+        inbounds_by_server = {}
+        for inbound_info in profile_inbounds:
+            server_id = inbound_info['server']['id']
+            if server_id not in inbounds_by_server:
+                inbounds_by_server[server_id] = []
+            inbounds_by_server[server_id].append(inbound_info)
+        
+        # دریافت دیتا از هر سرور
+        for server_id, server_inbounds in inbounds_by_server.items():
+            server_info = server_inbounds[0]['server']
+            logger.info(f"Fetching data from server {server_info['name']} (ID: {server_id})")
+            
+            # دریافت دیتای subscription از این سرور
+            server_subscription_data = get_panel_subscription_data(server_info, sub_id)
+            if server_subscription_data:
+                # پردازش و فیلتر کردن کانفیگ‌های مربوط به این سرور
+                processed_configs = process_server_configs(server_subscription_data, server_inbounds)
+                all_configs.extend(processed_configs)
+                logger.info(f"Added {len(processed_configs)} configs from server {server_info['name']}")
+            else:
+                logger.warning(f"Could not fetch data from server {server_info['name']}")
+        
+        if not all_configs:
+            logger.error(f"No configs collected from any server for profile {profile_id}")
+            return None
+        
+        # ترکیب تمام کانفیگ‌ها
+        final_subscription_data = "\n".join(all_configs)
+        logger.info(f"Total configs collected for profile {profile_id}: {len(all_configs)}")
+        
+        return final_subscription_data
+        
+    except Exception as e:
+        logger.error(f"Error in get_profile_subscription_data: {e}")
+        return None
+
+def get_normal_subscription_data(purchase):
+    """
+    دریافت دیتای subscription برای خرید عادی (فقط از یک سرور)
+    """
+    try:
+        server = db_manager.get_server_by_id(purchase['server_id'])
+        if not server:
+            logger.error(f"Server for purchase {purchase['id']} not found")
+            return None
+        
+        sub_id = purchase.get('sub_id')
+        return get_panel_subscription_data(server, sub_id)
+        
+    except Exception as e:
+        logger.error(f"Error in get_normal_subscription_data: {e}")
+        return None
+
+def process_server_configs(subscription_data, server_inbounds):
+    """
+    پردازش کانفیگ‌های یک سرور و فیلتر کردن کانفیگ‌های مربوط به اینباندهای پروفایل
+    """
+    try:
+        # پردازش محتوای subscription
+        processed_content = process_subscription_content(subscription_data)
+        if not processed_content:
+            return []
+        
+        # اگر محتوا Base64 است، آن را decode کنیم
+        if processed_content.get('is_base64'):
+            config_content = processed_content.get('decoded', '')
+        else:
+            config_content = processed_content.get('original', '')
+        
+        if not config_content:
+            return []
+        
+        # تقسیم کانفیگ‌ها بر اساس خط جدید
+        config_list = config_content.strip().split('\n')
+        
+        # فیلتر کردن خطوط خالی
+        config_list = [config for config in config_list if config.strip()]
+        
+        # فیلتر کردن کانفیگ‌های مربوط به اینباندهای پروفایل
+        # این کار بر اساس remark یا سایر شناسه‌های اینباند انجام می‌شود
+        filtered_configs = []
+        
+        for config in config_list:
+            # بررسی اینکه آیا این کانفیگ مربوط به یکی از اینباندهای پروفایل است
+            if is_config_for_profile_inbounds(config, server_inbounds):
+                filtered_configs.append(config)
+        
+        return filtered_configs
+        
+    except Exception as e:
+        logger.error(f"Error processing server configs: {e}")
+        return []
+
+def is_config_for_profile_inbounds(config, server_inbounds):
+    """
+    بررسی اینکه آیا یک کانفیگ مربوط به اینباندهای پروفایل است
+    """
+    try:
+        # اگر هیچ اینباندی برای پروفایل تعریف نشده، تمام کانفیگ‌ها را قبول می‌کنیم
+        if not server_inbounds:
+            return True
+        
+        # استخراج remark از کانفیگ (اگر موجود باشد)
+        config_remark = extract_config_remark(config)
+        
+        # اگر نتوانستیم remark استخراج کنیم، تمام کانفیگ‌ها را قبول می‌کنیم
+        if not config_remark:
+            return True
+        
+        # بررسی اینکه آیا remark با یکی از اینباندهای پروفایل مطابقت دارد
+        for inbound_info in server_inbounds:
+            inbound_remark = inbound_info.get('remark', '')
+            if inbound_remark and config_remark.lower() in inbound_remark.lower():
+                return True
+            
+            # بررسی بر اساس inbound_id نیز
+            inbound_id = inbound_info.get('inbound_id')
+            if inbound_id and str(inbound_id) in config:
+                return True
+        
+        # اگر هیچ تطابقی پیدا نشد، کانفیگ را رد می‌کنیم
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error checking config for profile inbounds: {e}")
+        return True  # در صورت خطا، کانفیگ را قبول می‌کنیم
+
+def extract_config_remark(config):
+    """
+    استخراج remark از کانفیگ
+    """
+    try:
+        # برای VMess
+        if 'vmess://' in config:
+            import base64
+            try:
+                # حذف vmess:// و decode کردن
+                encoded_part = config.replace('vmess://', '')
+                decoded = base64.b64decode(encoded_part + '==').decode('utf-8')
+                # استخراج remark از JSON
+                import json
+                vmess_data = json.loads(decoded)
+                return vmess_data.get('ps', '')  # ps = remark در VMess
+            except:
+                pass
+        
+        # برای VLESS
+        elif 'vless://' in config:
+            # استخراج remark از URL
+            parts = config.split('#')
+            if len(parts) > 1:
+                return parts[1]  # remark بعد از #
+        
+        # برای Trojan
+        elif 'trojan://' in config:
+            # استخراج remark از URL
+            parts = config.split('#')
+            if len(parts) > 1:
+                return parts[1]  # remark بعد از #
+        
+        return ''
+        
+    except Exception as e:
+        logger.error(f"Error extracting config remark: {e}")
+        return ''
 
 # --- Endpoint زرین‌پال ---
 @app.route('/zarinpal/verify', methods=['GET'])
