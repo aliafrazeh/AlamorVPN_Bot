@@ -138,6 +138,11 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         except:
             stream_settings = {}
         
+        logger.info(f"=== VLESS Config Debug ===")
+        logger.info(f"Client ID: {client_id}")
+        logger.info(f"Client Email: {client_email}")
+        logger.info(f"Stream Settings: {json.dumps(stream_settings, indent=2)}")
+        
         # آدرس سرور - استفاده از IP سرور
         server_ip = server_info.get('ip', '')
         if not server_ip:
@@ -145,6 +150,9 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
             server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
         
         port = inbound_info.get('port', 443)
+        
+        logger.info(f"Server IP: {server_ip}")
+        logger.info(f"Port: {port}")
         
         # ساخت VLESS URL با پارامترهای صحیح
         base_url = f"vless://{client_id}@{server_ip}:{port}"
@@ -161,6 +169,9 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         network = stream_settings.get('network', 'tcp')
         params.append(f"type={network}")
         
+        logger.info(f"Security: {security}")
+        logger.info(f"Network: {network}")
+        
         # تنظیمات TLS
         if security == 'tls':
             tls_settings = stream_settings.get('tlsSettings', {})
@@ -170,27 +181,34 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
             fp = tls_settings.get('fingerprint', '')
             if fp:
                 params.append(f"fp={fp}")
+            logger.info(f"TLS Settings: {json.dumps(tls_settings, indent=2)}")
         
         # تنظیمات Reality
         if security == 'reality':
             reality_settings = stream_settings.get('realitySettings', {})
+            logger.info(f"Reality Settings: {json.dumps(reality_settings, indent=2)}")
+            
             dest = reality_settings.get('dest', '')
             if dest and ':' in dest:
                 sni = dest.split(':')[0]
                 params.append(f"sni={sni}")
+                logger.info(f"Added SNI from dest: {sni}")
             
             settings = reality_settings.get('settings', {})
             fp = settings.get('fingerprint', '')
             if fp:
                 params.append(f"fp={fp}")
+                logger.info(f"Added fingerprint: {fp}")
             
             pbk = settings.get('publicKey', '')
             if pbk:
                 params.append(f"pbk={pbk}")
+                logger.info(f"Added public key: {pbk}")
             
             short_ids = reality_settings.get('shortIds', [])
             if short_ids:
                 params.append(f"sid={short_ids[0]}")
+                logger.info(f"Added short ID: {short_ids[0]}")
         
         # تنظیمات WebSocket
         if network == 'ws':
@@ -216,6 +234,8 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         if flow:
             params.append(f"flow={flow}")
         
+        logger.info(f"Final params: {params}")
+        
         # ساخت URL نهایی
         if params:
             base_url += "?" + "&".join(params)
@@ -223,6 +243,7 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         # اضافه کردن fragment (نام کلاینت)
         final_url = f"{base_url}#{quote(client_name)}"
         
+        logger.info(f"Final VLESS URL: {final_url}")
         logger.info(f"Built VLESS config for {client_email}: {final_url[:100]}...")
         return final_url
         
