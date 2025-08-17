@@ -8,6 +8,7 @@ import json
 import os
 import zipfile
 import time
+import uuid
 from config import ADMIN_IDS, SUPPORT_CHANNEL_LINK
 from database.db_manager import DatabaseManager
 from api_client.xui_api_client import XuiAPIClient
@@ -2971,8 +2972,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     logger.info(f"No clients found in inbound {inbound_id}, creating test client...")
                     
                     # ساخت کلاینت تست
+                    test_uuid = str(uuid.uuid4())
                     test_client_data = {
-                        "id": f"test-{int(time.time())}",
+                        "id": test_uuid,
                         "email": f"test-{int(time.time())}@alamor.com",
                         "name": f"Test-{int(time.time())}",
                         "flow": ""
@@ -2997,8 +2999,41 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         
                         if success:
                             logger.info(f"Test client created successfully: {test_client_data['email']}")
-                            test_client = test_client_data
-                            client_id = test_client['id']
+                            
+                            # کمی صبر کنیم تا پنل کلاینت را ذخیره کند
+                            import time
+                            time.sleep(2)
+                            
+                            # دریافت دیتای کلاینت از پنل
+                            try:
+                                # دریافت مجدد اطلاعات inbound از پنل
+                                updated_inbound_info = api_client.get_inbound(inbound_id)
+                                if updated_inbound_info:
+                                    updated_settings = json.loads(updated_inbound_info.get('settings', '{}'))
+                                    updated_clients = updated_settings.get('clients', [])
+                                    
+                                    # پیدا کردن کلاینت ساخته شده
+                                    for client in updated_clients:
+                                        if client.get('email') == test_client_data['email']:
+                                            test_client = client
+                                            client_id = client.get('id')
+                                            logger.info(f"Retrieved client data from panel: {client}")
+                                            break
+                                    else:
+                                        # اگر کلاینت پیدا نشد، از دیتای محلی استفاده کن
+                                        test_client = test_client_data
+                                        client_id = test_client['id']
+                                        logger.warning("Could not retrieve client from panel, using local data")
+                                else:
+                                    # اگر نتوانستیم inbound را دریافت کنیم، از دیتای محلی استفاده کن
+                                    test_client = test_client_data
+                                    client_id = test_client['id']
+                                    logger.warning("Could not retrieve inbound from panel, using local data")
+                            except Exception as e:
+                                logger.error(f"Error retrieving client data from panel: {e}")
+                                # در صورت خطا، از دیتای محلی استفاده کن
+                                test_client = test_client_data
+                                client_id = test_client['id']
                         else:
                             logger.error("Failed to create test client")
                             _bot.edit_message_text(
@@ -3145,8 +3180,9 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                     logger.info(f"No clients found in inbound {inbound_id}, creating test client...")
                     
                     # ساخت کلاینت تست
+                    test_uuid = str(uuid.uuid4())
                     test_client_data = {
-                        "id": f"test-{int(time.time())}",
+                        "id": test_uuid,
                         "email": f"test-{int(time.time())}@alamor.com",
                         "name": f"Test-{int(time.time())}",
                         "flow": ""
@@ -3171,8 +3207,40 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                         
                         if success:
                             logger.info(f"Test client created successfully: {test_client_data['email']}")
-                            test_client = test_client_data
-                            client_id = test_client['id']
+                            
+                            # کمی صبر کنیم تا پنل کلاینت را ذخیره کند
+                            time.sleep(2)
+                            
+                            # دریافت دیتای کلاینت از پنل
+                            try:
+                                # دریافت مجدد اطلاعات inbound از پنل
+                                updated_inbound_info = api_client.get_inbound(inbound_id)
+                                if updated_inbound_info:
+                                    updated_settings = json.loads(updated_inbound_info.get('settings', '{}'))
+                                    updated_clients = updated_settings.get('clients', [])
+                                    
+                                    # پیدا کردن کلاینت ساخته شده
+                                    for client in updated_clients:
+                                        if client.get('email') == test_client_data['email']:
+                                            test_client = client
+                                            client_id = client.get('id')
+                                            logger.info(f"Retrieved client data from panel: {client}")
+                                            break
+                                    else:
+                                        # اگر کلاینت پیدا نشد، از دیتای محلی استفاده کن
+                                        test_client = test_client_data
+                                        client_id = test_client['id']
+                                        logger.warning("Could not retrieve client from panel, using local data")
+                                else:
+                                    # اگر نتوانستیم inbound را دریافت کنیم، از دیتای محلی استفاده کن
+                                    test_client = test_client_data
+                                    client_id = test_client['id']
+                                    logger.warning("Could not retrieve inbound from panel, using local data")
+                            except Exception as e:
+                                logger.error(f"Error retrieving client data from panel: {e}")
+                                # در صورت خطا، از دیتای محلی استفاده کن
+                                test_client = test_client_data
+                                client_id = test_client['id']
                         else:
                             logger.error("Failed to create test client")
                             _bot.edit_message_text(
