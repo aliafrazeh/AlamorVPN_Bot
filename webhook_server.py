@@ -214,9 +214,11 @@ def update_cached_configs_from_panel(purchase_id):
     بروزرسانی کانفیگ‌های ذخیره شده از پنل اصلی
     """
     try:
+        logger.info(f"Starting update_cached_configs_from_panel for purchase {purchase_id}")
+        
         purchase = db_manager.get_purchase_by_id(purchase_id)
         if not purchase:
-            logger.error(f"Purchase {purchase_id} not found")
+            logger.error(f"Purchase {purchase_id} not found in database")
             return False
         
         # بررسی وجود sub_id
@@ -224,20 +226,40 @@ def update_cached_configs_from_panel(purchase_id):
             logger.error(f"Purchase {purchase_id} has no sub_id")
             return False
         
+        # بررسی وجود server_id برای خریدهای عادی
+        if not purchase.get('profile_id') and not purchase.get('server_id'):
+            logger.error(f"Purchase {purchase_id} has no server_id and is not a profile purchase")
+            return False
+        
         # --- منطق جدید: تفکیک خرید پروفایل و عادی ---
         if purchase.get('profile_id'):
+            logger.info(f"Processing profile purchase {purchase_id} with profile_id {purchase['profile_id']}")
             # خرید پروفایل: از تمام سرورهای پروفایل دیتا جمع‌آوری کن
-            subscription_data = get_profile_subscription_data(purchase)
+            try:
+                subscription_data = get_profile_subscription_data(purchase)
+            except Exception as e:
+                logger.error(f"Error in get_profile_subscription_data for purchase {purchase_id}: {e}")
+                # Fallback: try normal purchase method
+                logger.info(f"Falling back to normal purchase method for purchase {purchase_id}")
+                server = db_manager.get_server_by_id(purchase.get('server_id'))
+                if server:
+                    subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
+                else:
+                    subscription_data = None
         else:
+            logger.info(f"Processing normal purchase {purchase_id} with server_id {purchase.get('server_id')}")
             # خرید عادی: فقط از سرور انتخاب شده
             server = db_manager.get_server_by_id(purchase['server_id'])
             if not server:
-                logger.error(f"Server for purchase {purchase_id} not found")
+                logger.error(f"Server {purchase['server_id']} for purchase {purchase_id} not found")
                 return False
             subscription_data = get_panel_subscription_data(server, purchase['sub_id'])
+        
         if not subscription_data:
-            logger.error(f"Could not fetch new data from panel for purchase {purchase_id}")
+            logger.error(f"Could not fetch subscription data from panel for purchase {purchase_id}")
             return False
+        
+        logger.info(f"Successfully fetched subscription data for purchase {purchase_id}, length: {len(subscription_data)}")
         
         # پردازش محتوا
         processed_content = process_subscription_content(subscription_data)
@@ -265,6 +287,8 @@ def update_cached_configs_from_panel(purchase_id):
             logger.error(f"No valid configs found for purchase {purchase_id}")
             return False
         
+        logger.info(f"Found {len(config_list)} valid configs for purchase {purchase_id}")
+        
         # ذخیره در دیتابیس
         success = db_manager.update_purchase_configs(purchase_id, json.dumps(config_list))
         
@@ -272,11 +296,13 @@ def update_cached_configs_from_panel(purchase_id):
             logger.info(f"Successfully updated cached configs for purchase {purchase_id}")
             return True
         else:
-            logger.error(f"Failed to update cached configs for purchase {purchase_id}")
+            logger.error(f"Failed to update cached configs in database for purchase {purchase_id}")
             return False
             
     except Exception as e:
-        logger.error(f"Error updating cached configs for purchase {purchase_id}: {e}")
+        logger.error(f"Unexpected error in update_cached_configs_from_panel for purchase {purchase_id}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 # --- Endpoint جدید برای سرور اشتراک ---
@@ -328,6 +354,8 @@ def get_profile_subscription_data(purchase):
             logger.error(f"Purchase {purchase['id']} has no profile_id")
             return None
         
+        logger.info(f"Getting profile subscription data for profile_id: {profile_id}")
+        
         # دریافت تمام اینباندهای پروفایل از تمام سرورها
         profile_inbounds = db_manager.get_inbounds_for_profile(profile_id, with_server_info=True)
         if not profile_inbounds:
@@ -339,28 +367,44 @@ def get_profile_subscription_data(purchase):
         all_configs = []
         sub_id = purchase.get('sub_id')
         
+        if not sub_id:
+            logger.error(f"Purchase {purchase['id']} has no sub_id")
+            return None
+        
         # گروه‌بندی اینباندها بر اساس سرور
         inbounds_by_server = {}
         for inbound_info in profile_inbounds:
-            server_id = inbound_info['server']['id']
-            if server_id not in inbounds_by_server:
-                inbounds_by_server[server_id] = []
-            inbounds_by_server[server_id].append(inbound_info)
+            try:
+                server_id = inbound_info['server']['id']
+                if server_id not in inbounds_by_server:
+                    inbounds_by_server[server_id] = []
+                inbounds_by_server[server_id].append(inbound_info)
+            except KeyError as e:
+                logger.error(f"Missing server info in inbound: {e}")
+                continue
+        
+        if not inbounds_by_server:
+            logger.error(f"No valid server information found for profile {profile_id}")
+            return None
         
         # دریافت دیتا از هر سرور
         for server_id, server_inbounds in inbounds_by_server.items():
-            server_info = server_inbounds[0]['server']
-            logger.info(f"Fetching data from server {server_info['name']} (ID: {server_id})")
-            
-            # دریافت دیتای subscription از این سرور
-            server_subscription_data = get_panel_subscription_data(server_info, sub_id)
-            if server_subscription_data:
-                # پردازش و فیلتر کردن کانفیگ‌های مربوط به این سرور
-                processed_configs = process_server_configs(server_subscription_data, server_inbounds)
-                all_configs.extend(processed_configs)
-                logger.info(f"Added {len(processed_configs)} configs from server {server_info['name']}")
-            else:
-                logger.warning(f"Could not fetch data from server {server_info['name']}")
+            try:
+                server_info = server_inbounds[0]['server']
+                logger.info(f"Fetching data from server {server_info['name']} (ID: {server_id})")
+                
+                # دریافت دیتای subscription از این سرور
+                server_subscription_data = get_panel_subscription_data(server_info, sub_id)
+                if server_subscription_data:
+                    # پردازش و فیلتر کردن کانفیگ‌های مربوط به این سرور
+                    processed_configs = process_server_configs(server_subscription_data, server_inbounds)
+                    all_configs.extend(processed_configs)
+                    logger.info(f"Added {len(processed_configs)} configs from server {server_info['name']}")
+                else:
+                    logger.warning(f"Could not fetch data from server {server_info['name']}")
+            except Exception as e:
+                logger.error(f"Error processing server {server_id}: {e}")
+                continue
         
         if not all_configs:
             logger.error(f"No configs collected from any server for profile {profile_id}")
@@ -374,6 +418,8 @@ def get_profile_subscription_data(purchase):
         
     except Exception as e:
         logger.error(f"Error in get_profile_subscription_data: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 def get_normal_subscription_data(purchase):
@@ -583,26 +629,81 @@ def admin_update_configs(purchase_id):
     Endpoint برای بروزرسانی دستی کانفیگ‌ها توسط ادمین
     """
     try:
-        # بررسی احراز هویت (می‌توانید از API key یا روش دیگری استفاده کنید)
+        # بررسی احراز هویت
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
+            logger.error(f"Unauthorized access attempt to admin_update_configs for purchase {purchase_id}")
             return Response("Unauthorized", status=401)
         
         api_key = auth_header.split(' ')[1]
-        # بررسی API key (می‌توانید از متغیر محیطی استفاده کنید)
-        if api_key != os.getenv('ADMIN_API_KEY', 'your-secret-key'):
+        expected_api_key = os.getenv('ADMIN_API_KEY')
+        if not expected_api_key:
+            logger.error("ADMIN_API_KEY not set in environment")
+            return Response("Server configuration error", status=500)
+        
+        if api_key != expected_api_key:
+            logger.error(f"Invalid API key for purchase {purchase_id}")
             return Response("Invalid API key", status=401)
         
-        # بروزرسانی کانفیگ‌ها
+        # بررسی وجود purchase
+        purchase = db_manager.get_purchase_by_id(int(purchase_id))
+        if not purchase:
+            logger.error(f"Purchase {purchase_id} not found in database")
+            return Response("Purchase not found", status=404)
+        
+        # بررسی وجود sub_id
+        if not purchase.get('sub_id'):
+            logger.error(f"Purchase {purchase_id} has no sub_id")
+            return Response("Purchase has no subscription ID", status=400)
+        
+        # بررسی وضعیت purchase
+        if not purchase.get('is_active', False):
+            logger.warning(f"Purchase {purchase_id} is not active, skipping update")
+            return Response("Purchase is not active", status=400)
+        
+        # بروزرسانی کانفیگ‌ها با logging بیشتر
+        logger.info(f"Starting config update for purchase {purchase_id} (type: {'profile' if purchase.get('profile_id') else 'normal'})")
         success = update_cached_configs_from_panel(int(purchase_id))
         
         if success:
+            logger.info(f"Successfully updated configs for purchase {purchase_id}")
             return Response("Configs updated successfully", status=200)
         else:
+            logger.error(f"Failed to update configs for purchase {purchase_id}")
             return Response("Failed to update configs", status=500)
             
+    except ValueError as e:
+        logger.error(f"Invalid purchase_id format: {purchase_id}, error: {e}")
+        return Response("Invalid purchase ID format", status=400)
     except Exception as e:
-        logger.error(f"Error in admin_update_configs: {e}")
+        logger.error(f"Unexpected error in admin_update_configs for purchase {purchase_id}: {e}")
+        return Response("Internal server error", status=500)
+
+# --- Endpoint تست برای بررسی وضعیت ---
+@app.route('/admin/test/<purchase_id>', methods=['GET'])
+def admin_test_purchase(purchase_id):
+    """
+    Endpoint تست برای بررسی وضعیت یک purchase
+    """
+    try:
+        purchase = db_manager.get_purchase_by_id(int(purchase_id))
+        if not purchase:
+            return Response("Purchase not found", status=404)
+        
+        result = {
+            'purchase_id': purchase['id'],
+            'user_id': purchase['user_id'],
+            'profile_id': purchase.get('profile_id'),
+            'server_id': purchase.get('server_id'),
+            'sub_id': purchase.get('sub_id'),
+            'is_active': purchase['is_active'],
+            'has_configs': bool(purchase.get('single_configs_json'))
+        }
+        
+        return Response(json.dumps(result, indent=2), status=200, mimetype='application/json')
+        
+    except Exception as e:
+        logger.error(f"Error in admin_test_purchase: {e}")
         return Response("Internal server error", status=500)
 
 if __name__ == '__main__':
