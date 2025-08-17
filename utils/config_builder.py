@@ -435,7 +435,7 @@ def test_config_builder(server_info, inbound_id, client_id):
             logger.info(f"Protocol: {result['protocol']}")
             logger.info(f"Client: {result['client_email']}")
             logger.info(f"Server: {result['server_name']}")
-            logger.info(f"Config: {result['config'][:100]}...")
+            logger.info(f"Config: {result['config']}")
             return result
         else:
             logger.error("❌ Failed to build config")

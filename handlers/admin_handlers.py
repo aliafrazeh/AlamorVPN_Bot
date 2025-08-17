@@ -2912,15 +2912,13 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 
                 if result:
                     # نمایش نتیجه موفق
-                    config_preview = result['config'][:100] + "..." if len(result['config']) > 100 else result['config']
-                    
                     text = f"✅ **تست موفق!**\n\n"
                     text += f"**سرور:** {server_info['name']}\n"
                     text += f"**پروتکل:** {result['protocol']}\n"
                     text += f"**کلاینت:** {result['client_email']}\n"
                     text += f"**Inbound:** {result['inbound_id']}\n\n"
                     text += f"**کانفیگ ساخته شده:**\n"
-                    text += f"`{config_preview}`\n\n"
+                    text += f"`{result['config']}`\n\n"
                     text += f"🎉 **Config Builder کار می‌کند!**"
                     
                     markup = types.InlineKeyboardMarkup()
