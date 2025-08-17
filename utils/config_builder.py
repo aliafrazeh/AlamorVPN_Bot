@@ -121,9 +121,12 @@ def extract_stream_parameters(stream_settings):
             ws_settings = stream_settings.get('wsSettings', {})
             params['ws'] = {
                 'path': ws_settings.get('path', ''),
-                'host': ws_settings.get('headers', {}).get('Host', ''),
+                'host': ws_settings.get('host', ''),  # اول host مستقیم
                 'headers': ws_settings.get('headers', {})
             }
+            # اگر host در headers بود، آن را جایگزین کن
+            if ws_settings.get('headers', {}).get('Host', ''):
+                params['ws']['host'] = ws_settings.get('headers', {}).get('Host', '')
         
         # HTTP/HTTPUpgrade Settings
         elif params['network'] in ['http', 'httpupgrade', 'h2']:
@@ -198,10 +201,24 @@ def build_vmess_config(client_info, inbound_info, server_info, brand_name="Alamo
         stream_settings_str = inbound_info.get('streamSettings', '{}')
         stream_params = extract_stream_parameters(stream_settings_str)
         
-        # آدرس سرور
+        # آدرس سرور - استفاده از IP واقعی سرور
         server_ip = server_info.get('ip', '')
         if not server_ip:
-            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+            # اگر IP نبود، از subscription_base_url استفاده کن
+            subscription_url = server_info.get('subscription_base_url', '')
+            if subscription_url:
+                # استخراج IP از URL
+                if '://' in subscription_url:
+                    server_ip = subscription_url.split('://')[-1].split(':')[0].split('/')[0]
+                else:
+                    server_ip = subscription_url.split(':')[0].split('/')[0]
+            else:
+                # اگر هیچ کدام نبود، از نام سرور استفاده کن
+                server_ip = server_info.get('name', 'localhost')
+        
+        # اگر هنوز IP نیست، از نام سرور استفاده کن
+        if not server_ip or server_ip == 'localhost':
+            server_ip = server_info.get('name', 'localhost')
         
         # ساخت VMess config
         vmess_config = {
@@ -310,10 +327,24 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         logger.info(f"Client Email: {client_email}")
         logger.info(f"Stream Parameters: {json.dumps(stream_params, indent=2)}")
         
-        # آدرس سرور
+        # آدرس سرور - استفاده از IP واقعی سرور
         server_ip = server_info.get('ip', '')
         if not server_ip:
-            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+            # اگر IP نبود، از subscription_base_url استفاده کن
+            subscription_url = server_info.get('subscription_base_url', '')
+            if subscription_url:
+                # استخراج IP از URL
+                if '://' in subscription_url:
+                    server_ip = subscription_url.split('://')[-1].split(':')[0].split('/')[0]
+                else:
+                    server_ip = subscription_url.split(':')[0].split('/')[0]
+            else:
+                # اگر هیچ کدام نبود، از نام سرور استفاده کن
+                server_ip = server_info.get('name', 'localhost')
+        
+        # اگر هنوز IP نیست، از نام سرور استفاده کن
+        if not server_ip or server_ip == 'localhost':
+            server_ip = server_info.get('name', 'localhost')
         
         port = inbound_info.get('port', 443)
         
@@ -332,15 +363,58 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
         
         # پارامترهای query
         params = []
-        params.append("encryption=none")
+        
+        # اضافه کردن network type اول
+        network = stream_params.get('network', 'tcp')
+        params.append(f"type={network}")
+        
+        # تنظیمات WebSocket
+        if network == 'ws':
+            ws_params = stream_params.get('ws', {})
+            path = ws_params.get('path', '')
+            if path:
+                params.append(f"path={path}")
+            
+            host = ws_params.get('host', '')
+            if host:
+                params.append(f"host={host}")
+        
+        # تنظیمات HTTP/HTTPUpgrade
+        elif network in ['http', 'httpupgrade', 'h2']:
+            http_params = stream_params.get('http', {})
+            path = http_params.get('path', '')
+            if path:
+                params.append(f"path={path}")
+            
+            host = http_params.get('host', '')
+            if host:
+                params.append(f"host={host}")
+        
+        # تنظیمات gRPC
+        elif network == 'grpc':
+            grpc_params = stream_params.get('grpc', {})
+            service_name = grpc_params.get('serviceName', '')
+            if service_name:
+                params.append(f"serviceName={service_name}")
+        
+        # تنظیمات mKCP
+        elif network == 'mkcp':
+            mkcp_params = stream_params.get('mkcp', {})
+            # اضافه کردن پارامترهای mKCP اگر نیاز باشه
+            pass
+        
+        # تنظیمات QUIC
+        elif network == 'quic':
+            quic_params = stream_params.get('quic', {})
+            # اضافه کردن پارامترهای QUIC اگر نیاز باشه
+            pass
         
         # اضافه کردن security
         security = stream_params.get('security', 'none')
         params.append(f"security={security}")
         
-        # اضافه کردن network type
-        network = stream_params.get('network', 'tcp')
-        params.append(f"type={network}")
+        # اضافه کردن encryption
+        params.append("encryption=none")
         
         logger.info(f"Security: {security}")
         logger.info(f"Network: {network}")
@@ -386,6 +460,12 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
             if utls:
                 params.append("utls=true")
                 logger.info(f"Added uTLS: true")
+            
+            # External Proxy
+            external_proxy = tls_params.get('externalProxy', False)
+            if external_proxy:
+                params.append("externalProxy=true")
+                logger.info(f"Added externalProxy: true")
         
         # تنظیمات Reality
         elif security == 'reality':
@@ -422,47 +502,6 @@ def build_vless_config(client_info, inbound_info, server_info, brand_name="Alamo
             if spx:
                 params.append(f"spx={spx}")
                 logger.info(f"Added SpiderX: {spx}")
-        
-        # تنظیمات WebSocket
-        if network == 'ws':
-            ws_params = stream_params.get('ws', {})
-            path = ws_params.get('path', '')
-            if path:
-                params.append(f"path={path}")
-            
-            host = ws_params.get('host', '')
-            if host:
-                params.append(f"host={host}")
-        
-        # تنظیمات HTTP/HTTPUpgrade
-        elif network in ['http', 'httpupgrade', 'h2']:
-            http_params = stream_params.get('http', {})
-            path = http_params.get('path', '')
-            if path:
-                params.append(f"path={path}")
-            
-            host = http_params.get('host', '')
-            if host:
-                params.append(f"host={host}")
-        
-        # تنظیمات gRPC
-        elif network == 'grpc':
-            grpc_params = stream_params.get('grpc', {})
-            service_name = grpc_params.get('serviceName', '')
-            if service_name:
-                params.append(f"serviceName={service_name}")
-        
-        # تنظیمات mKCP
-        elif network == 'mkcp':
-            mkcp_params = stream_params.get('mkcp', {})
-            # اضافه کردن پارامترهای mKCP اگر نیاز باشه
-            pass
-        
-        # تنظیمات QUIC
-        elif network == 'quic':
-            quic_params = stream_params.get('quic', {})
-            # اضافه کردن پارامترهای QUIC اگر نیاز باشه
-            pass
         
         # اضافه کردن flow برای XTLS
         flow = client_info.get('flow', '')
@@ -507,10 +546,24 @@ def build_trojan_config(client_info, inbound_info, server_info, brand_name="Alam
         stream_settings_str = inbound_info.get('streamSettings', '{}')
         stream_params = extract_stream_parameters(stream_settings_str)
         
-        # آدرس سرور
+        # آدرس سرور - استفاده از IP واقعی سرور
         server_ip = server_info.get('ip', '')
         if not server_ip:
-            server_ip = server_info.get('subscription_base_url', '').split('//')[-1].split(':')[0].split('/')[0]
+            # اگر IP نبود، از subscription_base_url استفاده کن
+            subscription_url = server_info.get('subscription_base_url', '')
+            if subscription_url:
+                # استخراج IP از URL
+                if '://' in subscription_url:
+                    server_ip = subscription_url.split('://')[-1].split(':')[0].split('/')[0]
+                else:
+                    server_ip = subscription_url.split(':')[0].split('/')[0]
+            else:
+                # اگر هیچ کدام نبود، از نام سرور استفاده کن
+                server_ip = server_info.get('name', 'localhost')
+        
+        # اگر هنوز IP نیست، از نام سرور استفاده کن
+        if not server_ip or server_ip == 'localhost':
+            server_ip = server_info.get('name', 'localhost')
         
         port = inbound_info.get('port', 443)
         
