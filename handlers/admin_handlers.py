@@ -3736,7 +3736,7 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
                 return
             
             # دریافت لیست اینباندها
-            inbounds = api_client.get_inbounds()
+            inbounds = api_client.list_inbounds()
             if not inbounds:
                 text = f"❌ **هیچ اینباندی یافت نشد**\n\n"
                 text += f"سرور: **{server_info['name']}**\n"
