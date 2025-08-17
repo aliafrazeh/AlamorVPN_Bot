@@ -726,7 +726,6 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
             "admin_refresh_all_subscriptions": refresh_all_subscription_links,
             "admin_subscription_system_status": show_subscription_system_status,
             "admin_test_config_builder": show_config_builder_test_menu,
-            "admin_test_config_server_": test_config_builder_for_server,
             "admin_set_api_key": start_set_api_key_flow,
             "admin_update_configs": update_configs_from_panel,
         }
@@ -787,6 +786,11 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
         # --- مدیریت الگوهای سرور ---
         if data == "admin_manage_templates":
             show_template_management_menu(admin_id, message)
+            return
+        elif data.startswith("admin_test_config_server_"):
+            server_id = int(data.split('_')[-1])
+            logger.info(f"Testing config builder for server {server_id}")
+            test_config_builder_for_server(admin_id, message, server_id)
             return
         elif data.startswith("admin_edit_template_"):
             parts = data.split('_')
@@ -2818,16 +2822,19 @@ def register_admin_handlers(bot_instance, db_manager_instance, xui_api_instance)
     def test_config_builder_for_server(admin_id, message, server_id):
         """تست Config Builder برای سرور خاص"""
         try:
+            logger.info(f"Starting config builder test for server {server_id}")
+            
             # دریافت اطلاعات سرور
             server_info = _db_manager.get_server_by_id(server_id)
             if not server_info:
                 _bot.edit_message_text("❌ سرور یافت نشد.", admin_id, message.message_id)
                 return
             
-            # نمایش پیام در حال تست
+            # نمایش پیام ساده برای تست
             _bot.edit_message_text(
                 f"🧪 **تست Config Builder**\n\n"
                 f"سرور: **{server_info['name']}**\n"
+                f"✅ Callback handler کار می‌کند!\n"
                 f"⏳ در حال تست اتصال به پنل...",
                 admin_id, message.message_id, parse_mode='Markdown'
             )
